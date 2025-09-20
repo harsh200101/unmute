@@ -115,6 +115,9 @@ router.post('/',
   sessionController.createSession
 );
 
+
+
+
 // GET /api/sessions/my-sessions - Get user's sessions with comprehensive details
 router.get('/my-sessions',
   auth,
@@ -123,8 +126,8 @@ router.get('/my-sessions',
   sessionController.getUserSessions
 );
 
-// GET /api/sessions/:sessionId - Get single session details
-router.get('/:sessionId',
+// GET /api/sessions/details/:sessionId - Get single session details
+router.get('/details/:sessionId',
   auth,
   rateLimit(50, 15 * 60 * 1000),
   [
@@ -291,16 +294,16 @@ router.get('/:sessionId',
   }
 );
 
-// PUT /api/sessions/:sessionId/status - Update session status (for mentors)
-router.put('/:sessionId/status',
+// PUT /api/sessions/details/:sessionId/status - Update session status (for mentors)
+router.put('/details/:sessionId/status',
   auth,
   rateLimit(20, 60 * 60 * 1000), // 20 status updates per hour
   updateSessionStatusValidation,
   sessionController.updateSessionStatus
 );
 
-// DELETE /api/sessions/:sessionId - Cancel session
-router.delete('/:sessionId',
+// DELETE /api/sessions/details/:sessionId - Cancel session
+router.delete('/details/:sessionId',
   auth,
   rateLimit(10, 60 * 60 * 1000), // 10 cancellations per hour
   [
@@ -316,8 +319,8 @@ router.delete('/:sessionId',
   sessionController.cancelSession
 );
 
-// POST /api/sessions/:sessionId/start - Mark session as started
-router.post('/:sessionId/start',
+// POST /api/sessions/details/:sessionId/start - Mark session as started
+router.post('/details/:sessionId/start',
   auth,
   rateLimit(20, 60 * 60 * 1000),
   [
@@ -456,8 +459,8 @@ router.post('/:sessionId/start',
   }
 );
 
-// POST /api/sessions/:sessionId/complete - Mark session as completed
-router.post('/:sessionId/complete',
+// POST /api/sessions/details/:sessionId/complete - Mark session as completed
+router.post('/details/:sessionId/complete',
   auth,
   rateLimit(20, 60 * 60 * 1000),
   [
@@ -588,6 +591,127 @@ router.post('/:sessionId/complete',
     }
   }
 );
+// GET /api/sessions/my-sessions/stats - Get session statistics for user
+router.get('/my-sessions/stats',
+  auth,
+  rateLimit(30, 15 * 60 * 1000),
+  [
+    query('timeframe')
+      .optional()
+      .isIn(['week', 'month', 'quarter', 'year'])
+      .withMessage('Timeframe must be week, month, quarter, or year')
+  ],
+  async (req, res) => {
+    try {
+      const userId = req.user.userId;
+      const { timeframe = 'month' } = req.query;
+
+      console.log('🔍 Fetching session stats:', { userId, timeframe });
+
+      // Calculate date range based on timeframe
+      const now = new Date();
+      let startDate;
+
+      switch (timeframe) {
+        case 'week':
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'month':
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          break;
+        case 'quarter':
+          const quarterStart = Math.floor(now.getMonth() / 3) * 3;
+          startDate = new Date(now.getFullYear(), quarterStart, 1);
+          break;
+        case 'year':
+          startDate = new Date(now.getFullYear(), 0, 1);
+          break;
+        default:
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+
+      console.log('🔍 Date range:', { startDate: startDate.toISOString(), endDate: now.toISOString() });
+
+      // Get session statistics
+      const statsQuery = `
+        SELECT
+          COUNT(*) as total_sessions,
+          COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_sessions,
+          COUNT(CASE WHEN status IN ('scheduled', 'confirmed') AND scheduled_at > CURRENT_TIMESTAMP THEN 1 END) as upcoming_sessions,
+          COUNT(CASE WHEN status LIKE 'cancelled%' THEN 1 END) as cancelled_sessions,
+          COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_sessions_count,
+          ROUND(AVG(CASE WHEN status = 'completed' THEN duration_minutes END), 2) as avg_session_duration,
+          SUM(CASE WHEN status = 'completed' THEN price ELSE 0 END) as total_spent,
+          SUM(CASE WHEN status = 'completed' THEN mentor_earnings ELSE 0 END) as total_mentor_earnings
+        FROM sessions s
+        INNER JOIN mentors m ON s.mentor_id = m.id
+        INNER JOIN users mentor_user ON m.user_id = mentor_user.id
+        WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
+          AND s.created_at >= $2
+      `;
+
+      const statsResult = await db.query(statsQuery, [userId, startDate]);
+      const stats = statsResult.rows[0];
+
+      console.log('🔍 Raw stats:', stats);
+
+      // Get recent sessions for additional insights
+      const recentSessionsQuery = `
+        SELECT
+          s.id, s.title, s.status, s.scheduled_at, s.session_type,
+          CASE
+            WHEN mentor_user.id = $1 THEN 'mentor'
+            ELSE 'mentee'
+          END as user_role,
+          mentor_user.first_name as mentor_first_name,
+          mentor_user.last_name as mentor_last_name
+        FROM sessions s
+        INNER JOIN mentors m ON s.mentor_id = m.id
+        INNER JOIN users mentor_user ON m.user_id = mentor_user.id
+        WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
+          AND s.created_at >= $2
+        ORDER BY s.created_at DESC
+        LIMIT 10
+      `;
+
+      const recentSessions = await db.query(recentSessionsQuery, [userId, startDate]);
+
+      const processedStats = {
+        totalSessions: parseInt(stats.total_sessions) || 0,
+        completedSessions: parseInt(stats.completed_sessions) || 0,
+        upcomingSessions: parseInt(stats.upcoming_sessions) || 0,
+        cancelledSessions: parseInt(stats.cancelled_sessions) || 0,
+        averageSessionDuration: parseFloat(stats.avg_session_duration) || 0,
+        totalSpent: parseFloat(stats.total_spent) || 0,
+        totalMentorEarnings: parseFloat(stats.total_mentor_earnings) || 0,
+        completionRate: stats.total_sessions > 0
+          ? Math.round((stats.completed_sessions / stats.total_sessions) * 100)
+          : 0,
+        timeframe,
+        dateRange: {
+          start: startDate.toISOString(),
+          end: now.toISOString()
+        },
+        recentSessions: recentSessions.rows
+      };
+
+      console.log('✅ Successfully fetched session stats:', processedStats);
+
+      res.json({
+        success: true,
+        data: processedStats
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching session stats:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch session statistics',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
 
 // GET /api/sessions/upcoming - Get upcoming sessions for dashboard
 router.get('/upcoming',
@@ -601,13 +725,88 @@ router.get('/upcoming',
   ],
   async (req, res) => {
     try {
-      const userId = req.user.userId;
+      console.log('🚀 UPCOMING SESSIONS ROUTE HIT');
+      console.log('📋 Request headers:', {
+        authorization: req.headers.authorization ? 'Bearer token present' : 'No token',
+        'user-agent': req.headers['user-agent'],
+        origin: req.headers.origin
+      });
+
+      const userId = req.user?.userId;
       const { limit = 5 } = req.query;
 
-      console.log('🔍 Fetching upcoming sessions:', { userId, limit });
+      console.log('🔍 User authentication details:', {
+        userId,
+        user: req.user,
+        isAuthenticated: !!req.user
+      });
 
+      console.log('🔍 Request parameters:', { userId, limit, query: req.query });
+
+      // Step 1: Check if user exists and is active
+      console.log('🔍 Step 1: Checking if user exists...');
+      const userCheckQuery = `
+        SELECT id, first_name, last_name, email, role, is_active
+        FROM users
+        WHERE id = $1 AND is_active = true
+      `;
+      const userCheck = await db.query(userCheckQuery, [userId]);
+      console.log('🔍 Step 1 Result:', {
+        userFound: userCheck.rows.length > 0,
+        userData: userCheck.rows[0]
+      });
+
+      if (userCheck.rows.length === 0) {
+        console.log('❌ User not found or inactive');
+        return res.status(404).json({
+          success: false,
+          message: 'User not found or inactive'
+        });
+      }
+
+      // Step 2: Check total sessions count for this user
+      console.log('🔍 Step 2: Checking total sessions count...');
+      const totalSessionsQuery = `
+        SELECT COUNT(*) as total_sessions
+        FROM sessions s
+        INNER JOIN mentors m ON s.mentor_id = m.id
+        INNER JOIN users mentor_user ON m.user_id = mentor_user.id
+        WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
+      `;
+      const totalSessions = await db.query(totalSessionsQuery, [userId]);
+      console.log('🔍 Step 2 Result:', {
+        totalSessions: totalSessions.rows[0].total_sessions
+      });
+
+      // Step 3: Check upcoming sessions specifically
+      console.log('🔍 Step 3: Checking upcoming sessions...');
+      const upcomingCountQuery = `
+        SELECT COUNT(*) as upcoming_count
+        FROM sessions s
+        INNER JOIN mentors m ON s.mentor_id = m.id
+        INNER JOIN users mentor_user ON m.user_id = mentor_user.id
+        WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
+          AND s.scheduled_at > CURRENT_TIMESTAMP
+          AND s.status IN ('scheduled', 'confirmed')
+      `;
+      const upcomingCount = await db.query(upcomingCountQuery, [userId]);
+      console.log('🔍 Step 3 Result:', {
+        upcomingCount: upcomingCount.rows[0].upcoming_count
+      });
+
+      // Step 4: Get current timestamp for debugging
+      console.log('🔍 Step 4: Current database timestamp...');
+      const currentTimeQuery = `SELECT CURRENT_TIMESTAMP as current_time, NOW() as now_time`;
+      const currentTime = await db.query(currentTimeQuery);
+      console.log('🔍 Step 4 Result:', {
+        currentTimestamp: currentTime.rows[0].current_time,
+        nowTime: currentTime.rows[0].now_time
+      });
+
+      // Step 5: Execute the main query with detailed logging
+      console.log('🔍 Step 5: Executing main upcoming sessions query...');
       const query = `
-        SELECT 
+        SELECT
           s.id,
           s.uuid,
           s.title,
@@ -616,13 +815,16 @@ router.get('/upcoming',
           s.session_type,
           s.meeting_url,
           s.status,
+          s.created_at,
+          mentor_user.id as mentor_user_id,
           mentor_user.first_name as mentor_first_name,
           mentor_user.last_name as mentor_last_name,
           mentor_user.avatar_url as mentor_avatar,
+          mentee_user.id as mentee_user_id,
           mentee_user.first_name as mentee_first_name,
           mentee_user.last_name as mentee_last_name,
           mentee_user.avatar_url as mentee_avatar,
-          CASE 
+          CASE
             WHEN mentor_user.id = $1 THEN 'mentor'
             ELSE 'mentee'
           END as user_role
@@ -637,7 +839,30 @@ router.get('/upcoming',
         LIMIT $2
       `;
 
+      console.log('🔍 Step 5: Query parameters:', [userId, parseInt(limit)]);
+      console.log('🔍 Step 5: Executing query...');
+
       const result = await db.query(query, [userId, parseInt(limit)]);
+
+      console.log('🔍 Step 5 Result:', {
+        rowCount: result.rows.length,
+        command: result.command,
+        rowMode: result.rowMode,
+        fields: result.fields?.map(f => f.name)
+      });
+
+      // Log each session found
+      result.rows.forEach((session, index) => {
+        console.log(`🔍 Session ${index + 1}:`, {
+          id: session.id,
+          title: session.title,
+          scheduledAt: session.scheduled_at,
+          status: session.status,
+          userRole: session.user_role,
+          mentorId: session.mentor_user_id,
+          menteeId: session.mentee_user_id
+        });
+      });
 
       const upcomingSessions = result.rows.map(session => ({
         id: session.id,
@@ -664,6 +889,18 @@ router.get('/upcoming',
         canJoin: Math.abs(new Date(session.scheduled_at) - new Date()) < 15 * 60 * 1000 // 15 minutes window
       }));
 
+      console.log('✅ Successfully processed', upcomingSessions.length, 'upcoming sessions for user', userId);
+      console.log('📊 Final response data:', {
+        success: true,
+        count: upcomingSessions.length,
+        sessions: upcomingSessions.map(s => ({
+          id: s.id,
+          title: s.title,
+          scheduledAt: s.scheduledAt,
+          status: s.status
+        }))
+      });
+
       res.json({
         success: true,
         data: {
@@ -673,11 +910,20 @@ router.get('/upcoming',
       });
 
     } catch (error) {
-      console.error('❌ Error fetching upcoming sessions:', error);
+      console.error('❌ CRITICAL ERROR in upcoming sessions route:');
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error stack:', error.stack);
+      console.error('❌ Full error object:', error);
+
       res.status(500).json({
         success: false,
         message: 'Failed to fetch upcoming sessions',
-        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        error: process.env.NODE_ENV === 'development' ? {
+          message: error.message,
+          code: error.code,
+          stack: error.stack
+        } : 'Internal server error'
       });
     }
   }

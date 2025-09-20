@@ -17,6 +17,9 @@ const zoomUtil = require('./utils/zoom');
 
 const app = express();
 
+// Trust proxy only in production for security
+app.set('trust proxy', process.env.NODE_ENV === 'production');
+
 // ==========================================
 // ENVIRONMENT VALIDATION
 // ==========================================
@@ -348,6 +351,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/auth', require('./routes/googleAuth'));
 app.use('/api/mentors', require('./routes/mentors'));
 app.use('/api/sessions', require('./routes/sessions'));
+app.use('/api/reviews', require('./routes/reviews'));
 
 // Categories endpoint
 app.get('/api/categories', (req, res) => {
@@ -391,77 +395,7 @@ app.get('/api/mentors/meta/categories', (req, res) => {
   });
 });
 
-// Featured mentors endpoint
-app.get('/api/mentors/featured', (req, res) => {
-  const limit = parseInt(req.query.limit) || 6;
-  
-  // Mock featured mentors data
-  const featuredMentors = [
-    {
-      id: 1,
-      name: 'Sarah Johnson',
-      title: 'Senior Software Engineer',
-      bio: 'Senior Software Engineer with 10+ years experience in full-stack development',
-      specializations: ['React', 'Node.js', 'Python'],
-      languages: ['English', 'Spanish'],
-      hourlyRate: 85,
-      averageRating: 4.9,
-      reviewCount: 127,
-      totalSessions: 342,
-      isFeatured: true,
-      badgeLevel: 'gold'
-    },
-    {
-      id: 2,
-      name: 'Michael Chen',
-      title: 'Product Manager',
-      bio: 'Product Manager and startup advisor with expertise in scaling tech companies',
-      specializations: ['Product Management', 'Strategy', 'Leadership'],
-      languages: ['English', 'Mandarin'],
-      hourlyRate: 120,
-      averageRating: 4.8,
-      reviewCount: 89,
-      totalSessions: 156,
-      isFeatured: true,
-      badgeLevel: 'platinum'
-    }
-  ];
-  
-  res.json({
-    success: true,
-    data: featuredMentors.slice(0, limit)
-  });
-});
-
-// Featured reviews endpoint
-app.get('/api/reviews/featured', (req, res) => {
-  const limit = parseInt(req.query.limit) || 6;
-  
-  // Mock featured reviews data
-  const featuredReviews = [
-    {
-      id: 1,
-      mentor_id: 1,
-      student_name: 'Alex R.',
-      rating: 5,
-      comment: 'Sarah is an amazing mentor! She helped me land my dream job at a top tech company.',
-      created_at: '2024-01-15T10:30:00Z'
-    },
-    {
-      id: 2,
-      mentor_id: 2,
-      student_name: 'Emma L.',
-      rating: 5,
-      comment: 'Michael provided invaluable insights into product strategy. Highly recommended!',
-      created_at: '2024-01-10T14:20:00Z'
-    }
-  ];
-  
-  res.json({
-    success: true,
-    data: featuredReviews.slice(0, limit)
-  });
-});
+// Featured mentors and reviews endpoints are now handled by routes/mentors.js and routes/reviews.js
 
 // Webhook routes with raw body parsing
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }), (req, res, next) => {
@@ -560,7 +494,7 @@ process.on('unhandledRejection', (reason, promise) => {
 // SERVER STARTUP
 // ==========================================
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
 
 app.listen(PORT, HOST, async () => {

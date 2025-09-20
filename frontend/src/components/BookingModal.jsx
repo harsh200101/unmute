@@ -7,7 +7,9 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 
 // Initialize Stripe
-const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
+const stripePromise = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY)
+  : null;
 
 const BookingModal = ({ mentor, isOpen, onClose }) => {
   const { isAuthenticated } = useAuth();
@@ -53,28 +55,38 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
   // Enhanced time slots based on mentor availability
   const getAvailableTimeSlots = (selectedDate) => {
     if (!selectedDate || !availability.length) {
-      return ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
+      // Default availability: 10 AM to 10 PM (22:00)
+      const defaultSlots = [];
+      for (let hour = 10; hour <= 21; hour++) {
+        defaultSlots.push(`${hour.toString().padStart(2, '0')}:00`);
+      }
+      return defaultSlots;
     }
 
     // Filter time slots based on mentor's actual availability
     const dayOfWeek = selectedDate.getDay();
-    const dayAvailability = availability.filter(slot => 
+    const dayAvailability = availability.filter(slot =>
       slot.day_of_week === dayOfWeek && slot.is_available
     );
 
     if (dayAvailability.length === 0) return [];
 
     // Generate time slots based on mentor's available hours
-    return dayAvailability.flatMap(slot => {
+    const allSlots = dayAvailability.flatMap(slot => {
       const slots = [];
       const startHour = parseInt(slot.start_time.split(':')[0]);
       const endHour = parseInt(slot.end_time.split(':')[0]);
-      
+
       for (let hour = startHour; hour < endHour; hour++) {
         slots.push(`${hour.toString().padStart(2, '0')}:00`);
       }
       return slots;
     });
+
+    // Remove duplicates and sort
+    const uniqueSlots = [...new Set(allSlots)].sort();
+    console.log('Generated time slots:', uniqueSlots);
+    return uniqueSlots;
   };
 
   const calculatePrice = () => {
@@ -124,6 +136,7 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
       };
 
       console.log('Creating session with data:', sessionData);
+      console.log('Mentor data:', mentor);
 
       // Updated API endpoint to match backend
       const response = await api.post('/sessions', sessionData);
@@ -167,6 +180,45 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
+  if (!stripePromise) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-lg max-w-md w-full max-h-screen overflow-y-auto">
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Payment Configuration Required</h2>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="text-center">
+              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Stripe Not Configured</h3>
+              <p className="text-gray-600 mb-6">
+                Payment processing is not configured. Please add your Stripe publishable key to the environment variables.
+              </p>
+              <button
+                onClick={onClose}
+                className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Elements stripe={stripePromise}>
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -176,7 +228,7 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
             <h2 className="text-2xl font-bold">
               Book Session with {mentor?.firstName} {mentor?.lastName}
             </h2>
-            <button 
+            <button
               onClick={onClose}
               className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
             >
@@ -214,10 +266,10 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
             )}
 
             {step === 3 && (
-              <ConfirmationStep 
+              <ConfirmationStep
                 bookingData={bookingData}
                 mentor={mentor}
-                onComplete={handlePaymentComplete} 
+                onComplete={handlePaymentComplete}
               />
             )}
           </div>

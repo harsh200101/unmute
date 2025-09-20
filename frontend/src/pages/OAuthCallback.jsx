@@ -38,38 +38,39 @@ const OAuthCallback = () => {
 
         setProgress(40);
 
-        // Check required parameters
+        // Check for tokens (processed OAuth) or code (direct OAuth)
+        const accessToken = searchParams.get('accessToken');
+        const refreshToken = searchParams.get('refreshToken');
         const code = searchParams.get('code');
         const state = searchParams.get('state');
-        
-        if (!code) {
-          throw new Error('Authorization code not found in callback');
+
+        // If we have tokens, this is a processed callback
+        if (accessToken && refreshToken) {
+          // Handle processed OAuth callback
+          const result = await handleOAuthCallback(searchParams);
+          if (result.success) {
+            setProgress(100);
+            setTimeout(() => {
+              const redirectTo = localStorage.getItem('oauth_redirect') || '/dashboard';
+              localStorage.removeItem('oauth_redirect');
+              navigate(redirectTo, { replace: true });
+            }, 1000);
+          } else {
+            throw new Error(result.error || 'OAuth login failed');
+          }
+          return;
         }
 
-        if (!state) {
-          throw new Error('State parameter missing from callback');
+        // If we have code and state, this is a direct OAuth callback
+        if (code && state) {
+          // This shouldn't happen in current flow, but handle it
+          throw new Error('Direct OAuth callback not supported. Please use the login button.');
         }
+
+        // No valid parameters
+        throw new Error('Invalid OAuth callback parameters');
 
         setProgress(60);
-
-        // Process OAuth callback through AuthContext
-        const result = await handleOAuthCallback(searchParams);
-        
-        setProgress(80);
-
-        if (result.success) {
-          setProgress(100);
-          
-          // Small delay for smooth UX
-          setTimeout(() => {
-            // Redirect to intended destination or dashboard
-            const redirectTo = localStorage.getItem('oauth_redirect') || '/dashboard';
-            localStorage.removeItem('oauth_redirect');
-            navigate(redirectTo, { replace: true });
-          }, 1000);
-        } else {
-          throw new Error(result.error || 'OAuth login failed');
-        }
 
       } catch (err) {
         console.error('OAuth callback error:', err);

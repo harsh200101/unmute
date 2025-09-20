@@ -185,14 +185,15 @@ router.get('/google',
 
 // Google OAuth Callback
 router.get('/google/callback',
-  passport.authenticate('google', { 
-    failureRedirect: `${process.env.CLIENT_URL}/login?error=oauth_failed`,
-    session: false 
+  passport.authenticate('google', {
+    failureRedirect: `${process.env.CLIENT_URL}/oauth/callback?error=oauth_failed`,
+    session: false
   }),
   (req, res) => {
     try {
       const { user, tokens } = req.user;
-      
+      const { state } = req.query; // Get state from Google's callback
+
       // Set secure HTTP-only cookies for tokens (optional)
       if (process.env.NODE_ENV === 'production') {
         res.cookie('accessToken', tokens.accessToken, {
@@ -201,7 +202,7 @@ router.get('/google/callback',
           sameSite: 'strict',
           maxAge: 24 * 60 * 60 * 1000 // 24 hours
         });
-        
+
         res.cookie('refreshToken', tokens.refreshToken, {
           httpOnly: true,
           secure: true,
@@ -209,10 +210,14 @@ router.get('/google/callback',
           maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         });
       }
-      
+
       // Redirect to frontend with success
-      const redirectUrl = new URL(`${process.env.CLIENT_URL}/auth/callback`);
-      redirectUrl.searchParams.set('token', tokens.accessToken);
+      const redirectUrl = new URL(`${process.env.CLIENT_URL}/oauth/callback`);
+      redirectUrl.searchParams.set('accessToken', tokens.accessToken);
+      redirectUrl.searchParams.set('refreshToken', tokens.refreshToken);
+      if (state) {
+        redirectUrl.searchParams.set('state', state); // Pass state for CSRF validation
+      }
       redirectUrl.searchParams.set('user', encodeURIComponent(JSON.stringify({
         id: user.id,
         email: user.email,
@@ -220,13 +225,13 @@ router.get('/google/callback',
         lastName: user.lastName,
         role: user.role
       })));
-      
+
       res.redirect(redirectUrl.toString());
-      
+
     } catch (error) {
-      console.error('❌ OAuth callback error:', error);
-      res.redirect(`${process.env.CLIENT_URL}/login?error=callback_failed`);
-    }
+       console.error('❌ OAuth callback error:', error);
+       res.redirect(`${process.env.CLIENT_URL}/oauth/callback?error=callback_failed`);
+     }
   }
 );
 

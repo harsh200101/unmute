@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import ReviewCard from '../components/ReviewCard';
 import LoadingSpinner from '../components/LoadingSpinner';
-import sessionController from '../controllers/sessionController';
+import BookingModal from '../components/BookingModal';
 import { toast } from 'react-hot-toast';
 
 const MentorProfile = () => {
@@ -14,16 +14,9 @@ const MentorProfile = () => {
   // State management
   const [mentor, setMentor] = useState(null);
   const [reviews, setReviews] = useState([]);
-  const [availability, setAvailability] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
-  const [sessionDuration, setSessionDuration] = useState(60);
-  const [sessionType, setSessionType] = useState('video');
-  const [sessionNotes, setSessionNotes] = useState('');
-  const [isBooking, setIsBooking] = useState(false);
 
   // Pagination for reviews
   const [reviewsPage, setReviewsPage] = useState(1);
@@ -42,14 +35,7 @@ const MentorProfile = () => {
           throw new Error('Mentor not found');
         }
         const mentorData = await mentorResponse.json();
-        setMentor(mentorData.data);
-
-        // Load mentor availability
-        const availabilityResponse = await sessionController.checkMentorAvailability(
-          mentorId, 
-          new Date().toISOString().split('T')[0]
-        );
-        setAvailability(availabilityResponse.availability || []);
+        setMentor(mentorData.data.mentor);
 
         // Load reviews
         await loadReviews(1);
@@ -92,49 +78,6 @@ const MentorProfile = () => {
     }
   };
 
-  // Handle booking submission
-  const handleBookingSubmit = async () => {
-    if (!isAuthenticated) {
-      navigate('/login', { 
-        state: { 
-          from: `/mentors/${mentorId}`,
-          message: 'Please log in to book a session'
-        }
-      });
-      return;
-    }
-
-    if (!selectedDate || !selectedTime) {
-      toast.error('Please select a date and time');
-      return;
-    }
-
-    setIsBooking(true);
-    try {
-      const scheduledAt = new Date(`${selectedDate}T${selectedTime}`);
-      
-      const sessionData = {
-        mentorId,
-        title: `Session with ${mentor.user_name}`,
-        sessionType,
-        scheduledAt: scheduledAt.toISOString(),
-        durationMinutes: sessionDuration,
-        notes: sessionNotes
-      };
-
-      const result = await sessionController.createSession(sessionData);
-      
-      if (result.success) {
-        toast.success('Session booked successfully!');
-        setShowBookingModal(false);
-        navigate('/sessions');
-      }
-    } catch (error) {
-      console.error('Booking error:', error);
-    } finally {
-      setIsBooking(false);
-    }
-  };
 
   // Handle helpful vote on reviews
   const handleHelpfulVote = async (reviewId) => {
@@ -445,131 +388,21 @@ const MentorProfile = () => {
               </div>
             </div>
 
-            {/* Available Times */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Available Times</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                This mentor typically responds within {mentor.response_time_hours || 24} hours
-              </p>
-              <button
-                onClick={() => setShowBookingModal(true)}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-              >
-                View Availability
-              </button>
-            </div>
           </div>
         </div>
       </div>
 
       {/* Booking Modal */}
-      {showBookingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">Book Session</h3>
-                <button
-                  onClick={() => setShowBookingModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                {/* Date Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                {/* Time Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
-                  <input
-                    type="time"
-                    value={selectedTime}
-                    onChange={(e) => setSelectedTime(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                {/* Duration */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Duration</label>
-                  <select
-                    value={sessionDuration}
-                    onChange={(e) => setSessionDuration(parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value={30}>30 minutes</option>
-                    <option value={60}>1 hour</option>
-                    <option value={90}>1.5 hours</option>
-                    <option value={120}>2 hours</option>
-                  </select>
-                </div>
-
-                {/* Session Type */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Session Type</label>
-                  <select
-                    value={sessionType}
-                    onChange={(e) => setSessionType(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="video">Video Call</option>
-                    <option value="voice">Voice Call</option>
-                    <option value="chat">Chat Session</option>
-                  </select>
-                </div>
-
-                {/* Notes */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
-                  <textarea
-                    value={sessionNotes}
-                    onChange={(e) => setSessionNotes(e.target.value)}
-                    placeholder="What would you like to discuss in this session?"
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  />
-                </div>
-
-                {/* Price Display */}
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium text-gray-900">Total Cost:</span>
-                    <span className="text-2xl font-bold text-gray-900">
-                      ${((mentor.hourly_rate || 75) * (sessionDuration / 60)).toFixed(2)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-1">
-                    ${mentor.hourly_rate || 75}/hour × {sessionDuration} minutes
-                  </p>
-                </div>
-
-                {/* Booking Button */}
-                <button
-                  onClick={handleBookingSubmit}
-                  disabled={isBooking || !selectedDate || !selectedTime}
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2"
-                >
-                  {isBooking ? <LoadingSpinner size="sm" /> : '💳 Book & Pay'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <BookingModal
+        mentor={{
+          id: mentor?.id,
+          firstName: mentor?.firstName || 'Mentor',
+          lastName: mentor?.lastName || '',
+          hourlyRate: mentor?.hourlyRate || 75
+        }}
+        isOpen={showBookingModal}
+        onClose={() => setShowBookingModal(false)}
+      />
     </div>
   );
 };

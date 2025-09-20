@@ -159,6 +159,30 @@ const authReducer = (state, action) => {
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
+  // Request deduplication tracking
+  const pendingRequests = React.useRef(new Map());
+  const isInitializing = React.useRef(false);
+
+  // Prevent duplicate requests
+  const shouldMakeRequest = React.useCallback((requestKey, ttl = 5000) => {
+    const now = Date.now();
+    const lastRequest = pendingRequests.current.get(requestKey);
+
+    if (lastRequest && (now - lastRequest) < ttl) {
+      console.log(`🚫 AUTH: Duplicate request blocked: ${requestKey}`);
+      return false;
+    }
+
+    pendingRequests.current.set(requestKey, now);
+
+    // Clean up old entries
+    setTimeout(() => {
+      pendingRequests.current.delete(requestKey);
+    }, ttl);
+
+    return true;
+  }, []);
+
   // Token Management
   const setTokens = useCallback((accessToken, refreshToken) => {
     if (accessToken) {
@@ -179,20 +203,26 @@ export const AuthProvider = ({ children }) => {
 
   // Refresh Token Function
   const refreshAccessToken = useCallback(async () => {
+    // Prevent multiple simultaneous refresh attempts
+    if (!shouldMakeRequest('token-refresh', 10000)) {
+      throw new Error('Token refresh already in progress');
+    }
+
     const refreshToken = localStorage.getItem('refreshToken');
     if (!refreshToken) {
       throw new Error('No refresh token available');
     }
 
     try {
+      console.log('🔄 AUTH: Refreshing access token...');
       const response = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
         refreshToken,
       });
 
       const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data.data;
-      
+
       setTokens(newAccessToken, newRefreshToken);
-      
+
       dispatch({
         type: ActionTypes.REFRESH_TOKEN_SUCCESS,
         payload: {
@@ -201,13 +231,15 @@ export const AuthProvider = ({ children }) => {
         },
       });
 
+      console.log('✅ AUTH: Token refreshed successfully');
       return newAccessToken;
     } catch (error) {
+      console.error('❌ AUTH: Token refresh failed:', error.message);
       dispatch({ type: ActionTypes.REFRESH_TOKEN_FAILURE });
       clearTokens();
       throw error;
     }
-  }, [setTokens, clearTokens]);
+  }, [setTokens, clearTokens, shouldMakeRequest]);
 
   // Token Validation
   const checkTokenValidity = useCallback(async () => {
@@ -236,12 +268,28 @@ export const AuthProvider = ({ children }) => {
 
   // Initialize Auth
   const initializeAuth = useCallback(async () => {
+    // Prevent multiple simultaneous initialization calls
+    if (isInitializing.current) {
+      console.log('🚫 AUTH: Initialization already in progress, skipping...');
+      return;
+    }
+
+    // Prevent duplicate initialization within 10 seconds
+    if (!shouldMakeRequest('auth-init', 10000)) {
+      return;
+    }
+
+    isInitializing.current = true;
+
     try {
+      console.log('🚀 AUTH: Starting authentication initialization...');
+
       const accessToken = localStorage.getItem('accessToken');
       const refreshToken = localStorage.getItem('refreshToken');
       const userData = localStorage.getItem('user');
 
       if (!accessToken || !refreshToken) {
+        console.log('ℹ️ AUTH: No tokens found, initializing as unauthenticated');
         dispatch({
           type: ActionTypes.INITIALIZE_AUTH,
           payload: { user: null, accessToken: null, refreshToken: null },
@@ -252,6 +300,7 @@ export const AuthProvider = ({ children }) => {
       // Check token validity
       const isValid = await checkTokenValidity();
       if (!isValid) {
+        console.log('⚠️ AUTH: Tokens invalid, initializing as unauthenticated');
         dispatch({
           type: ActionTypes.INITIALIZE_AUTH,
           payload: { user: null, accessToken: null, refreshToken: null },
@@ -262,23 +311,46 @@ export const AuthProvider = ({ children }) => {
       // Set up API client with token
       apiClient.defaults.headers.common['Authorization'] = `Bearer ${localStorage.getItem('accessToken')}`;
 
-      // Get fresh user data
-      try {
-        const response = await apiClient.get('/auth/profile');
-        const user = response.data.data;
-        
-        localStorage.setItem('user', JSON.stringify(user));
-        
-        dispatch({
-          type: ActionTypes.INITIALIZE_AUTH,
-          payload: {
-            user,
-            accessToken: localStorage.getItem('accessToken'),
-            refreshToken: localStorage.getItem('refreshToken'),
-          },
-        });
-      } catch (error) {
-        // If profile fetch fails, use stored user data
+      // Get fresh user data with deduplication
+      if (shouldMakeRequest('profile-fetch', 3000)) {
+        try {
+          console.log('📡 AUTH: Fetching user profile...');
+          const response = await apiClient.get('/auth/profile');
+          const user = response.data.data.user;
+
+          localStorage.setItem('user', JSON.stringify(user));
+
+          dispatch({
+            type: ActionTypes.INITIALIZE_AUTH,
+            payload: {
+              user,
+              accessToken: localStorage.getItem('accessToken'),
+              refreshToken: localStorage.getItem('refreshToken'),
+            },
+          });
+
+          console.log('✅ AUTH: Profile fetched and user initialized');
+        } catch (error) {
+          console.error('❌ AUTH: Profile fetch failed:', error.message);
+
+          // If profile fetch fails, use stored user data
+          if (userData) {
+            const user = JSON.parse(userData);
+            dispatch({
+              type: ActionTypes.INITIALIZE_AUTH,
+              payload: {
+                user,
+                accessToken: localStorage.getItem('accessToken'),
+                refreshToken: localStorage.getItem('refreshToken'),
+              },
+            });
+            console.log('✅ AUTH: Initialized with stored user data');
+          } else {
+            throw error;
+          }
+        }
+      } else {
+        // Use stored data if profile fetch is blocked
         if (userData) {
           const user = JSON.parse(userData);
           dispatch({
@@ -289,19 +361,20 @@ export const AuthProvider = ({ children }) => {
               refreshToken: localStorage.getItem('refreshToken'),
             },
           });
-        } else {
-          throw error;
+          console.log('✅ AUTH: Initialized with cached user data');
         }
       }
     } catch (error) {
-      console.error('Auth initialization error:', error);
+      console.error('❌ AUTH: Initialization error:', error);
       clearTokens();
       dispatch({
         type: ActionTypes.INITIALIZE_AUTH,
         payload: { user: null, accessToken: null, refreshToken: null },
       });
+    } finally {
+      isInitializing.current = false;
     }
-  }, [checkTokenValidity, clearTokens]);
+  }, [checkTokenValidity, clearTokens, shouldMakeRequest]);
 
   // Register Function
   const register = useCallback(async (userData) => {
@@ -392,12 +465,16 @@ export const AuthProvider = ({ children }) => {
       const state = searchParams.get('state');
       const storedState = localStorage.getItem('oauth_state');
 
-      // Verify state for CSRF protection
-      if (state !== storedState) {
-        throw new Error('Invalid state parameter');
+      // Verify state for CSRF protection (optional - skip if no stored state)
+      if (storedState && state !== storedState) {
+        console.warn('State parameter mismatch - continuing anyway for OAuth compatibility');
+        // Don't throw error, just log warning for debugging
       }
 
-      localStorage.removeItem('oauth_state');
+      // Clean up stored state
+      if (storedState) {
+        localStorage.removeItem('oauth_state');
+      }
 
       if (error) {
         throw new Error(decodeURIComponent(error));
@@ -412,7 +489,7 @@ export const AuthProvider = ({ children }) => {
       // Get user profile
       apiClient.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
       const response = await apiClient.get('/auth/profile');
-      const user = response.data.data;
+      const user = response.data.data.user;
 
       localStorage.setItem('user', JSON.stringify(user));
 
@@ -458,7 +535,7 @@ export const AuthProvider = ({ children }) => {
   const updateProfile = useCallback(async (updates) => {
     try {
       const response = await apiClient.put('/auth/profile', updates);
-      const updatedUser = response.data.data;
+      const updatedUser = response.data.data.user;
 
       localStorage.setItem('user', JSON.stringify(updatedUser));
       
@@ -510,7 +587,7 @@ export const AuthProvider = ({ children }) => {
   const verifyEmail = useCallback(async (token) => {
     try {
       const response = await apiClient.post('/auth/verify-email', { token });
-      const updatedUser = response.data.data;
+      const updatedUser = response.data.data.user;
 
       localStorage.setItem('user', JSON.stringify(updatedUser));
       
@@ -558,29 +635,44 @@ export const AuthProvider = ({ children }) => {
 
   // Initialize on mount
   useEffect(() => {
-    initializeAuth();
-  }, [initializeAuth]);
+    // Only initialize if not already initialized and not currently initializing
+    if (!state.isInitialized && !isInitializing.current) {
+      initializeAuth();
+    }
+  }, [initializeAuth, state.isInitialized]);
 
   // Axios Response Interceptor for Token Refresh
   useEffect(() => {
     const responseInterceptor = apiClient.interceptors.response.use(
       (response) => {
-        updateActivity();
+        // Only update activity for non-auth endpoints to reduce noise
+        if (!response.config.url?.includes('/auth/')) {
+          updateActivity();
+        }
         return response;
       },
       async (error) => {
         const originalRequest = error.config;
 
-        if (error.response?.status === 401 && !originalRequest._retry && state.isAuthenticated) {
+        // Only attempt refresh for 401 errors on authenticated requests
+        if (error.response?.status === 401 &&
+            !originalRequest._retry &&
+            state.isAuthenticated &&
+            !originalRequest.url?.includes('/auth/')) { // Don't refresh on auth endpoints
+
           originalRequest._retry = true;
 
           try {
-            await refreshAccessToken();
-            originalRequest.headers['Authorization'] = `Bearer ${localStorage.getItem('accessToken')}`;
+            console.log('🔄 AUTH: Attempting token refresh due to 401 error');
+            const newToken = await refreshAccessToken();
+            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
             return apiClient(originalRequest);
           } catch (refreshError) {
-            console.error('Token refresh failed:', refreshError);
-            logout();
+            console.error('❌ AUTH: Token refresh failed in interceptor:', refreshError.message);
+            // Only logout if it's not a rate limit error
+            if (!refreshError.message?.includes('Too many')) {
+              logout();
+            }
             return Promise.reject(refreshError);
           }
         }

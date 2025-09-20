@@ -207,14 +207,19 @@ router.get('/google/callback',
 
       // Strategy 3: URL Parameters (Default fallback)
       const params = new URLSearchParams({
-        access_token: tokens.accessToken,
-        refresh_token: tokens.refreshToken,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
         expires_in: tokens.expiresIn,
         user: JSON.stringify(userData),
         method: 'url_params'
       });
 
-      const redirectUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/callback?${params.toString()}`;
+      // Add state parameter if available for CSRF validation
+      if (req.query.state) {
+        params.set('state', req.query.state);
+      }
+
+      const redirectUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/oauth/callback?${params.toString()}`;
       
       // Security: Log token distribution method
       console.log('🔐 Tokens distributed via URL parameters (consider using secure cookies in production)');

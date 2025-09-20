@@ -128,9 +128,9 @@ exports.createSession = async (req, res) => {
 
     // Use transaction for data consistency
     const result = await db.transaction(async (client) => {
-      // Get mentor details with pricing - FIXED: Added u.id as user_id
+      // Get mentor details with pricing - FIXED: Use m.timezone instead of u.timezone
       const mentorQuery = `
-        SELECT 
+        SELECT
           m.id,
           m.hourly_rate,
           m.currency,
@@ -139,10 +139,10 @@ exports.createSession = async (req, res) => {
           m.min_session_duration,
           m.max_session_duration,
           m.advance_booking_days,
+          m.timezone as mentor_timezone,
           u.id as user_id,
           u.first_name,
-          u.last_name,
-          u.timezone as mentor_timezone
+          u.last_name
         FROM mentors m
         JOIN users u ON m.user_id = u.id
         WHERE m.id = $1 AND m.status = 'active' AND m.verification_status = 'verified'
@@ -199,7 +199,7 @@ exports.createSession = async (req, res) => {
       }
 
       // Determine session status
-      const sessionStatus = mentor.auto_accept_bookings ? 'confirmed' : 'pending';
+      const sessionStatus = mentor.auto_accept_bookings ? 'confirmed' : 'scheduled';
 
       // Insert session
       const sessionQuery = `

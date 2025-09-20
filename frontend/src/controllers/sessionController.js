@@ -6,6 +6,35 @@ import { toast } from 'react-hot-toast';
  * Integrates with backend API endpoints for comprehensive session management
  */
 class SessionController {
+  constructor() {
+    this.pendingRequests = new Map(); // Track pending requests to prevent duplicates
+  }
+
+  /**
+   * Prevent duplicate requests within a time window
+   * @param {string} requestKey - Unique key for the request
+   * @param {number} ttl - Time to live in milliseconds (default: 3000ms)
+   * @param {boolean} force - Force the request even if duplicate (for retries)
+   * @returns {boolean} - True if request should proceed, false if duplicate
+   */
+  shouldMakeRequest(requestKey, ttl = 3000, force = false) {
+    const now = Date.now();
+    const lastRequest = this.pendingRequests.get(requestKey);
+
+    if (!force && lastRequest && (now - lastRequest) < ttl) {
+      console.log(`🚫 DUPLICATE REQUEST BLOCKED: ${requestKey} (${now - lastRequest}ms ago)`);
+      return false;
+    }
+
+    this.pendingRequests.set(requestKey, now);
+
+    // Clean up old entries after TTL + buffer
+    setTimeout(() => {
+      this.pendingRequests.delete(requestKey);
+    }, ttl + 1000);
+
+    return true;
+  }
   
   /**
    * Create a new session booking
@@ -15,14 +44,14 @@ class SessionController {
   async createSession(sessionData) {
     try {
       const response = await apiClient.post('/sessions', {
-        mentor_id: sessionData.mentorId,
+        mentorId: sessionData.mentorId,
         title: sessionData.title,
         description: sessionData.description,
-        session_type: sessionData.sessionType || 'video',
-        scheduled_at: sessionData.scheduledAt,
-        duration_minutes: sessionData.durationMinutes,
+        sessionType: sessionData.sessionType || 'video',
+        scheduledAt: sessionData.scheduledAt,
+        durationMinutes: sessionData.durationMinutes,
         timezone: sessionData.timezone || 'UTC',
-        mentee_notes: sessionData.notes
+        menteeNotes: sessionData.notes
       });
 
       const session = response.data.data;
@@ -275,16 +304,54 @@ class SessionController {
    * @param {number} limit - Number of sessions to fetch
    * @returns {Promise<Object>} Upcoming sessions
    */
-  async getUpcomingSessions(limit = 5) {
+  async getUpcomingSessions(limit = 5, force = false) {
+    const requestKey = `upcoming-${limit}`;
+
+    // Prevent duplicate requests unless forced
+    if (!force && !this.shouldMakeRequest(requestKey, 2000)) {
+      console.log('🚫 FRONTEND: Duplicate upcoming sessions request blocked');
+      throw new Error('Request already in progress');
+    }
+
+    // Force the request if needed
+    if (force) {
+      this.shouldMakeRequest(requestKey, 2000, true);
+    }
+
     try {
+      console.log('🚀 FRONTEND: Calling getUpcomingSessions with limit:', limit);
+      console.log('🚀 FRONTEND: API URL:', `/sessions/upcoming?limit=${limit}`);
+      console.log('🚀 FRONTEND: Full API endpoint:', `${apiClient.defaults.baseURL}/sessions/upcoming?limit=${limit}`);
+
       const response = await apiClient.get(`/sessions/upcoming?limit=${limit}`);
+
+      console.log('✅ FRONTEND: API Response received');
+      console.log('✅ FRONTEND: Response status:', response.status);
+      console.log('✅ FRONTEND: Response data:', response.data);
+      console.log('✅ FRONTEND: Sessions data:', response.data.data);
+
+      // Fix: Extract the upcomingSessions array from the response
+      const sessionsData = response.data.data;
+      console.log('🔍 FRONTEND: Raw sessions data:', sessionsData);
+      const upcomingSessions = sessionsData?.upcomingSessions || [];
+      console.log('🔍 FRONTEND: Extracted upcoming sessions:', upcomingSessions);
+      console.log('🔍 FRONTEND: Sessions count:', upcomingSessions.length);
+
       return {
         success: true,
-        sessions: response.data.data
+        sessions: upcomingSessions,
+        count: sessionsData?.count || 0
       };
     } catch (error) {
+      console.error('❌ FRONTEND: Upcoming sessions error');
+      console.error('❌ FRONTEND: Error message:', error.message);
+      console.error('❌ FRONTEND: Error response:', error.response);
+      console.error('❌ FRONTEND: Error status:', error.response?.status);
+      console.error('❌ FRONTEND: Error data:', error.response?.data);
+      console.error('❌ FRONTEND: Error config:', error.config);
+
       const errorMessage = error.response?.data?.message || 'Failed to fetch upcoming sessions';
-      console.error('Upcoming sessions error:', errorMessage);
+      console.error('❌ FRONTEND: Final error message:', errorMessage);
       throw new Error(errorMessage);
     }
   }
@@ -404,15 +471,26 @@ class SessionController {
    * @returns {Promise<Object>} Session statistics
    */
   async getSessionStats(timeframe = 'month') {
+    const requestKey = `stats-${timeframe}`;
+
+    // Prevent duplicate requests
+    if (!this.shouldMakeRequest(requestKey, 2000)) {
+      console.log('🚫 FRONTEND: Duplicate session stats request blocked');
+      throw new Error('Request already in progress');
+    }
+
     try {
-      const response = await apiClient.get(`/sessions/stats?timeframe=${timeframe}`);
+      console.log('🚀 FRONTEND: Calling getSessionStats with timeframe:', timeframe);
+      const response = await apiClient.get(`/sessions/my-sessions/stats?timeframe=${timeframe}`);
+      console.log('✅ FRONTEND: Session stats response:', response.data.data);
+
       return {
         success: true,
         stats: response.data.data
       };
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Failed to fetch session statistics';
-      console.error('Session stats error:', errorMessage);
+      console.error('❌ FRONTEND: Session stats error:', errorMessage);
       throw new Error(errorMessage);
     }
   }

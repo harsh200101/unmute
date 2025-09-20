@@ -2,7 +2,7 @@ import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
 // Environment configuration
-const API_BASE_URL =  'http://localhost:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
 const REQUEST_TIMEOUT = 30000; // 30 seconds
 
 // Create axios instance
@@ -325,16 +325,16 @@ export const endpoints = {
   sessions: {
     list: '/sessions',
     create: '/sessions',
-    details: (id) => `/sessions/${id}`,
-    update: (id) => `/sessions/${id}`,
-    delete: (id) => `/sessions/${id}`,
-    join: (id) => `/sessions/${id}/join`,
-    start: (id) => `/sessions/${id}/start`,
-    complete: (id) => `/sessions/${id}/complete`,
-    cancel: (id) => `/sessions/${id}/cancel`,
-    reschedule: (id) => `/sessions/${id}/reschedule`,
-    notes: (id) => `/sessions/${id}/notes`,
-    review: (id) => `/sessions/${id}/review`,
+    details: (id) => `/sessions/details/${id}`,
+    update: (id) => `/sessions/details/${id}`,
+    delete: (id) => `/sessions/details/${id}`,
+    join: (id) => `/sessions/details/${id}/join`,
+    start: (id) => `/sessions/details/${id}/start`,
+    complete: (id) => `/sessions/details/${id}/complete`,
+    cancel: (id) => `/sessions/details/${id}/cancel`,
+    reschedule: (id) => `/sessions/details/${id}/reschedule`,
+    notes: (id) => `/sessions/details/${id}/notes`,
+    review: (id) => `/sessions/details/${id}/review`,
   },
 
   // Mentor endpoints

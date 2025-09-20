@@ -88,11 +88,11 @@ router.get('/featured',
 
       console.log('🔍 Fetching featured mentors');
 
-      // Simplified query to avoid complex joins that might fail
+      // Fixed query - bio column is in users table, not mentors
       const query = `
-        SELECT 
+        SELECT
           m.id,
-          m.bio,
+          u.bio,  -- Fixed: bio is in users table
           m.specializations,
           m.hourly_rate,
           m.years_experience,
@@ -106,7 +106,7 @@ router.get('/featured',
           u.avatar_url
         FROM mentors m
         INNER JOIN users u ON m.user_id = u.id
-        WHERE m.status = 'active' 
+        WHERE m.status = 'active'
           AND m.verification_status = 'verified'
           AND u.is_verified = true
           AND (m.is_featured = true OR m.is_top_mentor = true)

@@ -58,6 +58,13 @@ const UserProfile = () => {
   
   const [formErrors, setFormErrors] = useState({});
 
+  // Helper function to safely render values
+  const safeRender = (value, fallback = 'Not provided') => {
+    if (value == null || value === '') return fallback;
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  };
+
   // Available options
   const languageOptions = [
     'English', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 
@@ -72,6 +79,21 @@ const UserProfile = () => {
   // Initialize form data
   useEffect(() => {
     if (user) {
+      console.log('DEBUG: User object:', user);
+      console.log('DEBUG: User fields types and values:');
+      console.log('firstName:', typeof user.firstName, user.firstName);
+      console.log('lastName:', typeof user.lastName, user.lastName);
+      console.log('email:', typeof user.email, user.email);
+      console.log('phone:', typeof user.phone, user.phone);
+      console.log('bio:', typeof user.bio, user.bio);
+      console.log('location:', typeof user.location, user.location);
+      console.log('timezone:', typeof user.timezone, user.timezone);
+      console.log('languages:', typeof user.languages, user.languages);
+      console.log('website:', typeof user.website, user.website);
+      console.log('linkedinUrl:', typeof user.linkedinUrl, user.linkedinUrl);
+      console.log('githubUrl:', typeof user.githubUrl, user.githubUrl);
+      console.log('avatarUrl:', typeof user.avatarUrl, user.avatarUrl);
+
       setProfileData({
         firstName: user.firstName || '',
         lastName: user.lastName || '',
@@ -341,7 +363,7 @@ const UserProfile = () => {
                   />
                 ) : (
                   <span className="text-white text-2xl font-bold">
-                    {user.firstName?.charAt(0)?.toUpperCase() || 'U'}
+                    {typeof user.firstName === 'string' && user.firstName ? user.firstName.charAt(0).toUpperCase() : 'U'}
                   </span>
                 )}
               </div>
@@ -356,9 +378,9 @@ const UserProfile = () => {
             
             <div className="flex-1">
               <h1 className="text-3xl font-bold text-gray-900">
-                {user.firstName} {user.lastName}
+                {safeRender(user.firstName)} {safeRender(user.lastName)}
               </h1>
-              <p className="text-gray-600 mt-1">{user.email}</p>
+              <p className="text-gray-600 mt-1">{safeRender(user.email)}</p>
               {!isEmailVerified() && (
                 <div className="mt-2">
                   <button
@@ -375,7 +397,7 @@ const UserProfile = () => {
                 }`}>
                   {isMentor() ? '👨‍🏫 Mentor' : '🎓 Mentee'}
                 </span>
-                {user.badge_level && (
+                {typeof user.badge_level === 'string' && user.badge_level && (
                   <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                     {user.badge_level.toUpperCase()}
                   </span>
@@ -494,7 +516,7 @@ const UserProfile = () => {
                         />
                       ) : (
                         <span className="text-white text-lg font-bold">
-                          {profileData.firstName?.charAt(0)?.toUpperCase() || 'U'}
+                          {typeof profileData.firstName === 'string' && profileData.firstName ? profileData.firstName.charAt(0).toUpperCase() : 'U'}
                         </span>
                       )}
                     </div>
@@ -531,7 +553,7 @@ const UserProfile = () => {
                     />
                   ) : (
                     <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {user.firstName || 'Not provided'}
+                      {safeRender(user.firstName)}
                     </p>
                   )}
                   {formErrors.firstName && (
@@ -556,7 +578,7 @@ const UserProfile = () => {
                     />
                   ) : (
                     <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {user.lastName || 'Not provided'}
+                      {safeRender(user.lastName)}
                     </p>
                   )}
                   {formErrors.lastName && (
@@ -581,7 +603,7 @@ const UserProfile = () => {
                     />
                   ) : (
                     <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {user.email}
+                      {safeRender(user.email)}
                     </p>
                   )}
                   {formErrors.email && (
@@ -604,7 +626,7 @@ const UserProfile = () => {
                     />
                   ) : (
                     <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {user.phone || 'Not provided'}
+                      {safeRender(user.phone)}
                     </p>
                   )}
                 </div>
@@ -624,7 +646,7 @@ const UserProfile = () => {
                     />
                   ) : (
                     <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {user.location || 'Not provided'}
+                      {safeRender(user.location)}
                     </p>
                   )}
                 </div>
@@ -646,7 +668,7 @@ const UserProfile = () => {
                     </select>
                   ) : (
                     <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {user.timezone || 'UTC'}
+                      {safeRender(user.timezone, 'UTC')}
                     </p>
                   )}
                 </div>
@@ -668,7 +690,7 @@ const UserProfile = () => {
                   />
                 ) : (
                   <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900 min-h-[100px]">
-                    {user.bio || 'No bio provided'}
+                    {safeRender(user.bio, 'No bio provided')}
                   </p>
                 )}
               </div>
@@ -694,10 +716,10 @@ const UserProfile = () => {
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {user.languages && user.languages.length > 0 ? (
+                    {Array.isArray(user.languages) && user.languages.length > 0 ? (
                       user.languages.map(lang => (
                         <span key={lang} className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
-                          {lang}
+                          {safeRender(lang)}
                         </span>
                       ))
                     ) : (
@@ -724,7 +746,7 @@ const UserProfile = () => {
                     />
                   ) : (
                     <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {user.website ? (
+                      {typeof user.website === 'string' && user.website ? (
                         <a href={user.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
                           {user.website}
                         </a>
@@ -750,7 +772,7 @@ const UserProfile = () => {
                     />
                   ) : (
                     <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {user.linkedinUrl ? (
+                      {typeof user.linkedinUrl === 'string' && user.linkedinUrl ? (
                         <a href={user.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
                           LinkedIn Profile
                         </a>
@@ -776,7 +798,7 @@ const UserProfile = () => {
                     />
                   ) : (
                     <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {user.githubUrl ? (
+                      {typeof user.githubUrl === 'string' && user.githubUrl ? (
                         <a href={user.githubUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
                           GitHub Profile
                         </a>

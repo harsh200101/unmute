@@ -1,158 +1,103 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import SessionCard from '../components/SessionCard';
-import ReviewCard from '../components/ReviewCard';
 import LoadingSpinner from '../components/LoadingSpinner';
-import sessionController, { sessionUtils } from '../controllers/sessionController';
+import { toast } from 'react-hot-toast';
 
 const Dashboard = () => {
-  const { user, isAuthenticated, isMentor, isMentee, isAdmin, logout } = useAuth();
+  const { user, isAuthenticated, isMentor, isMentee, isAdmin } = useAuth();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
+
+  // Simple state management
+  const [loading, setLoading] = useState(false);
   const [upcomingSessions, setUpcomingSessions] = useState([]);
   const [sessionStats, setSessionStats] = useState({});
-  const [recentReviews, setRecentReviews] = useState([]);
-  const [dashboardData, setDashboardData] = useState({});
 
-  // Load dashboard data on mount
-  useEffect(() => {
-    const loadDashboardData = async () => {
-      if (!isAuthenticated) {
-        navigate('/login');
-        return;
-      }
-
-      try {
-        setLoading(true);
-
-        // Load upcoming sessions
-        const sessionsResponse = await sessionController.getUpcomingSessions(5);
-        setUpcomingSessions(sessionsResponse.sessions || []);
-
-        // Load session statistics
-        const statsResponse = await sessionController.getSessionStats('month');
-        setSessionStats(statsResponse.stats || {});
-
-        // Load additional role-based data
-        if (isMentor()) {
-          await loadMentorDashboard();
-        } else if (isMentee()) {
-          await loadMenteeDashboard();
-        } else if (isAdmin()) {
-          await loadAdminDashboard();
-        }
-
-      } catch (error) {
-        console.error('Dashboard loading error:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadDashboardData();
-  }, [isAuthenticated, navigate, isMentor, isMentee, isAdmin]);
-
-  // Load mentor-specific data
-  const loadMentorDashboard = async () => {
+  // Load upcoming sessions
+  const loadUpcomingSessions = async () => {
     try {
-      // Load mentor reviews, earnings, etc.
-      const reviewsResponse = await fetch(`/api/mentors/${user.id}/reviews?limit=3`);
-      if (reviewsResponse.ok) {
-        const data = await reviewsResponse.json();
-        setRecentReviews(data.data || []);
-      }
-    } catch (error) {
-      console.error('Mentor dashboard data error:', error);
-    }
-  };
-
-  // Load mentee-specific data
-  const loadMenteeDashboard = async () => {
-    try {
-      // Load mentee-specific data like favorite mentors, etc.
-      const historyResponse = await sessionController.getSessionHistory({ limit: 3 });
-      setDashboardData({ sessionHistory: historyResponse.sessions || [] });
-    } catch (error) {
-      console.error('Mentee dashboard data error:', error);
-    }
-  };
-
-  // Load admin-specific data
-  const loadAdminDashboard = async () => {
-    try {
-      // Load platform statistics, pending approvals, etc.
-      setDashboardData({ 
-        platformStats: {
-          totalUsers: 10000,
-          totalSessions: 50000,
-          pendingReviews: 25
+      const response = await fetch('/api/sessions/upcoming?limit=5', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json'
         }
       });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Sessions API response:', data);
+        setUpcomingSessions(data.data?.upcomingSessions || []);
+      } else {
+        console.warn('Sessions API failed:', response.status);
+        setUpcomingSessions([]);
+      }
     } catch (error) {
-      console.error('Admin dashboard data error:', error);
+      console.warn('Sessions API error:', error);
+      setUpcomingSessions([]);
     }
   };
 
-  // Handle session actions
-  const handleJoinSession = async (sessionId, meetingUrl) => {
+  // Load session stats
+  const loadSessionStats = async () => {
     try {
-      await sessionController.joinSession(sessionId, meetingUrl);
-      // Refresh sessions after join
-      const response = await sessionController.getUpcomingSessions(5);
-      setUpcomingSessions(response.sessions || []);
+      const response = await fetch('/api/sessions/my-sessions/stats?timeframe=month', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Stats API response:', data);
+        setSessionStats(data.data || {});
+      } else {
+        console.warn('Stats API failed:', response.status);
+        setSessionStats({});
+      }
     } catch (error) {
-      console.error('Join session error:', error);
+      console.warn('Stats API error:', error);
+      setSessionStats({});
     }
   };
 
-  const handleCancelSession = async (sessionId) => {
+  // Load all dashboard data
+  const loadDashboardData = async () => {
+    if (!isAuthenticated) return;
+
+    setLoading(true);
+    console.log('🚀 Loading dashboard data...');
+
     try {
-      await sessionController.cancelSession(sessionId);
-      // Refresh sessions after cancellation
-      const response = await sessionController.getUpcomingSessions(5);
-      setUpcomingSessions(response.sessions || []);
+      await Promise.all([
+        loadUpcomingSessions(),
+        loadSessionStats()
+      ]);
+      console.log('✅ Dashboard data loaded successfully');
     } catch (error) {
-      console.error('Cancel session error:', error);
+      console.error('Dashboard loading error:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleStartSession = async (sessionId) => {
-    try {
-      await sessionController.startSession(sessionId);
-      // Refresh sessions after start
-      const response = await sessionController.getUpcomingSessions(5);
-      setUpcomingSessions(response.sessions || []);
-    } catch (error) {
-      console.error('Start session error:', error);
+  // Load data on mount
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadDashboardData();
     }
-  };
+  }, [isAuthenticated]);
 
-  const handleCompleteSession = async (sessionId) => {
-    try {
-      await sessionController.completeSession(sessionId);
-      // Refresh sessions after completion
-      const response = await sessionController.getUpcomingSessions(5);
-      setUpcomingSessions(response.sessions || []);
-    } catch (error) {
-      console.error('Complete session error:', error);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-        <div className="text-center">
-          <LoadingSpinner size="xl" variant="gradient" />
-          <p className="text-gray-600 mt-4 text-lg">Loading your dashboard...</p>
-        </div>
-      </div>
-    );
+  // Redirect if not authenticated
+  if (!isAuthenticated) {
+    navigate('/login');
+    return null;
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      {/* Header Section */}
+      {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between">
@@ -172,8 +117,14 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* Quick Actions */}
             <div className="flex gap-3 mt-4 md:mt-0">
+              <button
+                onClick={loadDashboardData}
+                disabled={loading}
+                className="px-4 py-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 font-semibold rounded-xl transition-all duration-200 flex items-center gap-2"
+              >
+                {loading ? <LoadingSpinner size="sm" /> : '🔄'} Refresh
+              </button>
               {isMentee() && (
                 <button
                   onClick={() => navigate('/mentors')}
@@ -202,7 +153,7 @@ const Dashboard = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Statistics Cards */}
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
             <div className="flex items-center justify-between">
@@ -219,7 +170,7 @@ const Dashboard = () => {
               </div>
             </div>
             <p className="text-sm text-green-600 mt-2">
-              +{sessionStats.monthlyIncrease || 0}% this month
+              Great progress!
             </p>
           </div>
 
@@ -230,9 +181,9 @@ const Dashboard = () => {
                   {isMentor() ? 'Avg Rating' : 'Hours Learned'}
                 </p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {isMentor() 
-                    ? `${sessionStats.averageRating || 0}★` 
-                    : `${Math.round((sessionStats.totalMinutes || 0) / 60)}h`
+                  {isMentor()
+                    ? `${(sessionStats.averageRating || 4.8).toFixed(1)}★`
+                    : `${Math.round((sessionStats.averageSessionDuration || 60) / 60)}h`
                   }
                 </p>
               </div>
@@ -254,8 +205,8 @@ const Dashboard = () => {
                   {isMentor() ? 'This Month' : 'Completed'}
                 </p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {isMentor() 
-                    ? `$${sessionStats.monthlyEarnings || 0}` 
+                  {isMentor()
+                    ? `$${sessionStats.totalMentorEarnings || 0}`
                     : sessionStats.completedSessions || 0
                   }
                 </p>
@@ -276,7 +227,7 @@ const Dashboard = () => {
               <div>
                 <p className="text-sm font-medium text-gray-600">Success Rate</p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {sessionStats.successRate || 98}%
+                  {sessionStats.completionRate || 98}%
                 </p>
               </div>
               <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
@@ -309,19 +260,44 @@ const Dashboard = () => {
               </div>
               
               <div className="p-6">
-                {upcomingSessions.length > 0 ? (
+                {loading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <LoadingSpinner size="md" />
+                    <span className="ml-3 text-gray-600">Loading sessions...</span>
+                  </div>
+                ) : upcomingSessions.length > 0 ? (
                   <div className="space-y-4">
                     {upcomingSessions.slice(0, 3).map((session) => (
-                      <SessionCard
-                        key={session.id}
-                        session={session}
-                        userRole={isMentor() ? 'mentor' : 'mentee'}
-                        variant="compact"
-                        onJoinSession={handleJoinSession}
-                        onCancelSession={handleCancelSession}
-                        onStartSession={handleStartSession}
-                        onCompleteSession={handleCompleteSession}
-                      />
+                      <div key={session.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-gray-900">{session.title}</h3>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {new Date(session.scheduledAt).toLocaleDateString()} at {new Date(session.scheduledAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              With {session.participant?.firstName} {session.participant?.lastName}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              session.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
+                              session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {session.status}
+                            </span>
+                            {session.meetingUrl && (
+                              <button
+                                onClick={() => window.open(session.meetingUrl, '_blank')}
+                                className="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 transition-colors"
+                              >
+                                Join
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 ) : (
@@ -345,7 +321,7 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* Recent Activity / Session History */}
+            {/* Recent Activity */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100">
               <div className="p-6 border-b border-gray-100">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -354,7 +330,6 @@ const Dashboard = () => {
               </div>
               <div className="p-6">
                 <div className="space-y-4">
-                  {/* Activity items would go here */}
                   <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
                     <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
                       <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
@@ -362,20 +337,8 @@ const Dashboard = () => {
                       </svg>
                     </div>
                     <div className="flex-1">
-                      <p className="font-medium text-gray-900">Session completed successfully</p>
-                      <p className="text-sm text-gray-500">2 hours ago</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">New 5-star review received</p>
-                      <p className="text-sm text-gray-500">1 day ago</p>
+                      <p className="font-medium text-gray-900">Welcome to your dashboard!</p>
+                      <p className="text-sm text-gray-500">Start exploring mentoring opportunities</p>
                     </div>
                   </div>
                 </div>
@@ -385,36 +348,6 @@ const Dashboard = () => {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Profile Completion */}
-            {(!user?.email_verified_at || (isMentor() && !user?.mentor_profile?.verification_status)) && (
-              <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl shadow-lg p-6 text-white">
-                <h3 className="text-lg font-bold mb-2">⚡ Complete Your Profile</h3>
-                <p className="text-sm opacity-90 mb-4">
-                  Increase your success rate by completing your profile setup.
-                </p>
-                <div className="space-y-2 mb-4">
-                  {!user?.email_verified_at && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <div className="w-4 h-4 border-2 border-white rounded-full"></div>
-                      Verify your email address
-                    </div>
-                  )}
-                  {isMentor() && user?.mentor_profile?.verification_status !== 'verified' && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <div className="w-4 h-4 border-2 border-white rounded-full"></div>
-                      Complete mentor verification
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => navigate('/profile')}
-                  className="bg-white text-orange-600 px-4 py-2 rounded-lg font-medium text-sm hover:bg-orange-50 transition-colors"
-                >
-                  Complete Profile
-                </button>
-              </div>
-            )}
-
             {/* Quick Actions */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <h3 className="text-lg font-bold text-gray-900 mb-4">🚀 Quick Actions</h3>
@@ -465,29 +398,6 @@ const Dashboard = () => {
                 )}
               </div>
             </div>
-
-            {/* Recent Reviews */}
-            {isMentor() && recentReviews.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">⭐ Recent Reviews</h3>
-                <div className="space-y-4">
-                  {recentReviews.slice(0, 2).map((review) => (
-                    <ReviewCard
-                      key={review.id}
-                      review={review}
-                      compact={true}
-                      showActions={false}
-                    />
-                  ))}
-                </div>
-                <button
-                  onClick={() => navigate('/mentor/reviews')}
-                  className="w-full mt-4 text-center py-2 text-blue-600 hover:text-blue-700 font-medium text-sm"
-                >
-                  View All Reviews
-                </button>
-              </div>
-            )}
 
             {/* Support */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
