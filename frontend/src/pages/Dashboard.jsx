@@ -1,0 +1,523 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import SessionCard from '../components/SessionCard';
+import ReviewCard from '../components/ReviewCard';
+import LoadingSpinner from '../components/LoadingSpinner';
+import sessionController, { sessionUtils } from '../controllers/sessionController';
+
+const Dashboard = () => {
+  const { user, isAuthenticated, isMentor, isMentee, isAdmin, logout } = useAuth();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [upcomingSessions, setUpcomingSessions] = useState([]);
+  const [sessionStats, setSessionStats] = useState({});
+  const [recentReviews, setRecentReviews] = useState([]);
+  const [dashboardData, setDashboardData] = useState({});
+
+  // Load dashboard data on mount
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      if (!isAuthenticated) {
+        navigate('/login');
+        return;
+      }
+
+      try {
+        setLoading(true);
+
+        // Load upcoming sessions
+        const sessionsResponse = await sessionController.getUpcomingSessions(5);
+        setUpcomingSessions(sessionsResponse.sessions || []);
+
+        // Load session statistics
+        const statsResponse = await sessionController.getSessionStats('month');
+        setSessionStats(statsResponse.stats || {});
+
+        // Load additional role-based data
+        if (isMentor()) {
+          await loadMentorDashboard();
+        } else if (isMentee()) {
+          await loadMenteeDashboard();
+        } else if (isAdmin()) {
+          await loadAdminDashboard();
+        }
+
+      } catch (error) {
+        console.error('Dashboard loading error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, [isAuthenticated, navigate, isMentor, isMentee, isAdmin]);
+
+  // Load mentor-specific data
+  const loadMentorDashboard = async () => {
+    try {
+      // Load mentor reviews, earnings, etc.
+      const reviewsResponse = await fetch(`/api/mentors/${user.id}/reviews?limit=3`);
+      if (reviewsResponse.ok) {
+        const data = await reviewsResponse.json();
+        setRecentReviews(data.data || []);
+      }
+    } catch (error) {
+      console.error('Mentor dashboard data error:', error);
+    }
+  };
+
+  // Load mentee-specific data
+  const loadMenteeDashboard = async () => {
+    try {
+      // Load mentee-specific data like favorite mentors, etc.
+      const historyResponse = await sessionController.getSessionHistory({ limit: 3 });
+      setDashboardData({ sessionHistory: historyResponse.sessions || [] });
+    } catch (error) {
+      console.error('Mentee dashboard data error:', error);
+    }
+  };
+
+  // Load admin-specific data
+  const loadAdminDashboard = async () => {
+    try {
+      // Load platform statistics, pending approvals, etc.
+      setDashboardData({ 
+        platformStats: {
+          totalUsers: 10000,
+          totalSessions: 50000,
+          pendingReviews: 25
+        }
+      });
+    } catch (error) {
+      console.error('Admin dashboard data error:', error);
+    }
+  };
+
+  // Handle session actions
+  const handleJoinSession = async (sessionId, meetingUrl) => {
+    try {
+      await sessionController.joinSession(sessionId, meetingUrl);
+      // Refresh sessions after join
+      const response = await sessionController.getUpcomingSessions(5);
+      setUpcomingSessions(response.sessions || []);
+    } catch (error) {
+      console.error('Join session error:', error);
+    }
+  };
+
+  const handleCancelSession = async (sessionId) => {
+    try {
+      await sessionController.cancelSession(sessionId);
+      // Refresh sessions after cancellation
+      const response = await sessionController.getUpcomingSessions(5);
+      setUpcomingSessions(response.sessions || []);
+    } catch (error) {
+      console.error('Cancel session error:', error);
+    }
+  };
+
+  const handleStartSession = async (sessionId) => {
+    try {
+      await sessionController.startSession(sessionId);
+      // Refresh sessions after start
+      const response = await sessionController.getUpcomingSessions(5);
+      setUpcomingSessions(response.sessions || []);
+    } catch (error) {
+      console.error('Start session error:', error);
+    }
+  };
+
+  const handleCompleteSession = async (sessionId) => {
+    try {
+      await sessionController.completeSession(sessionId);
+      // Refresh sessions after completion
+      const response = await sessionController.getUpcomingSessions(5);
+      setUpcomingSessions(response.sessions || []);
+    } catch (error) {
+      console.error('Complete session error:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="text-center">
+          <LoadingSpinner size="xl" variant="gradient" />
+          <p className="text-gray-600 mt-4 text-lg">Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      {/* Header Section */}
+      <div className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold">
+                {user?.first_name?.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">
+                  Welcome back, {user?.first_name}! 👋
+                </h1>
+                <p className="text-gray-600 mt-1">
+                  {isMentor() && "Ready to mentor and inspire today?"}
+                  {isMentee() && "Ready to learn and grow today?"}
+                  {isAdmin() && "Managing the platform like a pro!"}
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="flex gap-3 mt-4 md:mt-0">
+              {isMentee() && (
+                <button
+                  onClick={() => navigate('/mentors')}
+                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center gap-2"
+                >
+                  🔍 Find Mentor
+                </button>
+              )}
+              {isMentor() && (
+                <button
+                  onClick={() => navigate('/mentor/schedule')}
+                  className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center gap-2"
+                >
+                  📅 Manage Schedule
+                </button>
+              )}
+              <button
+                onClick={() => navigate('/profile')}
+                className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-all duration-200 flex items-center gap-2"
+              >
+                ⚙️ Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total Sessions</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">
+                  {sessionStats.totalSessions || 0}
+                </p>
+              </div>
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-sm text-green-600 mt-2">
+              +{sessionStats.monthlyIncrease || 0}% this month
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  {isMentor() ? 'Avg Rating' : 'Hours Learned'}
+                </p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">
+                  {isMentor() 
+                    ? `${sessionStats.averageRating || 0}★` 
+                    : `${Math.round((sessionStats.totalMinutes || 0) / 60)}h`
+                  }
+                </p>
+              </div>
+              <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-sm text-green-600 mt-2">
+              {isMentor() ? 'Excellent feedback!' : 'Keep learning!'}
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  {isMentor() ? 'This Month' : 'Completed'}
+                </p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">
+                  {isMentor() 
+                    ? `$${sessionStats.monthlyEarnings || 0}` 
+                    : sessionStats.completedSessions || 0
+                  }
+                </p>
+              </div>
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-sm text-green-600 mt-2">
+              {isMentor() ? '+15% from last month' : 'Great progress!'}
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Success Rate</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">
+                  {sessionStats.successRate || 98}%
+                </p>
+              </div>
+              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-sm text-green-600 mt-2">Excellent performance!</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Content */}
+          <div className="lg:col-span-2 space-y-8">
+            {/* Upcoming Sessions */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+              <div className="p-6 border-b border-gray-100">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    📅 Upcoming Sessions
+                  </h2>
+                  <button
+                    onClick={() => navigate('/sessions')}
+                    className="text-blue-600 hover:text-blue-700 font-medium text-sm transition-colors"
+                  >
+                    View All
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6">
+                {upcomingSessions.length > 0 ? (
+                  <div className="space-y-4">
+                    {upcomingSessions.slice(0, 3).map((session) => (
+                      <SessionCard
+                        key={session.id}
+                        session={session}
+                        userRole={isMentor() ? 'mentor' : 'mentee'}
+                        variant="compact"
+                        onJoinSession={handleJoinSession}
+                        onCancelSession={handleCancelSession}
+                        onStartSession={handleStartSession}
+                        onCompleteSession={handleCompleteSession}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <p className="text-gray-500 text-lg mb-4">No upcoming sessions</p>
+                    {isMentee() && (
+                      <button
+                        onClick={() => navigate('/mentors')}
+                        className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors"
+                      >
+                        Book Your First Session
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Recent Activity / Session History */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100">
+              <div className="p-6 border-b border-gray-100">
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  📊 Recent Activity
+                </h2>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  {/* Activity items would go here */}
+                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
+                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">Session completed successfully</p>
+                      <p className="text-sm text-gray-500">2 hours ago</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">New 5-star review received</p>
+                      <p className="text-sm text-gray-500">1 day ago</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Profile Completion */}
+            {(!user?.email_verified_at || (isMentor() && !user?.mentor_profile?.verification_status)) && (
+              <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl shadow-lg p-6 text-white">
+                <h3 className="text-lg font-bold mb-2">⚡ Complete Your Profile</h3>
+                <p className="text-sm opacity-90 mb-4">
+                  Increase your success rate by completing your profile setup.
+                </p>
+                <div className="space-y-2 mb-4">
+                  {!user?.email_verified_at && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <div className="w-4 h-4 border-2 border-white rounded-full"></div>
+                      Verify your email address
+                    </div>
+                  )}
+                  {isMentor() && user?.mentor_profile?.verification_status !== 'verified' && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <div className="w-4 h-4 border-2 border-white rounded-full"></div>
+                      Complete mentor verification
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => navigate('/profile')}
+                  className="bg-white text-orange-600 px-4 py-2 rounded-lg font-medium text-sm hover:bg-orange-50 transition-colors"
+                >
+                  Complete Profile
+                </button>
+              </div>
+            )}
+
+            {/* Quick Actions */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">🚀 Quick Actions</h3>
+              <div className="space-y-3">
+                {isMentee() && (
+                  <>
+                    <button
+                      onClick={() => navigate('/mentors')}
+                      className="w-full text-left p-3 rounded-xl bg-blue-50 hover:bg-blue-100 transition-colors group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-blue-600">🔍</span>
+                        <span className="font-medium text-gray-900 group-hover:text-blue-700">Find Mentors</span>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => navigate('/sessions')}
+                      className="w-full text-left p-3 rounded-xl bg-green-50 hover:bg-green-100 transition-colors group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-green-600">📅</span>
+                        <span className="font-medium text-gray-900 group-hover:text-green-700">My Sessions</span>
+                      </div>
+                    </button>
+                  </>
+                )}
+                {isMentor() && (
+                  <>
+                    <button
+                      onClick={() => navigate('/mentor/schedule')}
+                      className="w-full text-left p-3 rounded-xl bg-purple-50 hover:bg-purple-100 transition-colors group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-purple-600">⏰</span>
+                        <span className="font-medium text-gray-900 group-hover:text-purple-700">Manage Schedule</span>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => navigate('/mentor/earnings')}
+                      className="w-full text-left p-3 rounded-xl bg-green-50 hover:bg-green-100 transition-colors group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-green-600">💰</span>
+                        <span className="font-medium text-gray-900 group-hover:text-green-700">View Earnings</span>
+                      </div>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Recent Reviews */}
+            {isMentor() && recentReviews.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">⭐ Recent Reviews</h3>
+                <div className="space-y-4">
+                  {recentReviews.slice(0, 2).map((review) => (
+                    <ReviewCard
+                      key={review.id}
+                      review={review}
+                      compact={true}
+                      showActions={false}
+                    />
+                  ))}
+                </div>
+                <button
+                  onClick={() => navigate('/mentor/reviews')}
+                  className="w-full mt-4 text-center py-2 text-blue-600 hover:text-blue-700 font-medium text-sm"
+                >
+                  View All Reviews
+                </button>
+              </div>
+            )}
+
+            {/* Support */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">❓ Need Help?</h3>
+              <div className="space-y-3">
+                <button
+                  onClick={() => navigate('/support')}
+                  className="w-full text-left p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span>📖</span>
+                    <span className="font-medium text-gray-900">Help Center</span>
+                  </div>
+                </button>
+                <button
+                  onClick={() => navigate('/contact')}
+                  className="w-full text-left p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span>💬</span>
+                    <span className="font-medium text-gray-900">Contact Support</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;
