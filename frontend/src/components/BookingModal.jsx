@@ -13,7 +13,7 @@ const stripePromise = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
 
 const BookingModal = ({ mentor, isOpen, onClose }) => {
   const { isAuthenticated } = useAuth();
-  const [step, setStep] = useState(1); // 1: DateTime, 2: Payment, 3: Confirmation
+  const [step, setStep] = useState(1); // 1: DateTime, 2: Create Session, 3: Payment, 4: Confirmation
   const [bookingData, setBookingData] = useState({
     selectedDate: null,
     selectedTime: null,
@@ -115,10 +115,10 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
       toast.error('Please login to book a session');
       return;
     }
-    setStep(2);
+    setStep(2); // Go to session creation step
   };
 
-  const handleBookingSubmit = async () => {
+  const handleCreateSession = async () => {
     setLoading(true);
     try {
       // Combine date and time
@@ -140,18 +140,65 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
 
       // Updated API endpoint to match backend
       const response = await api.post('/sessions', sessionData);
-      
+
       if (response.data.success) {
-        setPaymentIntent(response.data.data.tokens); // Updated to match backend response
-        setStep(3);
-        toast.success('Session booking initiated! Please complete payment.');
+        setPaymentIntent(response.data.data.paymentIntent); // Get payment intent for payment processing
+        setStep(3); // Go to payment step
+        toast.success('Session created! Please complete payment.');
       } else {
         throw new Error(response.data.message || 'Failed to create session');
       }
     } catch (error) {
-      console.error('Booking error:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to create booking';
+      console.error('Session creation error:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to create session';
       toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePaymentSubmit = async () => {
+    if (!stripe || !elements) {
+      toast.error('Stripe not initialized');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const cardElement = elements.getElement(CardElement);
+
+      // Confirm payment with Stripe
+      const { error, paymentIntent } = await stripe.confirmCardPayment(
+        paymentIntent.client_secret,
+        {
+          payment_method: {
+            card: cardElement,
+          }
+        }
+      );
+
+      if (error) {
+        console.error('Payment error:', error);
+        toast.error(error.message || 'Payment failed');
+        return;
+      }
+
+      if (paymentIntent.status === 'succeeded') {
+        // Payment successful, redirect to payment result page
+        const url = new URL(window.location);
+        url.pathname = '/payment/result';
+        url.searchParams.set('payment_intent', paymentIntent.id);
+        url.searchParams.set('payment_intent_client_secret', paymentIntent.client_secret);
+        url.searchParams.set('redirect_status', 'succeeded');
+        url.searchParams.set('session_id', paymentIntent.metadata.sessionId);
+
+        window.location.href = url.toString();
+      } else {
+        toast.error('Payment processing failed');
+      }
+    } catch (error) {
+      console.error('Payment processing error:', error);
+      toast.error('Payment processing failed');
     } finally {
       setLoading(false);
     }
@@ -255,17 +302,29 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
             )}
 
             {step === 2 && (
-              <PaymentStep
+              <CreateSessionStep
                 bookingData={bookingData}
                 mentor={mentor}
                 calculateFees={calculateFees}
                 onBack={() => setStep(1)}
-                onSubmit={handleBookingSubmit}
+                onSubmit={handleCreateSession}
                 loading={loading}
               />
             )}
 
             {step === 3 && (
+              <PaymentStep
+                bookingData={bookingData}
+                mentor={mentor}
+                calculateFees={calculateFees}
+                onBack={() => setStep(2)}
+                onSubmit={handlePaymentSubmit}
+                loading={loading}
+                paymentIntent={paymentIntent}
+              />
+            )}
+
+            {step === 4 && (
               <ConfirmationStep
                 bookingData={bookingData}
                 mentor={mentor}
@@ -284,9 +343,11 @@ const StepIndicator = ({ currentStep }) => (
   <div className="flex items-center mb-8">
     <StepItem step={1} currentStep={currentStep} label="Date & Time" />
     <StepDivider active={currentStep >= 2} />
-    <StepItem step={2} currentStep={currentStep} label="Payment" />
+    <StepItem step={2} currentStep={currentStep} label="Create Session" />
     <StepDivider active={currentStep >= 3} />
-    <StepItem step={3} currentStep={currentStep} label="Confirmation" />
+    <StepItem step={3} currentStep={currentStep} label="Payment" />
+    <StepDivider active={currentStep >= 4} />
+    <StepItem step={4} currentStep={currentStep} label="Confirmation" />
   </div>
 );
 
@@ -476,8 +537,59 @@ const DateTimeStep = ({
   );
 };
 
+// Create Session Step
+const CreateSessionStep = ({ bookingData, mentor, calculateFees, onBack, onSubmit, loading }) => {
+  const fees = calculateFees();
+
+  return (
+    <div className="space-y-6">
+      {/* Session Summary */}
+      <div className="bg-blue-50 p-4 rounded-lg">
+        <h3 className="font-semibold text-blue-900 mb-2">Session Summary</h3>
+        <div className="space-y-1 text-sm text-blue-800">
+          <div>Mentor: {mentor?.firstName} {mentor?.lastName}</div>
+          <div>Date: {bookingData.selectedDate && format(bookingData.selectedDate, 'EEEE, MMMM d, yyyy')}</div>
+          <div>Time: {bookingData.selectedTime}</div>
+          <div>Duration: {bookingData.durationMinutes} minutes</div>
+          <div>Type: {bookingData.sessionType}</div>
+          <div className="font-medium pt-2 border-t border-blue-200">
+            Total: £{fees.total.toFixed(2)}
+          </div>
+        </div>
+      </div>
+
+      {/* Terms and Conditions */}
+      <div className="bg-gray-50 p-4 rounded-lg">
+        <h3 className="font-semibold text-gray-900 mb-2">Booking Terms</h3>
+        <div className="space-y-2 text-sm text-gray-600">
+          <div>• Sessions can be cancelled up to 24 hours in advance for a full refund</div>
+          <div>• Late cancellations may incur fees</div>
+          <div>• Payment will be processed securely through Stripe</div>
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <div className="flex space-x-4">
+        <button
+          onClick={onBack}
+          className="flex-1 bg-gray-200 text-gray-800 py-3 px-4 rounded-lg font-medium hover:bg-gray-300 transition-colors"
+        >
+          Back
+        </button>
+        <button
+          onClick={onSubmit}
+          disabled={loading}
+          className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
+        >
+          {loading ? 'Creating Session...' : 'Create Session & Proceed to Payment'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // Payment Step
-const PaymentStep = ({ bookingData, mentor, calculateFees, onBack, onSubmit, loading }) => {
+const PaymentStep = ({ bookingData, mentor, calculateFees, onBack, onSubmit, loading, paymentIntent }) => {
   const fees = calculateFees();
 
   return (
@@ -510,10 +622,10 @@ const PaymentStep = ({ bookingData, mentor, calculateFees, onBack, onSubmit, loa
         </button>
         <button
           onClick={onSubmit}
-          disabled={loading}
+          disabled={loading || !paymentIntent}
           className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
         >
-          {loading ? 'Processing...' : `Pay £${fees.total.toFixed(2)}`}
+          {loading ? 'Processing Payment...' : `Pay £${fees.total.toFixed(2)}`}
         </button>
       </div>
     </div>
@@ -540,7 +652,7 @@ const StripePaymentForm = ({ onSubmit, loading, amount }) => {
   return (
     <div className="space-y-4">
       <h3 className="font-semibold">Payment Information</h3>
-      
+
       {process.env.NODE_ENV === 'development' && (
         <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
           <p className="text-yellow-800 text-sm">

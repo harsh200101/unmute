@@ -728,13 +728,17 @@ router.get('/mentor/upcoming',
   [
     query('limit')
       .optional()
-      .isInt({ min: 1, max: 20 })
-      .withMessage('Limit must be between 1 and 20')
+      .isInt({ min: 1, max: 50 })
+      .withMessage('Limit must be between 1 and 50'),
+    query('page')
+      .optional()
+      .isInt({ min: 1 })
+      .withMessage('Page must be a positive integer')
   ],
   async (req, res) => {
     try {
       const userId = req.user.userId;
-      const { limit = 5 } = req.query;
+      const { limit = 20, page = 1 } = req.query;
 
       console.log('🔍 Fetching upcoming sessions for mentor:', userId);
 
@@ -752,7 +756,20 @@ router.get('/mentor/upcoming',
 
       const mentorId = mentorResult.rows[0].id;
 
-      // Get upcoming sessions for this mentor
+      // Get total count of upcoming sessions
+      const countQuery = `
+        SELECT COUNT(*) as total_count
+        FROM sessions s
+        WHERE s.mentor_id = $1
+          AND s.scheduled_at > CURRENT_TIMESTAMP
+          AND s.status IN ('scheduled', 'confirmed')
+      `;
+
+      const countResult = await db.query(countQuery, [mentorId]);
+      const totalCount = parseInt(countResult.rows[0].total_count);
+
+      // Get upcoming sessions for this mentor with pagination
+      const offset = (parseInt(page) - 1) * parseInt(limit);
       const query = `
         SELECT
           s.id,
@@ -778,10 +795,10 @@ router.get('/mentor/upcoming',
           AND s.scheduled_at > CURRENT_TIMESTAMP
           AND s.status IN ('scheduled', 'confirmed')
         ORDER BY s.scheduled_at ASC
-        LIMIT $2
+        LIMIT $2 OFFSET $3
       `;
 
-      const result = await db.query(query, [mentorId, parseInt(limit)]);
+      const result = await db.query(query, [mentorId, parseInt(limit), offset]);
 
       const sessions = result.rows.map(session => ({
         id: session.id,
@@ -806,13 +823,20 @@ router.get('/mentor/upcoming',
         }
       }));
 
-      console.log('✅ Upcoming sessions retrieved for mentor:', userId, 'Count:', sessions.length);
+      console.log('✅ Upcoming sessions retrieved for mentor:', userId, 'Count:', sessions.length, 'Total:', totalCount);
 
       res.json({
         success: true,
         data: {
           sessions,
-          count: sessions.length
+          count: sessions.length,
+          totalCount
+        },
+        pagination: {
+          totalItems: totalCount,
+          totalPages: Math.ceil(totalCount / parseInt(limit)),
+          currentPage: parseInt(page),
+          limit: parseInt(limit)
         }
       });
 

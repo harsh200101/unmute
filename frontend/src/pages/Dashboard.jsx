@@ -100,7 +100,7 @@ const Dashboard = () => {
     // Load dashboard data only if authenticated and not a mentor
     loadDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, isMentor, navigate]);
+  }, [isAuthenticated, navigate]);
 
   // Don't render if not authenticated or if mentor (will redirect)
   if (!isAuthenticated || isMentor()) {

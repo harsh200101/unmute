@@ -29,6 +29,7 @@ const MentorRegistration = lazy(() => import('./pages/MentorRegistration'));
 const MentorAvailability = lazy(() => import('./pages/MentorAvailability'));
 const MentorEarnings = lazy(() => import('./pages/MentorEarnings'));
 const MentorReviews = lazy(() => import('./pages/MentorReviews'));
+const MentorSessions = lazy(() => import('./pages/MentorSessions'));
 const OAuthCallback = lazy(() => import('./pages/OAuthCallback'));
 const PaymentResult = lazy(() => import('./pages/PaymentResult'));
 const EmailVerification = lazy(() => import('./pages/EmailVerification'));
@@ -221,6 +222,18 @@ function App() {
                   <ProtectedRoute>
                     <AppLayout>
                       <MentorReviews />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Mentor Sessions */}
+              <Route
+                path="/mentor/sessions"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <MentorSessions />
                     </AppLayout>
                   </ProtectedRoute>
                 }
