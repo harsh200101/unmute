@@ -146,12 +146,14 @@ const MentorProfile = () => {
             <div className="flex-1">
               <div className="flex items-start gap-6">
                 <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center text-white text-3xl font-bold flex-shrink-0">
-                  {mentor.user_name?.charAt(0).toUpperCase() || 'M'}
+                  {mentor.firstName?.charAt(0).toUpperCase() || mentor.lastName?.charAt(0).toUpperCase() || 'M'}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h1 className="text-3xl font-bold text-gray-900">
-                      {mentor.user_name || 'Mentor'}
+                      {mentor.firstName && mentor.lastName
+                        ? `${mentor.firstName} ${mentor.lastName}`
+                        : mentor.fullName || 'Mentor'}
                     </h1>
                     {mentor.is_featured && (
                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">

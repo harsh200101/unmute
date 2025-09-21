@@ -619,3 +619,31 @@ INSERT INTO expertise_tags (name, category) VALUES
 ('Data Science', 'Technology'),
 ('Content Writing', 'Creative'),
 ('Project Management', 'Business');
+
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP,  -- To track if token was used
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index for faster lookups and cleanup
+CREATE INDEX idx_reset_tokens_user_id ON password_reset_tokens(user_id);
+CREATE INDEX idx_reset_tokens_expires_at ON password_reset_tokens(expires_at);
+
+-- Email verification tokens table
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP,  -- To track if token was used
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index for faster lookups and cleanup
+CREATE INDEX idx_email_verification_tokens_user_id ON email_verification_tokens(user_id);
+CREATE INDEX idx_email_verification_tokens_expires_at ON email_verification_tokens(expires_at);

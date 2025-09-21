@@ -492,14 +492,14 @@ const Mentors = () => {
                       {/* Mentor Header */}
                       <div className="flex items-start gap-4 mb-4">
                         <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
-                          {mentor.first_name?.charAt(0).toUpperCase() || mentor.user_name?.charAt(0).toUpperCase() || 'M'}
+                          {mentor.firstName?.charAt(0).toUpperCase() || mentor.lastName?.charAt(0).toUpperCase() || 'M'}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="text-lg font-bold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
-                              {mentor.first_name && mentor.last_name 
-                                ? `${mentor.first_name} ${mentor.last_name}`
-                                : mentor.user_name || 'Mentor'}
+                              {mentor.firstName && mentor.lastName
+                                ? `${mentor.firstName} ${mentor.lastName}`
+                                : mentor.fullName || 'Mentor'}
                             </h3>
                             {mentor.is_featured && (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 flex-shrink-0">

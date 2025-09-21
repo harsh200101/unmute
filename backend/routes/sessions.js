@@ -606,7 +606,7 @@ router.get('/my-sessions/stats',
       const userId = req.user.userId;
       const { timeframe = 'month' } = req.query;
 
-      console.log('🔍 Fetching session stats:', { userId, timeframe });
+      console.log('🔍 Fetching session stats:', { userId, timeframe, userIdType: typeof userId });
 
       // Calculate date range based on timeframe
       const now = new Date();
@@ -633,6 +633,7 @@ router.get('/my-sessions/stats',
       console.log('🔍 Date range:', { startDate: startDate.toISOString(), endDate: now.toISOString() });
 
       // Get session statistics
+      console.log('🔍 Executing stats query with params:', [userId, startDate]);
       const statsQuery = `
         SELECT
           COUNT(*) as total_sessions,
@@ -650,9 +651,10 @@ router.get('/my-sessions/stats',
           AND s.created_at >= $2
       `;
 
-      const statsResult = await db.query(statsQuery, [userId, startDate]);
-      const stats = statsResult.rows[0];
+      const statsResult = await db.query(statsQuery, [userId, startDate.toISOString()]);
+      const stats = statsResult.rows[0] || {};
 
+      console.log('🔍 Stats query result:', { rowCount: statsResult.rows.length, stats });
       console.log('🔍 Raw stats:', stats);
 
       // Get recent sessions for additional insights
@@ -674,18 +676,18 @@ router.get('/my-sessions/stats',
         LIMIT 10
       `;
 
-      const recentSessions = await db.query(recentSessionsQuery, [userId, startDate]);
+      const recentSessions = await db.query(recentSessionsQuery, [userId, startDate.toISOString()]);
 
       const processedStats = {
-        totalSessions: parseInt(stats.total_sessions) || 0,
-        completedSessions: parseInt(stats.completed_sessions) || 0,
-        upcomingSessions: parseInt(stats.upcoming_sessions) || 0,
-        cancelledSessions: parseInt(stats.cancelled_sessions) || 0,
-        averageSessionDuration: parseFloat(stats.avg_session_duration) || 0,
-        totalSpent: parseFloat(stats.total_spent) || 0,
-        totalMentorEarnings: parseFloat(stats.total_mentor_earnings) || 0,
-        completionRate: stats.total_sessions > 0
-          ? Math.round((stats.completed_sessions / stats.total_sessions) * 100)
+        totalSessions: parseInt(stats.total_sessions || 0) || 0,
+        completedSessions: parseInt(stats.completed_sessions || 0) || 0,
+        upcomingSessions: parseInt(stats.upcoming_sessions || 0) || 0,
+        cancelledSessions: parseInt(stats.cancelled_sessions || 0) || 0,
+        averageSessionDuration: parseFloat(stats.avg_session_duration || 0) || 0,
+        totalSpent: parseFloat(stats.total_spent || 0) || 0,
+        totalMentorEarnings: parseFloat(stats.total_mentor_earnings || 0) || 0,
+        completionRate: (stats.total_sessions && parseInt(stats.total_sessions) > 0)
+          ? Math.round((parseInt(stats.completed_sessions || 0) / parseInt(stats.total_sessions)) * 100)
           : 0,
         timeframe,
         dateRange: {
@@ -703,10 +705,228 @@ router.get('/my-sessions/stats',
       });
 
     } catch (error) {
-      console.error('❌ Error fetching session stats:', error);
+      console.error('❌ Error fetching session stats:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack,
+        userId: req.user?.userId,
+        timeframe: req.query.timeframe
+      });
       res.status(500).json({
         success: false,
         message: 'Failed to fetch session statistics',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
+
+// GET /api/sessions/mentor/upcoming - Get upcoming sessions for mentor dashboard
+router.get('/mentor/upcoming',
+  auth,
+  rateLimit(50, 15 * 60 * 1000),
+  [
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 20 })
+      .withMessage('Limit must be between 1 and 20')
+  ],
+  async (req, res) => {
+    try {
+      const userId = req.user.userId;
+      const { limit = 5 } = req.query;
+
+      console.log('🔍 Fetching upcoming sessions for mentor:', userId);
+
+      // Get mentor ID first
+      const mentorQuery = 'SELECT id FROM mentors WHERE user_id = $1';
+      const mentorResult = await db.query(mentorQuery, [userId]);
+
+      if (mentorResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Mentor profile not found',
+          code: 'MENTOR_NOT_FOUND'
+        });
+      }
+
+      const mentorId = mentorResult.rows[0].id;
+
+      // Get upcoming sessions for this mentor
+      const query = `
+        SELECT
+          s.id,
+          s.uuid,
+          s.title,
+          s.description,
+          s.scheduled_at,
+          s.duration_minutes,
+          s.session_type,
+          s.price,
+          s.currency,
+          s.mentor_earnings,
+          s.status,
+          s.meeting_url,
+          s.meeting_id,
+          u.first_name as mentee_first_name,
+          u.last_name as mentee_last_name,
+          u.avatar_url as mentee_avatar,
+          u.email as mentee_email
+        FROM sessions s
+        INNER JOIN users u ON s.mentee_id = u.id
+        WHERE s.mentor_id = $1
+          AND s.scheduled_at > CURRENT_TIMESTAMP
+          AND s.status IN ('scheduled', 'confirmed')
+        ORDER BY s.scheduled_at ASC
+        LIMIT $2
+      `;
+
+      const result = await db.query(query, [mentorId, parseInt(limit)]);
+
+      const sessions = result.rows.map(session => ({
+        id: session.id,
+        uuid: session.uuid,
+        title: session.title,
+        description: session.description,
+        scheduledAt: session.scheduled_at,
+        durationMinutes: session.duration_minutes,
+        sessionType: session.session_type,
+        price: parseFloat(session.price || 0),
+        currency: session.currency,
+        mentorEarnings: parseFloat(session.mentor_earnings || 0),
+        status: session.status,
+        meetingUrl: session.meeting_url,
+        meetingId: session.meeting_id,
+        mentee: {
+          firstName: session.mentee_first_name,
+          lastName: session.mentee_last_name,
+          fullName: `${session.mentee_first_name} ${session.mentee_last_name}`.trim(),
+          avatar: session.mentee_avatar,
+          email: session.mentee_email
+        }
+      }));
+
+      console.log('✅ Upcoming sessions retrieved for mentor:', userId, 'Count:', sessions.length);
+
+      res.json({
+        success: true,
+        data: {
+          sessions,
+          count: sessions.length
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching mentor upcoming sessions:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch upcoming sessions',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
+
+// GET /api/sessions/mentor/recent - Get recent sessions for mentor dashboard
+router.get('/mentor/recent',
+  auth,
+  rateLimit(30, 15 * 60 * 1000),
+  [
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 20 })
+      .withMessage('Limit must be between 1 and 20')
+  ],
+  async (req, res) => {
+    try {
+      const userId = req.user.userId;
+      const { limit = 3 } = req.query;
+
+      console.log('🔍 Fetching recent sessions for mentor:', userId);
+
+      // Get mentor ID first
+      const mentorQuery = 'SELECT id FROM mentors WHERE user_id = $1';
+      const mentorResult = await db.query(mentorQuery, [userId]);
+
+      if (mentorResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Mentor profile not found',
+          code: 'MENTOR_NOT_FOUND'
+        });
+      }
+
+      const mentorId = mentorResult.rows[0].id;
+
+      // Get recent sessions for this mentor
+      const query = `
+        SELECT
+          s.id,
+          s.uuid,
+          s.title,
+          s.scheduled_at,
+          s.actual_end_time as completed_at,
+          s.status,
+          s.mentor_earnings,
+          s.actual_duration_minutes,
+          u.first_name as mentee_first_name,
+          u.last_name as mentee_last_name,
+          u.avatar_url as mentee_avatar,
+          r.overall_rating,
+          r.communication_rating,
+          r.knowledge_rating,
+          r.helpfulness_rating,
+          r.comment as review_comment
+        FROM sessions s
+        INNER JOIN users u ON s.mentee_id = u.id
+        LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false
+        WHERE s.mentor_id = $1
+          AND s.status IN ('completed', 'cancelled_by_mentee', 'cancelled_by_mentor')
+        ORDER BY s.scheduled_at DESC
+        LIMIT $2
+      `;
+
+      const result = await db.query(query, [mentorId, parseInt(limit)]);
+
+      const sessions = result.rows.map(session => ({
+        id: session.id,
+        uuid: session.uuid,
+        title: session.title,
+        scheduledAt: session.scheduled_at,
+        completedAt: session.completed_at,
+        status: session.status,
+        mentorEarnings: parseFloat(session.mentor_earnings || 0),
+        actualDurationMinutes: session.actual_duration_minutes,
+        mentee: {
+          firstName: session.mentee_first_name,
+          lastName: session.mentee_last_name,
+          fullName: `${session.mentee_first_name} ${session.mentee_last_name}`.trim(),
+          avatar: session.mentee_avatar
+        },
+        review: session.overall_rating ? {
+          overallRating: session.overall_rating,
+          communicationRating: session.communication_rating,
+          knowledgeRating: session.knowledge_rating,
+          helpfulnessRating: session.helpfulness_rating,
+          comment: session.review_comment
+        } : null
+      }));
+
+      console.log('✅ Recent sessions retrieved for mentor:', userId, 'Count:', sessions.length);
+
+      res.json({
+        success: true,
+        data: {
+          sessions,
+          count: sessions.length
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching mentor recent sessions:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch recent sessions',
         error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }

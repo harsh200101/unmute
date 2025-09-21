@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -14,7 +14,8 @@ const Dashboard = () => {
   const [sessionStats, setSessionStats] = useState({});
 
   // Load upcoming sessions
-  const loadUpcomingSessions = async () => {
+  const loadUpcomingSessions = useCallback(async () => {
+    console.log('🔄 API CALL: loadUpcomingSessions at', new Date().toISOString());
     try {
       const response = await fetch('/api/sessions/upcoming?limit=5', {
         headers: {
@@ -35,10 +36,11 @@ const Dashboard = () => {
       console.warn('Sessions API error:', error);
       setUpcomingSessions([]);
     }
-  };
+  }, []);
 
   // Load session stats
-  const loadSessionStats = async () => {
+  const loadSessionStats = useCallback(async () => {
+    console.log('🔄 API CALL: loadSessionStats at', new Date().toISOString());
     try {
       const response = await fetch('/api/sessions/my-sessions/stats?timeframe=month', {
         headers: {
@@ -59,10 +61,10 @@ const Dashboard = () => {
       console.warn('Stats API error:', error);
       setSessionStats({});
     }
-  };
+  }, []);
 
   // Load all dashboard data
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     if (!isAuthenticated) return;
 
     setLoading(true);
@@ -80,18 +82,28 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated, loadUpcomingSessions, loadSessionStats]);
 
-  // Load data on mount
+  // Load data on mount and handle redirects
   useEffect(() => {
-    if (isAuthenticated) {
-      loadDashboardData();
+    console.log('🔄 Dashboard useEffect running at', new Date().toISOString(), { isAuthenticated, isMentor: isMentor() });
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
     }
-  }, [isAuthenticated]);
 
-  // Redirect if not authenticated
-  if (!isAuthenticated) {
-    navigate('/login');
+    if (isMentor()) {
+      navigate('/mentor/dashboard');
+      return;
+    }
+
+    // Load dashboard data only if authenticated and not a mentor
+    loadDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, isMentor, navigate]);
+
+  // Don't render if not authenticated or if mentor (will redirect)
+  if (!isAuthenticated || isMentor()) {
     return null;
   }
 

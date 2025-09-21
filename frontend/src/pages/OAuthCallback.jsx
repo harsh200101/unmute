@@ -15,23 +15,31 @@ const OAuthCallback = () => {
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
+    console.log('🔍 OAuthCallback: Component mounted, checking authentication status');
+    console.log('🔍 OAuthCallback: isAuthenticated:', isAuthenticated);
+    console.log('🔍 OAuthCallback: Current URL:', window.location.href);
+    console.log('🔍 OAuthCallback: Search params:', Object.fromEntries(searchParams.entries()));
+
     // Redirect if already authenticated
     if (isAuthenticated) {
+      console.log('🔍 OAuthCallback: User already authenticated, redirecting to dashboard');
       navigate('/dashboard', { replace: true });
       return;
     }
 
     const processOAuthCallback = async () => {
       try {
+        console.log('🔍 OAuthCallback: Starting OAuth callback processing');
         setLoading(true);
         setError(null);
-        
+
         // Simulate progress for better UX
         setProgress(20);
 
         // Check for error in URL params
         const errorParam = searchParams.get('error');
         if (errorParam) {
+          console.log('🔍 OAuthCallback: Error parameter found:', errorParam);
           const errorDescription = searchParams.get('error_description') || 'OAuth authentication failed';
           throw new Error(decodeURIComponent(errorDescription));
         }
@@ -44,11 +52,20 @@ const OAuthCallback = () => {
         const code = searchParams.get('code');
         const state = searchParams.get('state');
 
+        console.log('🔍 OAuthCallback: URL parameters:', {
+          hasAccessToken: !!accessToken,
+          hasRefreshToken: !!refreshToken,
+          hasCode: !!code,
+          hasState: !!state
+        });
+
         // If we have tokens, this is a processed callback
         if (accessToken && refreshToken) {
+          console.log('🔍 OAuthCallback: Processing tokens from URL params');
           // Handle processed OAuth callback
           const result = await handleOAuthCallback(searchParams);
           if (result.success) {
+            console.log('🔍 OAuthCallback: OAuth callback successful, redirecting to dashboard');
             setProgress(100);
             setTimeout(() => {
               const redirectTo = localStorage.getItem('oauth_redirect') || '/dashboard';
@@ -56,6 +73,7 @@ const OAuthCallback = () => {
               navigate(redirectTo, { replace: true });
             }, 1000);
           } else {
+            console.log('🔍 OAuthCallback: OAuth callback failed:', result.error);
             throw new Error(result.error || 'OAuth login failed');
           }
           return;
@@ -63,20 +81,22 @@ const OAuthCallback = () => {
 
         // If we have code and state, this is a direct OAuth callback
         if (code && state) {
+          console.log('🔍 OAuthCallback: Direct OAuth callback detected (not supported)');
           // This shouldn't happen in current flow, but handle it
           throw new Error('Direct OAuth callback not supported. Please use the login button.');
         }
 
         // No valid parameters
+        console.log('🔍 OAuthCallback: No valid OAuth parameters found');
         throw new Error('Invalid OAuth callback parameters');
 
         setProgress(60);
 
       } catch (err) {
-        console.error('OAuth callback error:', err);
+        console.error('🔍 OAuthCallback: Processing error:', err);
         setError(err.message || 'Authentication failed');
         setLoading(false);
-        
+
         // Show error toast
         toast.error(err.message || 'Login failed. Please try again.');
       }

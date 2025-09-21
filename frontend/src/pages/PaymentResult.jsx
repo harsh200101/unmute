@@ -53,13 +53,20 @@ const PaymentResult = () => {
         }
 
         const result = await response.json();
-        setPaymentStatus(result.data.payment_status);
+        
+        // Support both Stripe status ('succeeded') and internal status ('completed')
+        const stripeStatus = result.data.stripe_status || result.data.payment_status;
+        const normalizedStatus = ['completed', 'succeeded'].includes(stripeStatus)
+          ? 'succeeded'
+          : stripeStatus;
+        
+        setPaymentStatus(normalizedStatus);
         setSessionData(result.data.session);
 
         // Show appropriate toast message
-        if (result.data.payment_status === 'succeeded') {
+        if (['succeeded', 'completed'].includes(stripeStatus)) {
           toast.success('Payment successful! Your session has been booked.');
-        } else if (result.data.payment_status === 'requires_payment_method') {
+        } else if (stripeStatus === 'requires_payment_method' || stripeStatus === 'failed') {
           toast.error('Payment failed. Please try again with a different payment method.');
         }
 
@@ -117,7 +124,7 @@ const PaymentResult = () => {
   }
 
   // Payment Success
-  if (paymentStatus === 'succeeded') {
+  if (paymentStatus === 'succeeded' || paymentStatus === 'completed') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -264,7 +271,7 @@ const PaymentResult = () => {
   }
 
   // Payment Failed
-  if (paymentStatus === 'requires_payment_method' || paymentStatus === 'failed') {
+  if (paymentStatus === 'requires_payment_method' || paymentStatus === 'failed' || paymentStatus === 'pending') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">

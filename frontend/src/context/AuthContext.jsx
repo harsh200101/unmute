@@ -2,12 +2,12 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback } 
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
-// API Configuration
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+// API Configuration - Use relative URLs for proxy to work
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
 
 // Create axios instance with interceptors
 const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE_URL || '/api', // Use relative URL for proxy
   headers: {
     'Content-Type': 'application/json',
   },
@@ -215,7 +215,7 @@ export const AuthProvider = ({ children }) => {
 
     try {
       console.log('🔄 AUTH: Refreshing access token...');
-      const response = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
+      const response = await axios.post('/api/auth/refresh-token', {
         refreshToken,
       });
 
@@ -381,7 +381,7 @@ export const AuthProvider = ({ children }) => {
     dispatch({ type: ActionTypes.LOGIN_START });
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/register`, userData);
+      const response = await axios.post('/api/auth/register', userData);
       const { user, tokens } = response.data.data;
       const { accessToken, refreshToken } = tokens;
 
@@ -413,7 +413,7 @@ export const AuthProvider = ({ children }) => {
     dispatch({ type: ActionTypes.LOGIN_START });
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/login`, {
+      const response = await axios.post('/api/auth/login', {
         email,
         password,
       });
@@ -449,9 +449,9 @@ export const AuthProvider = ({ children }) => {
     // Generate state for CSRF protection
     const state = Math.random().toString(36).substring(2, 15);
     localStorage.setItem('oauth_state', state);
-    
-    // Redirect to Google OAuth
-    window.location.href = `${API_BASE_URL}/auth/google?state=${state}`;
+
+    // Redirect to Google OAuth (use full backend URL since proxy doesn't work for window.location)
+    window.location.href = `${API_BASE_URL || 'http://localhost:5000'}/auth/google?state=${state}`;
   }, []);
 
   // Handle OAuth Callback

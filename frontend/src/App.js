@@ -20,12 +20,18 @@ const Register = lazy(() => import('./pages/Register'));
 const Mentors = lazy(() => import('./pages/Mentors'));
 const MentorProfile = lazy(() => import('./pages/MentorProfile'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const MentorDashboard = lazy(() => import('./pages/MentorDashboard'));
+const MentorProfileForm = lazy(() => import('./pages/MentorProfileForm'));
 const UserProfile = lazy(() => import('./pages/UserProfile'));
 const MyAppointments = lazy(() => import('./pages/MyAppointments'));
 const SessionManagement = lazy(() => import('./pages/SessionManagement'));
 const MentorRegistration = lazy(() => import('./pages/MentorRegistration'));
+const MentorAvailability = lazy(() => import('./pages/MentorAvailability'));
+const MentorEarnings = lazy(() => import('./pages/MentorEarnings'));
+const MentorReviews = lazy(() => import('./pages/MentorReviews'));
 const OAuthCallback = lazy(() => import('./pages/OAuthCallback'));
 const PaymentResult = lazy(() => import('./pages/PaymentResult'));
+const EmailVerification = lazy(() => import('./pages/EmailVerification'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 // Loading fallback component
@@ -118,13 +124,22 @@ function App() {
                 } 
               />
               
-              <Route 
-                path="/oauth/callback" 
+              <Route
+                path="/oauth/callback"
                 element={
                   <AuthLayout>
                     <OAuthCallback />
                   </AuthLayout>
-                } 
+                }
+              />
+
+              <Route
+                path="/verify-email"
+                element={
+                  <AuthLayout>
+                    <EmailVerification />
+                  </AuthLayout>
+                }
               />
 
               {/* Payment Routes */}
@@ -140,15 +155,75 @@ function App() {
               />
 
               {/* Protected User Routes */}
-              <Route 
-                path="/dashboard" 
+              <Route
+                path="/dashboard"
                 element={
                   <ProtectedRoute>
                     <AppLayout>
                       <Dashboard />
                     </AppLayout>
                   </ProtectedRoute>
-                } 
+                }
+              />
+
+              {/* Mentor Dashboard */}
+              <Route
+                path="/mentor/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <MentorDashboard />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Mentor Profile Form */}
+              <Route
+                path="/mentor/profile"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <MentorProfileForm />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Mentor Availability */}
+              <Route
+                path="/mentor/availability"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <MentorAvailability />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Mentor Earnings */}
+              <Route
+                path="/mentor/earnings"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <MentorEarnings />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Mentor Reviews */}
+              <Route
+                path="/mentor/reviews"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <MentorReviews />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
               />
               
               <Route 

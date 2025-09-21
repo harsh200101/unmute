@@ -38,9 +38,9 @@ passport.use(new GoogleStrategy({
         // Create new user with comprehensive profile data
         const insertResult = await client.query(`
           INSERT INTO users (
-            email, 
-            first_name, 
-            last_name, 
+            email,
+            first_name,
+            last_name,
             avatar_url,
             role,
             is_verified,
@@ -57,7 +57,7 @@ passport.use(new GoogleStrategy({
           firstName,
           lastName,
           avatarUrl,
-          'mentee', // Default role
+          'mentee', // Default role - will be updated if mentor profile exists
           true, // Google accounts are verified
           true, // Active by default
           new Date(), // Email verified now
@@ -72,10 +72,26 @@ passport.use(new GoogleStrategy({
             created_via: 'oauth'
           })
         ]);
-        
+
         user = insertResult.rows[0];
         console.log('✅ Created new user via Google OAuth:', user.id);
-        
+
+        // Check if user has a mentor profile and update role accordingly
+        const mentorCheck = await client.query(
+          'SELECT id FROM mentors WHERE user_id = $1',
+          [user.id]
+        );
+
+        if (mentorCheck.rows.length > 0) {
+          // Update user role to mentor if they have a mentor profile
+          const roleUpdate = await client.query(
+            'UPDATE users SET role = $1 WHERE id = $2 RETURNING role',
+            ['mentor', user.id]
+          );
+          user.role = roleUpdate.rows[0].role;
+          console.log('✅ Updated user role to mentor based on existing profile');
+        }
+
         // Log successful user creation
         console.log('👤 New user profile:', {
           id: user.id,
@@ -84,18 +100,44 @@ passport.use(new GoogleStrategy({
           name: `${user.first_name} ${user.last_name}`,
           role: user.role
         });
-        
+
       } else {
         user = existingUser.rows[0];
-        
+
+        // Check if user has a mentor profile and ensure correct role
+        const mentorCheck = await client.query(
+          'SELECT id FROM mentors WHERE user_id = $1',
+          [user.id]
+        );
+
+        const shouldBeMentor = mentorCheck.rows.length > 0;
+        const currentRole = user.role;
+
+        // Update role if there's a mismatch
+        if (shouldBeMentor && currentRole !== 'mentor') {
+          await client.query(
+            'UPDATE users SET role = $1 WHERE id = $2',
+            ['mentor', user.id]
+          );
+          user.role = 'mentor';
+          console.log('✅ Corrected user role to mentor');
+        } else if (!shouldBeMentor && currentRole === 'mentor') {
+          await client.query(
+            'UPDATE users SET role = $1 WHERE id = $2',
+            ['mentee', user.id]
+          );
+          user.role = 'mentee';
+          console.log('✅ Corrected user role to mentee');
+        }
+
         // Update existing user with fresh login data
         const updateResult = await client.query(`
-          UPDATE users SET 
+          UPDATE users SET
             last_login_at = CURRENT_TIMESTAMP,
             login_count = login_count + 1,
             avatar_url = COALESCE($2, avatar_url),
             social_links = COALESCE(
-              social_links::jsonb || $3::jsonb, 
+              social_links::jsonb || $3::jsonb,
               $3::jsonb
             ),
             is_active = true,
@@ -110,7 +152,7 @@ passport.use(new GoogleStrategy({
             google_avatar: avatarUrl
           })
         ]);
-        
+
         user = updateResult.rows[0];
         console.log('✅ Updated existing user login:', user.email);
       }

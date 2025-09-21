@@ -75,12 +75,25 @@ router.get('/google/callback',
   async (req, res) => {
     try {
       console.log('✅ Google OAuth callback successful');
+      console.log('🔍 Backend: req.user structure:', {
+        hasUser: !!req.user,
+        hasUserUser: !!(req.user && req.user.user),
+        hasTokens: !!(req.user && req.user.tokens),
+        userKeys: req.user ? Object.keys(req.user) : null
+      });
 
       if (!req.user || !req.user.user || !req.user.tokens) {
+        console.log('🔍 Backend: Invalid OAuth response structure:', req.user);
         throw new Error('Invalid OAuth response structure');
       }
 
       const { user, tokens, authProvider } = req.user;
+      console.log('🔍 Backend: Extracted user and tokens:', {
+        userId: user.id,
+        userEmail: user.email,
+        hasAccessToken: !!tokens.accessToken,
+        hasRefreshToken: !!tokens.refreshToken
+      });
       
       // Log successful authentication
       console.log('🎯 OAuth authentication successful:', {
@@ -220,10 +233,11 @@ router.get('/google/callback',
       }
 
       const redirectUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/oauth/callback?${params.toString()}`;
-      
+
       // Security: Log token distribution method
       console.log('🔐 Tokens distributed via URL parameters (consider using secure cookies in production)');
-      
+      console.log('🔍 Backend: Redirecting to:', redirectUrl);
+
       res.redirect(redirectUrl);
 
     } catch (error) {

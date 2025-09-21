@@ -14,11 +14,11 @@ const mockZoomAPI = {
       password: crypto.randomBytes(3).toString('hex')
     };
   },
-  
+
   updateMeeting: async (meetingId, updates) => {
     return { success: true, meetingId, updates };
   },
-  
+
   deleteMeeting: async (meetingId) => {
     return { success: true, meetingId };
   }
@@ -31,11 +31,11 @@ const mockStripeAPI = {
       client_secret: `pi_mock_${Date.now()}_secret_mock`,
       amount,
       currency,
-      status: 'requires_payment_method',
+      status: 'succeeded', // Simulate successful payment for test environment
       metadata
     };
   },
-  
+
   confirmPaymentIntent: async (paymentIntentId) => {
     return {
       id: paymentIntentId,

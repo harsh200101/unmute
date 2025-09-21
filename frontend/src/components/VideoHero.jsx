@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 const VideoHero = ({
   videoSrc = "/videos/hero-video.mp4",
   posterImage = "/images/hero-poster.jpg",
-  fallbackImage = "/images/hero-bg.jpg",
+  fallbackImage = "/images/woman-work-having-video-call.jpg",
   autoPlay = true,
   muted = true,
   loop = true,

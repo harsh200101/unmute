@@ -19,6 +19,7 @@ const MyAppointments = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
+  const [summary, setSummary] = useState(null); // from API (total, upcoming, past, pending)
 
   // Tab options
   const tabOptions = [
@@ -72,7 +73,9 @@ const MyAppointments = () => {
       if (response.success) {
         setSessions(response.sessions);
         setTotalPages(response.pagination?.totalPages || 1);
-        setTotalItems(response.pagination?.totalItems || 0);
+        const total = response.pagination?.totalSessions ?? response.summary?.total ?? response.sessions?.length ?? 0;
+        setTotalItems(total);
+        setSummary(response.summary || null);
       }
     } catch (error) {
       console.error('Failed to load sessions:', error);
@@ -156,9 +159,17 @@ const MyAppointments = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Get tab counts (this would ideally come from API)
+  // Get tab counts (prefer API summary if available)
   const getTabCounts = () => {
-    // This is a simplified version - in real app, get counts from API
+    if (summary) {
+      return {
+        all: summary.total ?? totalItems,
+        upcoming: summary.upcoming ?? 0,
+        pending: summary.pending ?? 0,
+        past: summary.past ?? 0,
+      };
+    }
+    // Fallback: compute from current page items
     return {
       all: totalItems,
       upcoming: sessions.filter(s => ['pending', 'confirmed'].includes(s.status) && new Date(s.scheduled_at) > new Date()).length,

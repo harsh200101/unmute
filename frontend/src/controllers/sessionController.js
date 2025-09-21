@@ -86,10 +86,58 @@ class SessionController {
       if (filters.limit) params.append('limit', filters.limit);
 
       const response = await apiClient.get(`/sessions/my-sessions?${params}`);
+
+      // Backend returns: { success, data: { sessions, pagination, summary } }
+      const data = response.data?.data || {};
+      const sessionsRaw = Array.isArray(data.sessions) ? data.sessions : [];
+
+      // Map backend camelCase to UI-expected snake_case to avoid runtime crashes
+      const mappedSessions = sessionsRaw.map((s) => {
+        const mentorFullName =
+          s.mentorName ||
+          (s.mentor && (s.mentor.fullName || `${s.mentor.firstName || ''} ${s.mentor.lastName || ''}`.trim())) ||
+          s.mentor_name;
+
+        const menteeFullName =
+          s.menteeName ||
+          (s.mentee && (s.mentee.fullName || `${s.mentee.firstName || ''} ${s.mentee.lastName || ''}`.trim())) ||
+          s.mentee_name;
+
+        return {
+          // snake_case fields consumed by UI components (SessionCard/MyAppointments)
+          id: s.id,
+          uuid: s.uuid,
+          title: s.title,
+          description: s.description,
+          session_type: s.sessionType ?? s.session_type,
+          scheduled_at: s.scheduledAt ?? s.scheduled_at,
+          duration_minutes: s.durationMinutes ?? s.duration_minutes,
+          timezone: s.timezone,
+          price: s.price,
+          currency: s.currency,
+          platform_fee: s.platformFee ?? s.platform_fee,
+          mentor_earnings: s.mentorEarnings ?? s.mentor_earnings,
+          status: s.status,
+          meeting_platform: s.meetingPlatform ?? s.meeting_platform,
+          meeting_id: s.meetingId ?? s.meeting_id,
+          meeting_url: s.meetingUrl ?? s.meeting_url,
+          meeting_password: s.meetingPassword ?? s.meeting_password,
+          mentor_notes: s.mentorNotes ?? s.mentor_notes,
+          mentee_notes: s.menteeNotes ?? s.mentee_notes,
+          payment_status: s.paymentStatus ?? s.payment_status,
+          mentor_name: mentorFullName,
+          mentee_name: menteeFullName,
+
+          // Preserve original fields in case other parts of UI use them
+          ...s
+        };
+      });
+
       return {
         success: true,
-        sessions: response.data.data,
-        pagination: response.data.pagination
+        sessions: mappedSessions,
+        pagination: data.pagination || {},
+        summary: data.summary || {}
       };
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Failed to fetch sessions';

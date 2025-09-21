@@ -404,7 +404,7 @@ exports.getMentorProfile = async (req, res) => {
   try {
     const { mentorId } = req.params;
 
-    console.log('🔍 Fetching mentor profile:', mentorId);
+    console.log('🔍 Fetching mentor profile for mentorId:', mentorId, 'Type:', typeof mentorId);
 
     const query = `
       SELECT 

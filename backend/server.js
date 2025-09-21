@@ -332,6 +332,7 @@ app.get('/api', (req, res) => {
       auth: '/api/auth',
       mentors: '/api/mentors',
       sessions: '/api/sessions',
+      payments: '/api/payments',
       health: '/api/health'
     },
     features: [
@@ -351,6 +352,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/auth', require('./routes/googleAuth'));
 app.use('/api/mentors', require('./routes/mentors'));
 app.use('/api/sessions', require('./routes/sessions'));
+app.use('/api/payments', require('./routes/payments'));
 app.use('/api/reviews', require('./routes/reviews'));
 
 // Categories endpoint

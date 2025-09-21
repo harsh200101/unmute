@@ -270,29 +270,21 @@ router.post('/forgot-password',
   }
 );
 
-// Email Verification (placeholder - implement email verification)
+// Send Email Verification
+router.post('/send-verification-email',
+  auth,
+  rateLimit(3, 60 * 60 * 1000), // 3 requests per hour
+  authController.sendVerificationEmail
+);
+
+// Email Verification
 router.get('/verify-email/:token',
   [
     param('token')
       .isLength({ min: 32, max: 128 })
       .withMessage('Invalid verification token')
   ],
-  async (req, res) => {
-    try {
-      const { token } = req.params;
-      
-      // TODO: Implement email verification logic
-      // 1. Verify token and check expiry
-      // 2. Update user's email_verified_at field
-      // 3. Activate user account if needed
-      
-      res.redirect(`${process.env.CLIENT_URL}/email-verified?status=success`);
-      
-    } catch (error) {
-      console.error('❌ Email verification error:', error);
-      res.redirect(`${process.env.CLIENT_URL}/email-verified?status=failed`);
-    }
-  }
+  authController.verifyEmail
 );
 
 // ==========================================

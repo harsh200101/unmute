@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const db = require('../config/database');
 const { validationResult } = require('express-validator');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/emailService');
 
 // Enhanced token generation with comprehensive payload
 const generateTokens = (user) => {
@@ -15,14 +15,6 @@ const generateTokens = (user) => {
     isVerified: user.is_verified,
     isActive: user.is_active
   };
-const generateResetToken = () => crypto.randomBytes(32).toString('hex');
-const transporter = nodemailer.createTransport({
-  service: 'gmail', // Or 'SendGrid', etc.
-  auth: {
-    user: process.env.EMAIL_USER, // Add to .env
-    pass: process.env.EMAIL_PASS  // Add to .env
-  }
-});
   const accessToken = jwt.sign(
     payload,
     process.env.JWT_SECRET,
@@ -250,8 +242,8 @@ exports.forgotPassword = async (req, res) => {
     }
 
     // Generate token and expiry
-    const token = generateResetToken();
-    const tokenHash = await hashToken(token);
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = await bcrypt.hash(token, 12);
     const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
     // Store hashed token
@@ -261,15 +253,8 @@ exports.forgotPassword = async (req, res) => {
     );
 
     // Send email
-    const resetUrl = `http://yourfrontend.com/reset-password?token=${token}&id=${user.id}`;
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: user.email,
-      subject: 'Reset Your Password',
-      text: `Click this link to reset your password: ${resetUrl}. This link expires in 1 hour.`
-    };
-
-    await transporter.sendMail(mailOptions);
+    const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${token}&id=${user.id}`;
+    await sendPasswordResetEmail(user.email, resetUrl);
 
     res.json({ success: true, message: 'If an account with that email exists, a reset link has been sent.' });
   } catch (error) {
@@ -639,6 +624,152 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
+// Send email verification
+exports.sendVerificationEmail = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Get user email
+    const userQuery = 'SELECT email, is_verified FROM users WHERE id = $1 AND is_active = true';
+    const userResult = await db.query(userQuery, [userId]);
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Check if already verified
+    if (user.is_verified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified',
+        code: 'ALREADY_VERIFIED'
+      });
+    }
+
+    // Generate verification token
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = await bcrypt.hash(token, 12);
+    const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Store token in database (delete any existing tokens first)
+    await db.query('DELETE FROM email_verification_tokens WHERE user_id = $1', [userId]);
+
+    await db.query(
+      'INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [userId, tokenHash, expiry]
+    );
+
+    // Send verification email
+    const verificationUrl = `${process.env.CLIENT_URL}/verify-email?token=${token}&id=${userId}`;
+
+    await sendVerificationEmail(user.email, verificationUrl);
+
+    console.log('✅ Verification email sent to:', user.email);
+
+    res.json({
+      success: true,
+      message: 'Verification email sent successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Send verification email error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send verification email',
+      code: 'SERVER_ERROR'
+    });
+  }
+};
+
+// Verify email with token
+exports.verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { id: userId } = req.query;
+
+    if (!token || !userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token and user ID are required',
+        code: 'MISSING_PARAMS'
+      });
+    }
+
+    // Get token record
+    const tokenQuery = `
+      SELECT token_hash, expires_at, used_at
+      FROM email_verification_tokens
+      WHERE user_id = $1
+    `;
+    const tokenResult = await db.query(tokenQuery, [userId]);
+
+    if (tokenResult.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification token',
+        code: 'INVALID_TOKEN'
+      });
+    }
+
+    const tokenRecord = tokenResult.rows[0];
+
+    // Check if token is used or expired
+    if (tokenRecord.used_at || new Date() > tokenRecord.expires_at) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification token has expired',
+        code: 'TOKEN_EXPIRED'
+      });
+    }
+
+    // Verify token
+    const isValidToken = await bcrypt.compare(token, tokenRecord.token_hash);
+    if (!isValidToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification token',
+        code: 'INVALID_TOKEN'
+      });
+    }
+
+    // Update user as verified and mark token as used
+    await db.transaction(async (client) => {
+      // Update user
+      await client.query(
+        'UPDATE users SET is_verified = true, email_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [userId]
+      );
+
+      // Mark token as used
+      await client.query(
+        'UPDATE email_verification_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = $1',
+        [userId]
+      );
+    });
+
+    console.log('✅ Email verified for user:', userId);
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Email verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify email',
+      code: 'SERVER_ERROR'
+    });
+  }
+};
+
 module.exports = {
   register: exports.register,
   login: exports.login,
@@ -646,6 +777,8 @@ module.exports = {
   logout: exports.logout,
   getProfile: exports.getProfile,
   updateProfile: exports.updateProfile,
+  sendVerificationEmail: exports.sendVerificationEmail,
+  verifyEmail: exports.verifyEmail,
   generateTokens,
   formatUserResponse
 };
