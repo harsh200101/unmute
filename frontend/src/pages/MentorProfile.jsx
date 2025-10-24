@@ -63,12 +63,25 @@ const MentorProfile = () => {
       );
       if (response.ok) {
         const data = await response.json();
+        const transformedReviews = (data.data.reviews || []).map(review => ({
+          id: review.id,
+          overall_rating: review.rating,
+          comment: review.comment,
+          created_at: review.createdAt,
+          is_featured: review.isFeatured,
+          helpful_votes: review.helpfulVotes,
+          mentor_response: review.mentorResponse,
+          mentor_response_at: review.mentorResponseAt,
+          mentee_name: `${review.mentee.firstName} ${review.mentee.lastName}`,
+          session_duration: review.session.duration,
+        }));
+
         if (page === 1) {
-          setReviews(data.data || []);
+          setReviews(transformedReviews);
         } else {
-          setReviews(prev => [...prev, ...(data.data || [])]);
+          setReviews(prev => [...prev, ...transformedReviews]);
         }
-        setReviewsTotal(data.pagination?.totalItems || 0);
+        setReviewsTotal(data.data.pagination?.totalReviews || 0);
         setReviewsPage(page);
       }
     } catch (error) {

@@ -20,23 +20,21 @@ const MentorSessions = () => {
   const [totalItems, setTotalItems] = useState(0);
   const [summary, setSummary] = useState(null); // from API (total, upcoming, past, pending)
 
-  // Tab options
+  // Tab options - only upcoming and past for confirmed sessions
   const tabOptions = [
-    { id: 'all', label: 'All Sessions', count: 0 },
+    { id: 'all', label: 'All Confirmed Sessions', count: 0 },
     { id: 'upcoming', label: 'Upcoming', count: 0 },
-    { id: 'pending', label: 'Pending', count: 0 },
     { id: 'past', label: 'Past', count: 0 }
   ];
 
-  // Status options for filtering
+  // Status options for filtering - include all relevant statuses
   const statusOptions = [
-    { value: '', label: 'All Status' },
-    { value: 'pending', label: 'Pending' },
-    { value: 'confirmed', label: 'Confirmed' },
+    { value: 'confirmed,in_progress,completed,cancelled_by_mentee', label: 'All Sessions' },
+    { value: 'confirmed,in_progress', label: 'Active Sessions' },
+    { value: 'confirmed', label: 'Confirmed Only' },
     { value: 'in_progress', label: 'In Progress' },
     { value: 'completed', label: 'Completed' },
-    { value: 'cancelled_by_mentee', label: 'Cancelled by Mentee' },
-    { value: 'cancelled_by_mentor', label: 'Cancelled by Mentor' }
+    { value: 'cancelled_by_mentee', label: 'Cancelled Only' }
   ];
 
   // Type options
@@ -57,17 +55,22 @@ const MentorSessions = () => {
       params.append('page', page);
       params.append('limit', 10);
 
-      // Add filters to params
-      if (statusFilter) params.append('status', statusFilter);
+      // Use the selected status filter
+      if (statusFilter) {
+        params.append('status', statusFilter);
+      } else {
+        // Default to all relevant statuses including in_progress and completed
+        params.append('status', 'confirmed,in_progress,completed,cancelled_by_mentee');
+      }
+
+      // Add type filter if specified
       if (typeFilter) params.append('type', typeFilter);
 
-      // Apply tab-specific filters
+      // Apply tab-specific filters (but only for confirmed sessions)
       if (activeTab === 'upcoming') {
         params.append('upcoming', true);
       } else if (activeTab === 'past') {
         params.append('past', true);
-      } else if (activeTab === 'pending') {
-        params.append('status', 'pending');
       }
 
       const response = await fetch(`/api/sessions/mentor/all?${params}`, {
@@ -79,9 +82,10 @@ const MentorSessions = () => {
 
       if (response.ok) {
         const data = await response.json();
+        // Don't filter sessions on frontend - let backend handle status filtering
         setSessions(data.data?.sessions || []);
         setTotalPages(data.data?.pagination?.totalPages || 1);
-        const total = data.data?.pagination?.totalSessions ?? data.data?.summary?.total ?? data.data?.sessions?.length ?? 0;
+        const total = data.data?.sessions?.length || 0;
         setTotalItems(total);
         setSummary(data.data?.summary || null);
       } else {

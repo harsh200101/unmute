@@ -161,7 +161,7 @@ router.get('/details/:sessionId',
           p.currency as payment_currency,
           r.overall_rating,
           r.comment as review_comment,
-          r.mentor_response,
+          r.target_response as mentor_response,
           r.created_at as review_created_at,
           r.reviewer_type
         FROM sessions s
@@ -260,7 +260,7 @@ router.get('/details/:sessionId',
         canCancel: ['pending', 'confirmed'].includes(session.status) &&
                     new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000),
         canReschedule: ['pending', 'confirmed', 'scheduled'].includes(session.status) &&
-                        new Date(session.scheduled_at) > new Date(Date.now() + 12 * 60 * 60 * 1000),
+                        new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000),
         canReview: session.status === 'completed' && !session.overall_rating && session.mentee_id === userId,
         canStart: session.status === 'confirmed' &&
                    Math.abs(new Date(session.scheduled_at) - new Date()) < 15 * 60 * 1000, // 15 minutes window
@@ -1140,11 +1140,20 @@ router.get('/mentor/all',
       const params = [mentorId];
       let paramCount = 1;
 
-      // Status filter
+      // Status filter - handle multiple statuses
       if (status) {
-        paramCount++;
-        query += ` AND s.status = $${paramCount}`;
-        params.push(status);
+        // Split by comma and handle multiple statuses
+        const statusArray = status.split(',').map(s => s.trim());
+        if (statusArray.length > 1) {
+          const placeholders = statusArray.map((_, i) => `$${paramCount + i + 1}`).join(',');
+          query += ` AND s.status IN (${placeholders})`;
+          params.push(...statusArray);
+          paramCount += statusArray.length;
+        } else {
+          paramCount++;
+          query += ` AND s.status = $${paramCount}`;
+          params.push(status);
+        }
       }
 
       // Session type filter
@@ -1190,9 +1199,18 @@ router.get('/mentor/all',
       let countParamCount = 1;
 
       if (status) {
-        countParamCount++;
-        countQuery += ` AND s.status = $${countParamCount}`;
-        countParams.push(status);
+        // Split by comma and handle multiple statuses for count query too
+        const statusArray = status.split(',').map(s => s.trim());
+        if (statusArray.length > 1) {
+          const placeholders = statusArray.map((_, i) => `$${countParamCount + i + 1}`).join(',');
+          countQuery += ` AND s.status IN (${placeholders})`;
+          countParams.push(...statusArray);
+          countParamCount += statusArray.length;
+        } else {
+          countParamCount++;
+          countQuery += ` AND s.status = $${countParamCount}`;
+          countParams.push(status);
+        }
       }
 
       if (type) {
@@ -1273,9 +1291,9 @@ router.get('/mentor/all',
         } : null,
 
         // Action permissions for mentors
-        canReschedule: ['pending', 'scheduled', 'confirmed'].includes(session.status) &&
+        canReschedule: ['confirmed', 'in_progress'].includes(session.status) &&
                         new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours notice for mentors
-        canCancel: ['pending', 'scheduled', 'confirmed'].includes(session.status) &&
+        canCancel: ['confirmed', 'in_progress'].includes(session.status) &&
                     new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000),
         canStart: session.status === 'confirmed' &&
                   Math.abs(new Date(session.scheduled_at) - new Date()) < 15 * 60 * 1000,

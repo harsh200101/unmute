@@ -170,6 +170,17 @@ function App() {
                 }
               />
 
+              <Route
+                path="/payment/success"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout showHeader={false} showFooter={false}>
+                      <PaymentStatusPage />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
               {/* Protected User Routes */}
               <Route
                 path="/dashboard"

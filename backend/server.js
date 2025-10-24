@@ -454,6 +454,38 @@ app.get('/api/mentors/meta/categories', (req, res) => {
 
 // Featured mentors and reviews endpoints are now handled by routes/mentors.js and routes/reviews.js
 
+// POST /payment/callback - Handle PhonePe callback (PhonePe POSTs to this URL)
+app.post('/payment/callback', async (req, res) => {
+  try {
+    console.log('🔄 PhonePe callback received at /payment/callback (SERVER LEVEL):', {
+      timestamp: new Date().toISOString(),
+      body: req.body,
+      query: req.query,
+      url: req.url,
+      originalUrl: req.originalUrl,
+      headers: req.headers,
+      ip: req.ip
+    });
+
+    // Import the callback handler function directly
+    const paymentsRoutes = require('./routes/payments');
+    const callbackHandler = paymentsRoutes.callback;
+
+    if (!callbackHandler) {
+      console.error('❌ Callback handler not found in payments routes');
+      return res.status(500).json({ status: 'error', message: 'Callback handler not available' });
+    }
+
+    console.log('✅ Found callback handler, executing...');
+
+    // Call the callback handler directly
+    return callbackHandler(req, res);
+  } catch (error) {
+    console.error('❌ Payment callback error at server level:', error);
+    res.status(500).json({ status: 'error', message: 'Internal server error' });
+  }
+});
+
 // POST /payment-status - Handle PhonePe redirect (PhonePe POSTs to redirect URL)
 app.post('/payment-status', (req, res) => {
   try {

@@ -155,12 +155,18 @@ const SessionCard = ({
 
   // Check if session can be joined
   const canJoinSession = () => {
-    if (!['confirmed', 'in_progress'].includes(sessionStatus) || !session.scheduledAt) return false;
+    if ((sessionStatus !== 'confirmed' && sessionStatus !== 'in_progress') || !session.scheduledAt) return false;
 
-    // For in_progress sessions, allow joining anytime until completed
+    // For in_progress sessions, always allow joining
     if (sessionStatus === 'in_progress') return true;
 
-    // For confirmed sessions, check time window
+    // Check if user is one of the two specific test users (bypass time logic)
+    const testUserIds = [49, 51]; // harshgajbhiye34@gmail.com and saharemanswi1479@gmail.com
+    const isTestUser = testUserIds.includes(user?.id);
+
+    if (isTestUser) return true; // Test users can always join confirmed sessions
+
+    // For regular users, check time window: 15 minutes before to 15 minutes after
     const now = new Date();
     const sessionTime = new Date(session.scheduledAt);
 
@@ -168,8 +174,8 @@ const SessionCard = ({
     if (isNaN(sessionTime.getTime())) return false;
 
     const timeDiff = sessionTime - now;
-    // Allow joining 15 minutes before and during session (plus 1h 15min for active sessions)
-    return timeDiff <= 15 * 60 * 1000 && timeDiff >= -(75 * 60 * 1000); // 75 minutes = 1h 15min
+    // Allow joining 15 minutes before and 15 minutes after scheduled time
+    return Math.abs(timeDiff) <= 15 * 60 * 1000; // 15 minutes in milliseconds
   };
 
   // Check if session can be cancelled
@@ -182,7 +188,7 @@ const SessionCard = ({
     if (isNaN(sessionTime.getTime())) return false;
 
     const hoursUntilSession = (sessionTime - now) / (1000 * 60 * 60);
-    return ['pending', 'scheduled', 'confirmed'].includes(sessionStatus) && hoursUntilSession > 24;
+    return ['confirmed', 'in_progress'].includes(sessionStatus) && hoursUntilSession > 24;
   };
 
   // Check if session can be rescheduled
@@ -195,7 +201,8 @@ const SessionCard = ({
     if (isNaN(sessionTime.getTime())) return false;
 
     const hoursUntilSession = (sessionTime - now) / (1000 * 60 * 60);
-    return ['pending', 'scheduled', 'confirmed'].includes(sessionStatus) && hoursUntilSession > 12;
+    // Mentees can reschedule with 24 hours notice, mentors use request system
+    return userRole === 'mentee' && ['confirmed', 'in_progress'].includes(sessionStatus) && hoursUntilSession > 24;
   };
 
   // Handle action with loading
@@ -344,18 +351,15 @@ const SessionCard = ({
           </div>
         </div>
 
-        {/* Time Remaining (for confirmed and in-progress sessions) */}
-        {['confirmed', 'in_progress'].includes(sessionStatus) && timeRemaining && (
+        {/* Time Remaining (for confirmed sessions) */}
+        {sessionStatus === 'confirmed' && timeRemaining && (
           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
             <div className="flex items-center gap-2">
               <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span className="text-sm font-medium text-blue-900">
-                {sessionStatus === 'in_progress'
-                  ? `Session in progress - ${timeRemaining} remaining`
-                  : timeRemaining.includes('passed') ? 'Ready to join' : `Starts in ${timeRemaining}`
-                }
+                {timeRemaining.includes('passed') ? 'Ready to join' : `Starts in ${timeRemaining}`}
               </span>
             </div>
           </div>
@@ -395,7 +399,7 @@ const SessionCard = ({
         )}
 
         {/* Meeting Link (for confirmed sessions) */}
-        {session.meetingUrl && ['confirmed', 'in_progress'].includes(sessionStatus) && (
+        {session.meetingUrl && sessionStatus === 'confirmed' && (
           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -606,25 +610,14 @@ const SessionCard = ({
         {/* Actions */}
         {showActions && (
           <div className="flex flex-wrap gap-2">
-            {/* Join Session */}
-            {canJoinSession() && session.meetingUrl && (
+            {/* Join Now Button - Only show in actions for in_progress sessions (not confirmed, as that's handled above) */}
+            {(sessionStatus === 'in_progress') && canJoinSession() && session.meetingUrl && (
               <button
                 onClick={() => navigate(`/meeting/${session.id}`)}
                 disabled={isActionLoading}
                 className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 transform hover:scale-[1.02] shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
               >
-                {isActionLoading ? <LoadingSpinner size="sm" /> : '🎥'} Join Session
-              </button>
-            )}
-
-            {/* Start Session (Mentor only) */}
-            {userRole === 'mentor' && sessionStatus === 'confirmed' && canJoinSession() && (
-              <button
-                onClick={() => handleAction(onStartSession, session.id)}
-                disabled={isActionLoading}
-                className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 flex items-center justify-center gap-2"
-              >
-                {isActionLoading ? <LoadingSpinner size="sm" /> : '▶️'} Start Session
+                {isActionLoading ? <LoadingSpinner size="sm" /> : '🎥'} Join Now
               </button>
             )}
 
@@ -662,7 +655,7 @@ const SessionCard = ({
             )}
 
             {/* Request Reschedule (Mentor only) */}
-            {userRole === 'mentor' && ['pending', 'scheduled', 'confirmed'].includes(sessionStatus) && (
+            {userRole === 'mentor' && ['confirmed', 'in_progress'].includes(sessionStatus) && (
               <button
                 onClick={() => handleAction(onRescheduleSession, session.id)}
                 disabled={isActionLoading}

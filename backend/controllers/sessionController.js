@@ -188,8 +188,8 @@ exports.createSession = async (req, res) => {
         };
       }
 
-      // Determine session status
-      const sessionStatus = mentor.auto_accept_bookings ? 'confirmed' : 'scheduled';
+      // All sessions start as pending until payment is completed
+      const sessionStatus = 'pending';
 
       // Insert session
       const sessionQuery = `
@@ -226,58 +226,36 @@ exports.createSession = async (req, res) => {
       const sessionResult = await client.query(sessionQuery, sessionValues);
       const session = sessionResult.rows[0];
 
-      // Create video meeting for this session
-      const meetingCredentials = agoraService.generateMeetingCredentials(session.id, menteeId);
-
-      const meetingQuery = `
-        INSERT INTO video_meetings (
-          session_id, channel_name, agora_app_id, agora_token, token_expires_at,
-          max_duration_minutes, meeting_status
-        ) VALUES ($1, $2, $3, $4, $5, $6, 'scheduled')
-      `;
-
-      await client.query(meetingQuery, [
-        session.id,
-        meetingCredentials.channelName,
-        meetingCredentials.appId,
-        meetingCredentials.token,
-        meetingCredentials.tokenExpiresAt,
-        75 // 1 hour 15 minutes
-      ]);
-
-      // Update session with Agora meeting URL
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      const agoraMeetingUrl = `${frontendUrl}/meeting/${session.id}`;
+      // Meeting will be created after payment confirmation
+      // For now, just set placeholder values
       await client.query(`
         UPDATE sessions
-        SET meeting_url = $1, meeting_id = $2
-        WHERE id = $3
-      `, [agoraMeetingUrl, meetingCredentials.channelName, session.id]);
+        SET meeting_url = NULL, meeting_id = NULL
+        WHERE id = $1
+      `, [session.id]);
 
       // Create notifications - FIXED: Consistent column names
       const notifications = [
         // Notification for mentee
         {
           user_id: menteeId,
-          title: 'Session Booking Confirmed',
-          message: `Your session with ${mentor.first_name} ${mentor.last_name} has been ${sessionStatus === 'confirmed' ? 'confirmed' : 'submitted for approval'}.`,
-          type: sessionStatus === 'confirmed' ? 'booking_confirmed' : 'booking_request',
+          title: 'Session Booking Created',
+          message: `Your session with ${mentor.first_name} ${mentor.last_name} has been created. Please complete the payment to confirm.`,
+          type: 'booking_pending',
           related_entity_type: 'session',
           related_entity_id: session.id
         }
       ];
 
-      // Notification for mentor (if not auto-accept)
-      if (!mentor.auto_accept_bookings) {
-        notifications.push({
-          user_id: mentor.user_id,
-          title: 'New Session Request',
-          message: `You have a new session request for ${new Date(scheduledAt).toLocaleDateString()}.`,
-          type: 'booking_request',
-          related_entity_type: 'session',
-          related_entity_id: session.id
-        });
-      }
+      // Notification for mentor
+      notifications.push({
+        user_id: mentor.user_id,
+        title: 'New Session Request',
+        message: `You have a new session request for ${new Date(scheduledAt).toLocaleDateString()}. Awaiting payment confirmation.`,
+        type: 'booking_pending',
+        related_entity_type: 'session',
+        related_entity_id: session.id
+      });
 
       // Insert notifications
       for (const notification of notifications) {
@@ -382,18 +360,13 @@ exports.getUserSessions = async (req, res) => {
         p.payment_status,
         p.amount as payment_amount,
         r.overall_rating as session_rating,
-        r.comment as session_review,
-        rr.metadata as reschedule_request_metadata
+        r.comment as session_review
       FROM sessions s
       INNER JOIN mentors m ON s.mentor_id = m.id
       INNER JOIN users mentor_user ON m.user_id = mentor_user.id
       INNER JOIN users mentee_user ON s.mentee_id = mentee_user.id
       LEFT JOIN payments p ON s.id = p.session_id
-      LEFT JOIN reviews r ON s.id = r.session_id
-      LEFT JOIN notifications rr ON s.id = rr.related_entity_id
-        AND rr.type = 'reschedule_request'
-        AND rr.user_id = $1
-        AND rr.is_read = false
+      LEFT JOIN reviews r ON s.id = r.session_id AND r.reviewer_type = 'mentee'
       WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
     `;
 
@@ -484,12 +457,12 @@ exports.getUserSessions = async (req, res) => {
       sessionReview: session.session_review,
       isUpcoming: new Date(session.scheduled_at) > new Date(),
       isPast: new Date(session.scheduled_at) < new Date(),
-      canCancel: ['pending', 'scheduled', 'confirmed'].includes(session.status) &&
+      canCancel: ['confirmed', 'in_progress'].includes(session.status) &&
                 new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours notice
       canReview: session.status === 'completed' && !session.session_rating,
       canMentorReview: session.status === 'completed' && session.mentee_id === userId, // Mentor can review mentee
       canReschedule: ['pending', 'confirmed'].includes(session.status) &&
-                    new Date(session.scheduled_at) > new Date(Date.now() + 12 * 60 * 60 * 1000) // 12 hours notice
+                    new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours notice for mentees
     }));
 
     console.log(`✅ Found ${sessions.length} sessions for user ${userId}`);
@@ -566,7 +539,7 @@ exports.cancelSession = async (req, res) => {
       }
 
       // Check if session can be cancelled
-      if (!['pending', 'scheduled', 'confirmed'].includes(session.status)) {
+      if (!['confirmed', 'in_progress'].includes(session.status)) {
         throw new Error('CANNOT_CANCEL');
       }
 
@@ -739,18 +712,22 @@ exports.rescheduleSession = async (req, res) => {
       }
 
       // Check if session can be rescheduled
-      if (!['pending', 'scheduled', 'confirmed'].includes(session.status)) {
+      if (!['confirmed', 'in_progress'].includes(session.status)) {
         throw new Error('CANNOT_RESCHEDULE');
       }
 
-      // Check 12-hour rule for mentees
+      // Check 24-hour rule for mentees
       const scheduledAt = new Date(session.scheduled_at);
       const now = new Date();
       const hoursUntilSession = (scheduledAt - now) / (1000 * 60 * 60);
 
-      if (isMentee && hoursUntilSession < 12) {
+      if (isMentee && hoursUntilSession < 24) {
         throw new Error('TOO_LATE_TO_RESCHEDULE');
       }
+
+      // For mentees, status should remain confirmed after reschedule
+      // Only change status if it's currently pending
+      const shouldChangeStatus = isMentee && session.status === 'pending';
 
       // For mentors, create reschedule request instead of direct reschedule
       if (isMentor) {
@@ -889,26 +866,36 @@ exports.rescheduleSession = async (req, res) => {
         }
       }
 
-      // Update session
-      const updateQuery = `
-        UPDATE sessions
-        SET scheduled_at = $2,
-            duration_minutes = COALESCE($3, duration_minutes),
-            timezone = COALESCE($4, timezone),
-            updated_at = CURRENT_TIMESTAMP,
-            admin_notes = COALESCE(admin_notes || E'\n', '') || $5
-        WHERE id = $1
-        RETURNING *
-      `;
+      // Update session - only change status if needed
+      const updateFields = [
+        'scheduled_at = $2',
+        'duration_minutes = COALESCE($3, duration_minutes)',
+        'timezone = COALESCE($4, timezone)',
+        'updated_at = CURRENT_TIMESTAMP',
+        'admin_notes = COALESCE(admin_notes || E\'\n\', \'\') || $5'
+      ];
 
-      const rescheduleNote = `Rescheduled by ${isMentee ? 'mentee' : 'mentor'}: ${reason || 'No reason provided'}`;
-      const updateResult = await client.query(updateQuery, [
+      const updateValues = [
         sessionId,
         newScheduledAt,
         newDurationMinutes,
         timezone,
-        rescheduleNote
-      ]);
+        `Rescheduled by ${isMentee ? 'mentee' : 'mentor'}: ${reason || 'No reason provided'}`
+      ];
+
+      // Only change status to confirmed if it was pending
+      if (shouldChangeStatus) {
+        updateFields.push('status = \'confirmed\'');
+      }
+
+      const updateQuery = `
+        UPDATE sessions
+        SET ${updateFields.join(', ')}
+        WHERE id = $1
+        RETURNING *
+      `;
+
+      const updateResult = await client.query(updateQuery, updateValues);
 
       // Create notifications for both parties
       const notifications = [
@@ -1006,7 +993,7 @@ exports.rescheduleSession = async (req, res) => {
     if (error.message === 'TOO_LATE_TO_RESCHEDULE') {
       return res.status(422).json({
         success: false,
-        message: 'Sessions can only be rescheduled at least 12 hours in advance',
+        message: 'Sessions can only be rescheduled at least 24 hours in advance',
         code: 'TOO_LATE_TO_RESCHEDULE'
       });
     }
@@ -1028,12 +1015,12 @@ exports.rescheduleSession = async (req, res) => {
     }
 
     if (error.message === 'NEW_TIME_TOO_SOON') {
-      return res.status(422).json({
-        success: false,
-        message: 'New session time must be at least 12 hours from now',
-        code: 'NEW_TIME_TOO_SOON'
-      });
-    }
+       return res.status(422).json({
+         success: false,
+         message: 'New session time must be at least 24 hours from now',
+         code: 'NEW_TIME_TOO_SOON'
+       });
+     }
 
     if (error.message === 'MENTOR_NOT_AVAILABLE') {
       return res.status(422).json({
@@ -1102,15 +1089,15 @@ exports.respondToRescheduleRequest = async (req, res) => {
 
         const newScheduledDateTime = new Date(newScheduledAt);
 
-        // Validate the new time is not in the past and at least 12 hours from now
+        // Validate the new time is not in the past and at least 24 hours from now
         const now = new Date();
         const hoursUntilNewSession = (newScheduledDateTime - now) / (1000 * 60 * 60);
-
+ 
         if (newScheduledDateTime <= now) {
           throw new Error('NEW_TIME_IN_PAST');
         }
-
-        if (hoursUntilNewSession < 12) {
+ 
+        if (hoursUntilNewSession < 24) {
           throw new Error('NEW_TIME_TOO_SOON');
         }
 
@@ -1256,7 +1243,7 @@ exports.respondToRescheduleRequest = async (req, res) => {
     if (error.message === 'NEW_TIME_TOO_SOON') {
       return res.status(422).json({
         success: false,
-        message: 'New session time must be at least 12 hours from now',
+        message: 'New session time must be at least 24 hours from now',
         code: 'NEW_TIME_TOO_SOON'
       });
     }
@@ -1493,12 +1480,12 @@ exports.respondToRescheduleRequest = async (req, res) => {
           throw new Error('NEW_TIME_REQUIRED');
         }
 
-        // Check 12-hour rule for new time
+        // Check 24-hour rule for new time
         const newDateTime = new Date(newScheduledAt);
         const now = new Date();
         const hoursUntilNewSession = (newDateTime - now) / (1000 * 60 * 60);
 
-        if (hoursUntilNewSession < 12) {
+        if (hoursUntilNewSession < 24) {
           throw new Error('INVALID_NEW_TIME');
         }
 
@@ -1622,12 +1609,12 @@ exports.respondToRescheduleRequest = async (req, res) => {
     }
 
     if (error.message === 'INVALID_NEW_TIME') {
-      return res.status(422).json({
-        success: false,
-        message: 'New session time must be at least 12 hours from now',
-        code: 'INVALID_NEW_TIME'
-      });
-    }
+       return res.status(422).json({
+         success: false,
+         message: 'New session time must be at least 24 hours from now',
+         code: 'INVALID_NEW_TIME'
+       });
+     }
 
     res.status(500).json({
       success: false,
@@ -1672,7 +1659,7 @@ exports.submitRescheduleRequest = async (req, res) => {
       }
 
       // Check if session can be rescheduled
-      if (!['pending', 'scheduled', 'confirmed'].includes(session.status)) {
+      if (!['confirmed', 'in_progress'].includes(session.status)) {
         throw new Error('CANNOT_RESCHEDULE');
       }
 
@@ -1899,7 +1886,7 @@ exports.respondToRescheduleRequest = async (req, res) => {
 
         const newScheduledDateTime = new Date(newScheduledAt);
 
-        // Validate the new time is not in the past and at least 12 hours from now
+        // Validate the new time is not in the past and at least 24 hours from now
         const now = new Date();
         const hoursUntilNewSession = (newScheduledDateTime - now) / (1000 * 60 * 60);
 
@@ -1907,7 +1894,7 @@ exports.respondToRescheduleRequest = async (req, res) => {
           throw new Error('NEW_TIME_IN_PAST');
         }
 
-        if (hoursUntilNewSession < 12) {
+        if (hoursUntilNewSession < 24) {
           throw new Error('NEW_TIME_TOO_SOON');
         }
 

@@ -165,15 +165,15 @@ const RescheduleSession = () => {
     // Reason is optional when responding to mentor's reschedule request
     // Only required for direct rescheduling by mentee
 
-    // Check 12-hour rule
+    // Check 24-hour rule
     const selectedDateTime = new Date(selectedDate);
     const [hours, minutes] = selectedTime.split(':').map(Number);
     selectedDateTime.setHours(hours, minutes, 0, 0);
     const now = new Date();
     const hoursUntilSession = (selectedDateTime - now) / (1000 * 60 * 60);
 
-    if (hoursUntilSession < 12) {
-      toast.error('New session time must be at least 12 hours from now');
+    if (hoursUntilSession < 24) {
+      toast.error('New session time must be at least 24 hours from now');
       return;
     }
 

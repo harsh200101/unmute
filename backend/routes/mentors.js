@@ -186,8 +186,8 @@ router.get('/profile',
           u.bio,
           u.location,
           u.social_links,
-          ROUND(AVG(CASE WHEN r.reviewer_type = 'mentee' THEN r.overall_rating END), 2) as calculated_rating,
-          COUNT(DISTINCT CASE WHEN r.reviewer_type = 'mentee' THEN r.id END) as total_reviews,
+          COALESCE(AVG(r.overall_rating), 0) as calculated_rating,
+          COUNT(DISTINCT r.id) as total_reviews,
           COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'completed') as completed_sessions,
           ARRAY_AGG(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL) as categories,
           ARRAY_AGG(DISTINCT et.name) FILTER (WHERE et.name IS NOT NULL) as expertise
@@ -273,7 +273,7 @@ router.get('/profile',
         // Statistics
         totalSessions: mentor.total_sessions || 0,
         completedSessions: parseInt(mentor.completed_sessions || 0),
-        averageRating: parseFloat(mentor.calculated_rating || mentor.average_rating || 0),
+        averageRating: parseFloat(mentor.average_rating || mentor.calculated_rating || 0),
         totalReviews: parseInt(mentor.total_reviews || 0),
         totalEarnings: parseFloat(mentor.total_earnings || 0),
 
@@ -662,9 +662,11 @@ router.get('/my-reviews',
 
       const result = await db.query(query, params);
 
-      // Get total count
+      // Get total count and average rating
       let countQuery = `
-        SELECT COUNT(*) as total
+        SELECT
+          COUNT(*) as total,
+          AVG(r.overall_rating) as average_rating
         FROM reviews r
         WHERE r.mentor_id = $1
           AND r.reviewer_type = 'mentee'
@@ -683,21 +685,7 @@ router.get('/my-reviews',
 
       const countResult = await db.query(countQuery, countParams);
       const totalReviews = parseInt(countResult.rows[0].total);
-
-      // Calculate average rating from the reviews
-      let averageRating = 0;
-      if (totalReviews > 0) {
-        const avgQuery = `
-          SELECT ROUND(AVG(r.overall_rating), 2) as avg_rating
-          FROM reviews r
-          WHERE r.mentor_id = $1
-            AND r.reviewer_type = 'mentee'
-            AND r.review_target = 'mentor'
-            AND r.is_hidden = false
-        `;
-        const avgResult = await db.query(avgQuery, [mentorId]);
-        averageRating = parseFloat(avgResult.rows[0].avg_rating || 0);
-      }
+      const averageRating = parseFloat(countResult.rows[0].average_rating || 0);
 
       // Format reviews
       const reviews = result.rows.map(review => ({
@@ -736,8 +724,8 @@ router.get('/my-reviews',
             currentPage: parseInt(page),
             totalPages: Math.ceil(totalReviews / limit),
             totalReviews,
-            averageRating,
-            limit: parseInt(limit)
+            limit: parseInt(limit),
+            averageRating: averageRating
           },
           filters: {
             rating: rating ? parseInt(rating) : null
@@ -1051,6 +1039,8 @@ router.get('/:mentorId/reviews',
         JOIN users u ON r.mentee_id = u.id
         LEFT JOIN sessions s ON r.session_id = s.id
         WHERE r.mentor_id = $1
+          AND r.reviewer_type = 'mentee'
+          AND r.review_target = 'mentor'
           AND r.is_hidden = false
       `;
 
@@ -1081,7 +1071,10 @@ router.get('/:mentorId/reviews',
       let countQuery = `
         SELECT COUNT(*) as total
         FROM reviews r
-        WHERE r.mentor_id = $1 AND r.is_hidden = false
+        WHERE r.mentor_id = $1
+          AND r.reviewer_type = 'mentee'
+          AND r.review_target = 'mentor'
+          AND r.is_hidden = false
       `;
 
       const countParams = [mentorId];

@@ -540,7 +540,7 @@ export const canCancelSession = (session) => {
   const sessionTime = new Date(session.scheduled_at);
   const hoursUntilSession = (sessionTime - now) / (1000 * 60 * 60);
   
-  return ['pending', 'scheduled', 'confirmed'].includes(session.status) && hoursUntilSession > 24;
+  return ['confirmed', 'in_progress'].includes(session.status) && hoursUntilSession > 24;
 };
 
 /**

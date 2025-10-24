@@ -455,7 +455,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('oauth_state', state);
 
     // Redirect to Google OAuth (use full backend URL since proxy doesn't work for window.location)
-    window.location.href = `${API_BASE_URL || 'http://localhost:5000'}/auth/google?state=${state}`;
+    window.location.href = `${API_BASE_URL || 'http://localhost:5000'}/api/auth/google?state=${state}`;
   }, []);
 
   // Handle OAuth Callback
