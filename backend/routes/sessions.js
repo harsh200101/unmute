@@ -160,12 +160,10 @@ router.get('/details/:sessionId',
           p.amount as payment_amount,
           p.currency as payment_currency,
           r.overall_rating,
-          r.communication_rating,
-          r.knowledge_rating,
-          r.helpfulness_rating,
           r.comment as review_comment,
           r.mentor_response,
-          r.created_at as review_created_at
+          r.created_at as review_created_at,
+          r.reviewer_type
         FROM sessions s
         INNER JOIN mentors m ON s.mentor_id = m.id
         INNER JOIN users mentor_user ON m.user_id = mentor_user.id
@@ -252,23 +250,24 @@ router.get('/details/:sessionId',
         // Review Information
         review: session.overall_rating ? {
           overallRating: session.overall_rating,
-          communicationRating: session.communication_rating,
-          knowledgeRating: session.knowledge_rating,
-          helpfulnessRating: session.helpfulness_rating,
           comment: session.review_comment,
           mentorResponse: session.mentor_response,
-          createdAt: session.review_created_at
+          createdAt: session.review_created_at,
+          reviewerType: session.reviewer_type
         } : null,
         
         // Action Permissions
-        canCancel: ['pending', 'confirmed'].includes(session.status) && 
-                   new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000),
-        canReschedule: ['pending', 'confirmed'].includes(session.status) && 
-                       new Date(session.scheduled_at) > new Date(Date.now() + 48 * 60 * 60 * 1000),
+        canCancel: ['pending', 'confirmed'].includes(session.status) &&
+                    new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000),
+        canReschedule: ['pending', 'confirmed', 'scheduled'].includes(session.status) &&
+                        new Date(session.scheduled_at) > new Date(Date.now() + 12 * 60 * 60 * 1000),
         canReview: session.status === 'completed' && !session.overall_rating && session.mentee_id === userId,
-        canStart: session.status === 'confirmed' && 
-                  Math.abs(new Date(session.scheduled_at) - new Date()) < 15 * 60 * 1000, // 15 minutes window
-        
+        canStart: session.status === 'confirmed' &&
+                   Math.abs(new Date(session.scheduled_at) - new Date()) < 15 * 60 * 1000, // 15 minutes window
+
+        // Existing bookings for conflict checking (for rescheduling)
+        existingBookings: [],
+
         // Timestamps
         createdAt: session.created_at,
         updatedAt: session.updated_at,
@@ -310,7 +309,7 @@ router.delete('/details/:sessionId',
     param('sessionId')
       .isInt({ min: 1 })
       .withMessage('Valid session ID is required'),
-    
+
     body('reason')
       .optional()
       .isLength({ max: 500 })
@@ -318,6 +317,125 @@ router.delete('/details/:sessionId',
   ],
   sessionController.cancelSession
 );
+
+// POST /api/sessions/:sessionId/reschedule-request - Submit reschedule request (mentor)
+router.post('/:sessionId/reschedule-request',
+  auth,
+  rateLimit(5, 60 * 60 * 1000), // 5 reschedule requests per hour
+  [
+    param('sessionId')
+      .isInt({ min: 1 })
+      .withMessage('Valid session ID is required'),
+
+    body('reason')
+      .isLength({ min: 1, max: 1000 })
+      .withMessage('Reason must be between 1 and 1000 characters'),
+
+    body('preferredDate')
+      .isISO8601()
+      .withMessage('Valid preferred date is required'),
+
+    body('preferredTime')
+      .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+      .withMessage('Valid preferred time is required')
+  ],
+  sessionController.submitRescheduleRequest
+);
+
+// GET /api/sessions/reschedule-requests/pending - Get pending reschedule requests (mentee)
+router.get('/reschedule-requests/pending',
+  auth,
+  rateLimit(30, 15 * 60 * 1000),
+  sessionController.getPendingRescheduleRequests
+);
+
+// POST /api/sessions/reschedule-requests/:requestId/respond - Respond to reschedule request (mentee)
+router.post('/reschedule-requests/:requestId/respond',
+  auth,
+  rateLimit(10, 60 * 60 * 1000),
+  [
+    param('requestId')
+      .isInt({ min: 1 })
+      .withMessage('Valid request ID is required'),
+
+    body('action')
+      .isIn(['accept', 'decline'])
+      .withMessage('Action must be "accept" or "decline"'),
+
+    body('reason')
+      .optional()
+      .isLength({ max: 500 })
+      .withMessage('Response reason must be less than 500 characters')
+  ],
+  sessionController.respondToRescheduleRequest
+);
+
+// POST /api/sessions/details/:sessionId/reschedule-request - Submit reschedule request (mentor)
+router.post('/details/:sessionId/reschedule-request',
+  auth,
+  rateLimit(5, 60 * 60 * 1000), // 5 reschedule requests per hour
+  [
+    param('sessionId')
+      .isInt({ min: 1 })
+      .withMessage('Valid session ID is required'),
+
+    body('reason')
+      .optional()
+      .isLength({ max: 500 })
+      .withMessage('Reason must be less than 500 characters'),
+
+    body('preferredDate')
+      .optional()
+      .isISO8601()
+      .withMessage('Valid preferred date required'),
+
+    body('preferredTime')
+      .optional()
+      .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+      .withMessage('Valid preferred time required (HH:MM format)')
+  ],
+  sessionController.submitRescheduleRequest
+);
+
+// GET /api/sessions/reschedule-requests/pending - Get pending reschedule requests (mentee)
+router.get('/reschedule-requests/pending',
+  auth,
+  rateLimit(30, 15 * 60 * 1000), // 30 requests per 15 minutes
+  sessionController.getPendingRescheduleRequests
+);
+
+// PUT /api/sessions/details/:sessionId/reschedule - Direct reschedule for mentees
+router.put('/details/:sessionId/reschedule',
+  auth,
+  rateLimit(5, 60 * 60 * 1000), // 5 reschedules per hour
+  [
+    param('sessionId')
+      .isInt({ min: 1 })
+      .withMessage('Valid session ID is required'),
+
+    body('newScheduledAt')
+      .isISO8601()
+      .withMessage('Valid new scheduled time is required'),
+
+    body('newDurationMinutes')
+      .optional()
+      .isInt({ min: 15, max: 480 })
+      .withMessage('Duration must be between 15 and 480 minutes'),
+
+    body('timezone')
+      .optional()
+      .isLength({ min: 1, max: 50 })
+      .withMessage('Invalid timezone'),
+
+    body('reason')
+      .optional()
+      .isLength({ max: 500 })
+      .withMessage('Reason must be less than 500 characters')
+  ],
+  sessionController.rescheduleSession
+);
+
+
 
 // POST /api/sessions/details/:sessionId/start - Mark session as started
 router.post('/details/:sessionId/start',
@@ -467,7 +585,7 @@ router.post('/details/:sessionId/complete',
     param('sessionId')
       .isInt({ min: 1 })
       .withMessage('Valid session ID is required'),
-    
+
     body('notes')
       .optional()
       .isLength({ max: 1000 })
@@ -515,7 +633,7 @@ router.post('/details/:sessionId/complete',
 
         // Update session status to completed
         const updateQuery = `
-          UPDATE sessions 
+          UPDATE sessions
           SET status = 'completed',
               actual_end_time = CURRENT_TIMESTAMP,
               actual_duration_minutes = $2,
@@ -591,6 +709,60 @@ router.post('/details/:sessionId/complete',
     }
   }
 );
+
+// POST /api/sessions/:sessionId/review - Submit mentee-to-mentor review
+router.post('/:sessionId/review',
+  auth,
+  rateLimit(10, 60 * 60 * 1000), // 10 reviews per hour
+  [
+    param('sessionId')
+      .isInt({ min: 1 })
+      .withMessage('Valid session ID is required'),
+
+    body('overall_rating')
+      .optional()
+      .isInt({ min: 1, max: 5 })
+      .withMessage('Overall rating must be between 1 and 5'),
+
+    body('comment')
+      .optional()
+      .isLength({ max: 1000 })
+      .withMessage('Comment must be less than 1000 characters'),
+
+    body('is_anonymous')
+      .optional()
+      .isBoolean()
+      .withMessage('is_anonymous must be a boolean')
+  ],
+  sessionController.submitSessionReview
+);
+
+// POST /api/sessions/:sessionId/mentor-review - Submit mentor-to-mentee review
+router.post('/:sessionId/mentor-review',
+  auth,
+  rateLimit(10, 60 * 60 * 1000), // 10 reviews per hour
+  [
+    param('sessionId')
+      .isInt({ min: 1 })
+      .withMessage('Valid session ID is required'),
+
+    body('overall_rating')
+      .optional()
+      .isInt({ min: 1, max: 5 })
+      .withMessage('Overall rating must be between 1 and 5'),
+
+    body('comment')
+      .optional()
+      .isLength({ max: 1000 })
+      .withMessage('Comment must be less than 1000 characters'),
+
+    body('is_anonymous')
+      .optional()
+      .isBoolean()
+      .withMessage('is_anonymous must be a boolean')
+  ],
+  sessionController.submitMentorReview
+);
 // GET /api/sessions/my-sessions/stats - Get session statistics for user
 router.get('/my-sessions/stats',
   auth,
@@ -603,8 +775,26 @@ router.get('/my-sessions/stats',
   ],
   async (req, res) => {
     try {
-      const userId = req.user.userId;
+      console.log('🔍 [DEBUG] Session stats route hit');
+      console.log('🔍 [DEBUG] Request headers:', {
+        authorization: req.headers.authorization ? 'Bearer token present' : 'No token',
+        'content-type': req.headers['content-type']
+      });
+      console.log('🔍 [DEBUG] User object:', req.user);
+
+      const userId = req.user?.userId;
       const { timeframe = 'month' } = req.query;
+
+      console.log('🔍 [DEBUG] Extracted values:', { userId, timeframe, userIdType: typeof userId });
+
+      if (!userId) {
+        console.log('❌ [DEBUG] userId is undefined or null');
+        return res.status(401).json({
+          success: false,
+          message: 'User not authenticated',
+          code: 'AUTH_REQUIRED'
+        });
+      }
 
       console.log('🔍 Fetching session stats:', { userId, timeframe, userIdType: typeof userId });
 
@@ -633,17 +823,20 @@ router.get('/my-sessions/stats',
       console.log('🔍 Date range:', { startDate: startDate.toISOString(), endDate: now.toISOString() });
 
       // Get session statistics
-      console.log('🔍 Executing stats query with params:', [userId, startDate]);
+      console.log('🔍 [DEBUG] Executing stats query with params:', [userId, startDate.toISOString()]);
+      console.log('🔍 [DEBUG] userId type:', typeof userId, 'value:', userId);
+      console.log('🔍 [DEBUG] startDate type:', typeof startDate.toISOString(), 'value:', startDate.toISOString());
+
       const statsQuery = `
         SELECT
           COUNT(*) as total_sessions,
-          COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_sessions,
-          COUNT(CASE WHEN status IN ('scheduled', 'confirmed') AND scheduled_at > CURRENT_TIMESTAMP THEN 1 END) as upcoming_sessions,
-          COUNT(CASE WHEN status LIKE 'cancelled%' THEN 1 END) as cancelled_sessions,
-          COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_sessions_count,
-          ROUND(AVG(CASE WHEN status = 'completed' THEN duration_minutes END), 2) as avg_session_duration,
-          SUM(CASE WHEN status = 'completed' THEN price ELSE 0 END) as total_spent,
-          SUM(CASE WHEN status = 'completed' THEN mentor_earnings ELSE 0 END) as total_mentor_earnings
+          COUNT(CASE WHEN s.status = 'completed' THEN 1 END) as completed_sessions,
+          COUNT(CASE WHEN s.status IN ('scheduled', 'confirmed') AND s.scheduled_at > CURRENT_TIMESTAMP THEN 1 END) as upcoming_sessions,
+          COUNT(CASE WHEN s.status LIKE 'cancelled%' THEN 1 END) as cancelled_sessions,
+          COUNT(CASE WHEN s.status = 'completed' THEN 1 END) as completed_sessions_count,
+          ROUND(AVG(CASE WHEN s.status = 'completed' THEN s.duration_minutes END), 2) as avg_session_duration,
+          SUM(CASE WHEN s.status = 'completed' THEN s.price ELSE 0 END) as total_spent,
+          SUM(CASE WHEN s.status = 'completed' THEN s.mentor_earnings ELSE 0 END) as total_mentor_earnings
         FROM sessions s
         INNER JOIN mentors m ON s.mentor_id = m.id
         INNER JOIN users mentor_user ON m.user_id = mentor_user.id
@@ -651,13 +844,16 @@ router.get('/my-sessions/stats',
           AND s.created_at >= $2
       `;
 
+      console.log('🔍 [DEBUG] About to execute stats query...');
       const statsResult = await db.query(statsQuery, [userId, startDate.toISOString()]);
       const stats = statsResult.rows[0] || {};
 
+      console.log('🔍 [DEBUG] Stats query executed successfully');
       console.log('🔍 Stats query result:', { rowCount: statsResult.rows.length, stats });
       console.log('🔍 Raw stats:', stats);
 
       // Get recent sessions for additional insights
+      console.log('🔍 [DEBUG] About to execute recent sessions query...');
       const recentSessionsQuery = `
         SELECT
           s.id, s.title, s.status, s.scheduled_at, s.session_type,
@@ -677,7 +873,9 @@ router.get('/my-sessions/stats',
       `;
 
       const recentSessions = await db.query(recentSessionsQuery, [userId, startDate.toISOString()]);
+      console.log('🔍 [DEBUG] Recent sessions query executed successfully, rows:', recentSessions.rows.length);
 
+      console.log('🔍 [DEBUG] Processing stats data...');
       const processedStats = {
         totalSessions: parseInt(stats.total_sessions || 0) || 0,
         completedSessions: parseInt(stats.completed_sessions || 0) || 0,
@@ -697,6 +895,7 @@ router.get('/my-sessions/stats',
         recentSessions: recentSessions.rows
       };
 
+      console.log('🔍 [DEBUG] Stats processing completed successfully');
       console.log('✅ Successfully fetched session stats:', processedStats);
 
       res.json({
@@ -761,6 +960,7 @@ router.get('/mentor/upcoming',
         SELECT COUNT(*) as total_count
         FROM sessions s
         WHERE s.mentor_id = $1
+          AND s.scheduled_at IS NOT NULL
           AND s.scheduled_at > CURRENT_TIMESTAMP
           AND s.status IN ('scheduled', 'confirmed')
       `;
@@ -792,6 +992,7 @@ router.get('/mentor/upcoming',
         FROM sessions s
         INNER JOIN users u ON s.mentee_id = u.id
         WHERE s.mentor_id = $1
+          AND s.scheduled_at IS NOT NULL
           AND s.scheduled_at > CURRENT_TIMESTAMP
           AND s.status IN ('scheduled', 'confirmed')
         ORDER BY s.scheduled_at ASC
@@ -851,6 +1052,277 @@ router.get('/mentor/upcoming',
   }
 );
 
+// GET /api/sessions/mentor/all - Get all mentor sessions with comprehensive filtering
+router.get('/mentor/all',
+  auth,
+  rateLimit(50, 15 * 60 * 1000),
+  [
+    query('status')
+      .optional()
+      .isIn(['pending', 'scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled_by_mentee', 'cancelled_by_mentor', 'no_show_mentee', 'no_show_mentor', 'disputed', 'refunded'])
+      .withMessage('Invalid status filter'),
+
+    query('type')
+      .optional()
+      .isIn(['video', 'voice', 'chat', 'in_person'])
+      .withMessage('Invalid session type filter'),
+
+    query('upcoming')
+      .optional()
+      .isBoolean()
+      .withMessage('Upcoming must be a boolean'),
+
+    query('past')
+      .optional()
+      .isBoolean()
+      .withMessage('Past must be a boolean'),
+
+    query('page')
+      .optional()
+      .isInt({ min: 1 })
+      .withMessage('Page must be a positive integer'),
+
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 50 })
+      .withMessage('Limit must be between 1 and 50')
+  ],
+  async (req, res) => {
+    try {
+      const userId = req.user.userId;
+      const {
+        status,
+        type,
+        upcoming = false,
+        past = false,
+        page = 1,
+        limit = 20
+      } = req.query;
+
+      console.log('🔍 Fetching all mentor sessions:', { userId, status, type, upcoming, past });
+
+      // Get mentor ID first
+      const mentorQuery = 'SELECT id FROM mentors WHERE user_id = $1';
+      const mentorResult = await db.query(mentorQuery, [userId]);
+
+      if (mentorResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Mentor profile not found',
+          code: 'MENTOR_NOT_FOUND'
+        });
+      }
+
+      const mentorId = mentorResult.rows[0].id;
+
+      let query = `
+        SELECT
+          s.*,
+          u.first_name as mentee_first_name,
+          u.last_name as mentee_last_name,
+          u.avatar_url as mentee_avatar,
+          u.email as mentee_email,
+          p.payment_status,
+          p.amount as payment_amount,
+          r.overall_rating,
+          r.comment as review_comment,
+          rr.id as reschedule_request_id,
+          rr.status as reschedule_request_status,
+          rr.reason as reschedule_request_reason
+        FROM sessions s
+        INNER JOIN users u ON s.mentee_id = u.id
+        LEFT JOIN payments p ON s.id = p.session_id
+        LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false
+        LEFT JOIN session_reschedule_requests rr ON s.id = rr.session_id AND rr.status = 'pending'
+        WHERE s.mentor_id = $1
+      `;
+
+      const params = [mentorId];
+      let paramCount = 1;
+
+      // Status filter
+      if (status) {
+        paramCount++;
+        query += ` AND s.status = $${paramCount}`;
+        params.push(status);
+      }
+
+      // Session type filter
+      if (type) {
+        paramCount++;
+        query += ` AND s.session_type = $${paramCount}`;
+        params.push(type);
+      }
+
+      // Upcoming sessions
+      if (upcoming === 'true') {
+        query += ` AND s.scheduled_at > CURRENT_TIMESTAMP AND s.status IN ('scheduled', 'confirmed')`;
+      }
+
+      // Past sessions
+      if (past === 'true') {
+        query += ` AND s.scheduled_at < CURRENT_TIMESTAMP`;
+      }
+
+      query += ` ORDER BY s.scheduled_at DESC`;
+
+      // Pagination
+      const offset = (page - 1) * limit;
+      paramCount++;
+      query += ` LIMIT $${paramCount}`;
+      params.push(parseInt(limit));
+
+      paramCount++;
+      query += ` OFFSET $${paramCount}`;
+      params.push(offset);
+
+      const result = await db.query(query, params);
+
+      // Get total count
+      let countQuery = `
+        SELECT COUNT(*) as total
+        FROM sessions s
+        WHERE s.mentor_id = $1
+          AND s.scheduled_at IS NOT NULL
+      `;
+
+      const countParams = [mentorId];
+      let countParamCount = 1;
+
+      if (status) {
+        countParamCount++;
+        countQuery += ` AND s.status = $${countParamCount}`;
+        countParams.push(status);
+      }
+
+      if (type) {
+        countParamCount++;
+        countQuery += ` AND s.session_type = $${countParamCount}`;
+        countParams.push(type);
+      }
+
+      if (upcoming === 'true') {
+        countQuery += ` AND s.scheduled_at > CURRENT_TIMESTAMP AND s.status IN ('scheduled', 'confirmed')`;
+      }
+
+      if (past === 'true') {
+        countQuery += ` AND s.scheduled_at < CURRENT_TIMESTAMP`;
+      }
+
+      const countResult = await db.query(countQuery, countParams);
+      const totalSessions = parseInt(countResult.rows[0].total);
+
+      const sessions = result.rows.map(session => ({
+        id: session.id,
+        uuid: session.uuid,
+        title: session.title,
+        description: session.description,
+        sessionType: session.session_type,
+        scheduledAt: session.scheduled_at,
+        durationMinutes: session.duration_minutes,
+        timezone: session.timezone,
+        price: parseFloat(session.price || 0),
+        currency: session.currency,
+        platformFee: parseFloat(session.platform_fee || 0),
+        mentorEarnings: parseFloat(session.mentor_earnings || 0),
+        status: session.status,
+        meetingPlatform: session.meeting_platform,
+        meetingId: session.meeting_id,
+        meetingUrl: session.meeting_url,
+        meetingPassword: session.meeting_password,
+        actualStartTime: session.actual_start_time,
+        actualEndTime: session.actual_end_time,
+        actualDurationMinutes: session.actual_duration_minutes,
+        mentorNotes: session.mentor_notes,
+        menteeNotes: session.mentee_notes,
+        reminderSent24h: session.reminder_sent_24h,
+        reminderSent1h: session.reminder_sent_1h,
+        followUpSent: session.follow_up_sent,
+        createdAt: session.created_at,
+        updatedAt: session.updated_at,
+        confirmedAt: session.confirmed_at,
+        cancelledAt: session.cancelled_at,
+
+        // Mentee info
+        mentee: {
+          id: session.mentee_id,
+          firstName: session.mentee_first_name,
+          lastName: session.mentee_last_name,
+          fullName: `${session.mentee_first_name} ${session.mentee_last_name}`.trim(),
+          avatar: session.mentee_avatar,
+          email: session.mentee_email
+        },
+
+        // Payment info
+        payment: {
+          status: session.payment_status,
+          amount: parseFloat(session.payment_amount || 0)
+        },
+
+        // Review info
+        review: session.overall_rating ? {
+          overallRating: session.overall_rating,
+          comment: session.review_comment
+        } : null,
+
+        // Reschedule request info
+        rescheduleRequest: session.reschedule_request_id ? {
+          id: session.reschedule_request_id,
+          status: session.reschedule_request_status,
+          reason: session.reschedule_request_reason
+        } : null,
+
+        // Action permissions for mentors
+        canReschedule: ['pending', 'scheduled', 'confirmed'].includes(session.status) &&
+                        new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours notice for mentors
+        canCancel: ['pending', 'scheduled', 'confirmed'].includes(session.status) &&
+                    new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000),
+        canStart: session.status === 'confirmed' &&
+                  Math.abs(new Date(session.scheduled_at) - new Date()) < 15 * 60 * 1000,
+        canComplete: session.status === 'in_progress',
+        canReview: false, // Mentors don't review, they receive reviews
+
+        isUpcoming: new Date(session.scheduled_at) > new Date(),
+        isPast: new Date(session.scheduled_at) < new Date()
+      }));
+
+      console.log(`✅ Found ${sessions.length} mentor sessions for user ${userId}`);
+
+      res.json({
+        success: true,
+        data: {
+          sessions,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalSessions / limit),
+            totalSessions,
+            limit: parseInt(limit),
+            hasNextPage: page < Math.ceil(totalSessions / limit),
+            hasPreviousPage: page > 1
+          },
+          summary: {
+            total: totalSessions,
+            upcoming: sessions.filter(s => s.isUpcoming).length,
+            past: sessions.filter(s => s.isPast).length,
+            completed: sessions.filter(s => s.status === 'completed').length,
+            pending: sessions.filter(s => s.status === 'pending').length,
+            confirmed: sessions.filter(s => s.status === 'confirmed').length,
+            cancelled: sessions.filter(s => s.status.includes('cancelled')).length
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching mentor sessions:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch mentor sessions',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
+
 // GET /api/sessions/mentor/recent - Get recent sessions for mentor dashboard
 router.get('/mentor/recent',
   auth,
@@ -897,14 +1369,12 @@ router.get('/mentor/recent',
           u.last_name as mentee_last_name,
           u.avatar_url as mentee_avatar,
           r.overall_rating,
-          r.communication_rating,
-          r.knowledge_rating,
-          r.helpfulness_rating,
           r.comment as review_comment
         FROM sessions s
         INNER JOIN users u ON s.mentee_id = u.id
         LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false
         WHERE s.mentor_id = $1
+          AND s.scheduled_at IS NOT NULL
           AND s.status IN ('completed', 'cancelled_by_mentee', 'cancelled_by_mentor')
         ORDER BY s.scheduled_at DESC
         LIMIT $2
@@ -929,10 +1399,8 @@ router.get('/mentor/recent',
         },
         review: session.overall_rating ? {
           overallRating: session.overall_rating,
-          communicationRating: session.communication_rating,
-          knowledgeRating: session.knowledge_rating,
-          helpfulnessRating: session.helpfulness_rating,
-          comment: session.review_comment
+          comment: session.review_comment,
+          reviewerType: session.reviewer_type
         } : null
       }));
 
@@ -951,6 +1419,258 @@ router.get('/mentor/recent',
       res.status(500).json({
         success: false,
         message: 'Failed to fetch recent sessions',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
+
+// GET /api/sessions/mentor/all - Get all mentor sessions with filtering and pagination
+router.get('/mentor/all',
+  auth,
+  rateLimit(50, 15 * 60 * 1000),
+  [
+    query('status')
+      .optional()
+      .isIn(['pending', 'scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled_by_mentee', 'cancelled_by_mentor', 'no_show_mentee', 'no_show_mentor', 'disputed', 'refunded'])
+      .withMessage('Invalid status filter'),
+
+    query('type')
+      .optional()
+      .isIn(['video', 'voice', 'chat', 'in_person'])
+      .withMessage('Invalid session type filter'),
+
+    query('upcoming')
+      .optional()
+      .isBoolean()
+      .withMessage('Upcoming must be a boolean'),
+
+    query('past')
+      .optional()
+      .isBoolean()
+      .withMessage('Past must be a boolean'),
+
+    query('page')
+      .optional()
+      .isInt({ min: 1 })
+      .withMessage('Page must be a positive integer'),
+
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 50 })
+      .withMessage('Limit must be between 1 and 50')
+  ],
+  async (req, res) => {
+    try {
+      const userId = req.user.userId;
+      const { status, type, upcoming, past, page = 1, limit = 10 } = req.query;
+
+      console.log('🔍 Fetching mentor sessions:', { userId, status, type, upcoming, past });
+
+      // Get mentor ID first
+      const mentorQuery = 'SELECT id FROM mentors WHERE user_id = $1';
+      const mentorResult = await db.query(mentorQuery, [userId]);
+
+      if (mentorResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Mentor profile not found',
+          code: 'MENTOR_NOT_FOUND'
+        });
+      }
+
+      const mentorId = mentorResult.rows[0].id;
+
+      // Build query for mentor sessions
+      let query = `
+        SELECT
+          s.*,
+          u.first_name as mentee_first_name,
+          u.last_name as mentee_last_name,
+          u.avatar_url as mentee_avatar,
+          u.email as mentee_email,
+          p.payment_status,
+          p.amount as payment_amount,
+          r.overall_rating as session_rating,
+          r.comment as session_review
+        FROM sessions s
+        INNER JOIN users u ON s.mentee_id = u.id
+        LEFT JOIN payments p ON s.id = p.session_id
+        LEFT JOIN reviews r ON s.id = r.session_id
+        WHERE s.mentor_id = $1
+          AND s.scheduled_at IS NOT NULL
+      `;
+
+      const params = [mentorId];
+      let paramCount = 1;
+
+      // Status filter
+      if (status) {
+        paramCount++;
+        query += ` AND s.status = $${paramCount}`;
+        params.push(status);
+      }
+
+      // Session type filter
+      if (type) {
+        paramCount++;
+        query += ` AND s.session_type = $${paramCount}`;
+        params.push(type);
+      }
+
+      // Upcoming sessions
+      if (upcoming === 'true') {
+        query += ` AND s.scheduled_at > CURRENT_TIMESTAMP`;
+      }
+
+      // Past sessions
+      if (past === 'true') {
+        query += ` AND s.scheduled_at < CURRENT_TIMESTAMP`;
+      }
+
+      query += ` ORDER BY s.scheduled_at DESC`;
+
+      // Pagination
+      const offset = (parseInt(page) - 1) * parseInt(limit);
+      paramCount++;
+      query += ` LIMIT $${paramCount}`;
+      params.push(parseInt(limit));
+
+      paramCount++;
+      query += ` OFFSET $${paramCount}`;
+      params.push(offset);
+
+      const result = await db.query(query, params);
+
+      // Get total count
+      let countQuery = `
+        SELECT COUNT(*) as total
+        FROM sessions s
+        WHERE s.mentor_id = $1
+          AND s.scheduled_at IS NOT NULL
+      `;
+
+      const countParams = [mentorId];
+      let countParamCount = 1;
+
+      if (status) {
+        countParamCount++;
+        countQuery += ` AND s.status = $${countParamCount}`;
+        countParams.push(status);
+      }
+
+      if (type) {
+        countParamCount++;
+        countQuery += ` AND s.session_type = $${countParamCount}`;
+        countParams.push(type);
+      }
+
+      if (upcoming === 'true') {
+        countQuery += ` AND s.scheduled_at > CURRENT_TIMESTAMP`;
+      }
+
+      if (past === 'true') {
+        countQuery += ` AND s.scheduled_at < CURRENT_TIMESTAMP`;
+      }
+
+      const countResult = await db.query(countQuery, countParams);
+      const totalSessions = parseInt(countResult.rows[0].total);
+
+      // Format sessions
+      const sessions = result.rows.map(session => ({
+        id: session.id,
+        uuid: session.uuid,
+        title: session.title,
+        description: session.description,
+        sessionType: session.session_type,
+        scheduledAt: session.scheduled_at,
+        durationMinutes: session.duration_minutes,
+        timezone: session.timezone,
+        price: parseFloat(session.price || 0),
+        currency: session.currency,
+        platformFee: parseFloat(session.platform_fee || 0),
+        mentorEarnings: parseFloat(session.mentor_earnings || 0),
+        status: session.status,
+        meetingPlatform: session.meeting_platform,
+        meetingId: session.meeting_id,
+        meetingUrl: session.meeting_url,
+        meetingPassword: session.meeting_password,
+        actualStartTime: session.actual_start_time,
+        actualEndTime: session.actual_end_time,
+        actualDurationMinutes: session.actual_duration_minutes,
+        mentorNotes: session.mentor_notes,
+        menteeNotes: session.mentee_notes,
+        reminderSent24h: session.reminder_sent_24h,
+        reminderSent1h: session.reminder_sent_1h,
+        followUpSent: session.follow_up_sent,
+        createdAt: session.created_at,
+        updatedAt: session.updated_at,
+        confirmedAt: session.confirmed_at,
+        cancelledAt: session.cancelled_at,
+
+        // Mentee info
+        mentee: {
+          firstName: session.mentee_first_name,
+          lastName: session.mentee_last_name,
+          fullName: `${session.mentee_first_name} ${session.mentee_last_name}`.trim(),
+          avatar: session.mentee_avatar,
+          email: session.mentee_email
+        },
+
+        // Payment info
+        payment: {
+          status: session.payment_status,
+          amount: parseFloat(session.payment_amount || 0)
+        },
+
+        // Review info
+        review: session.session_rating ? {
+          overallRating: session.session_rating,
+          comment: session.session_review,
+          reviewerType: session.review_reviewer_type
+        } : null,
+
+        // Computed fields
+        isUpcoming: new Date(session.scheduled_at) > new Date(),
+        isPast: new Date(session.scheduled_at) < new Date(),
+        canCancel: ['pending', 'confirmed'].includes(session.status) &&
+                  new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000),
+        canReschedule: ['pending', 'confirmed'].includes(session.status) &&
+                      new Date(session.scheduled_at) > new Date(Date.now() + 12 * 60 * 60 * 1000),
+        canReview: session.status === 'completed' && !session.session_rating,
+        canStart: session.status === 'confirmed' &&
+                  Math.abs(new Date(session.scheduled_at) - new Date()) < 15 * 60 * 1000
+      }));
+
+      console.log(`✅ Found ${sessions.length} mentor sessions for user ${userId}`);
+
+      res.json({
+        success: true,
+        data: {
+          sessions,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(totalSessions / limit),
+            totalSessions,
+            limit: parseInt(limit),
+            hasNextPage: page < Math.ceil(totalSessions / limit),
+            hasPreviousPage: page > 1
+          },
+          summary: {
+            total: totalSessions,
+            upcoming: sessions.filter(s => s.isUpcoming).length,
+            past: sessions.filter(s => s.isPast).length,
+            completed: sessions.filter(s => s.status === 'completed').length,
+            pending: sessions.filter(s => s.status === 'pending').length
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching mentor sessions:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch mentor sessions',
         error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }

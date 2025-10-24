@@ -155,20 +155,20 @@ const MentorProfile = () => {
                         ? `${mentor.firstName} ${mentor.lastName}`
                         : mentor.fullName || 'Mentor'}
                     </h1>
-                    {mentor.is_featured && (
+                    {mentor.isFeatured && (
                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                         ⭐ Featured
                       </span>
                     )}
-                    {mentor.badge_level && (
+                    {mentor.badgeLevel && (
                       <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                        mentor.badge_level === 'diamond' ? 'bg-purple-100 text-purple-800' :
-                        mentor.badge_level === 'platinum' ? 'bg-gray-100 text-gray-800' :
-                        mentor.badge_level === 'gold' ? 'bg-yellow-100 text-yellow-800' :
-                        mentor.badge_level === 'silver' ? 'bg-gray-100 text-gray-600' :
+                        mentor.badgeLevel === 'diamond' ? 'bg-purple-100 text-purple-800' :
+                        mentor.badgeLevel === 'platinum' ? 'bg-gray-100 text-gray-800' :
+                        mentor.badgeLevel === 'gold' ? 'bg-yellow-100 text-yellow-800' :
+                        mentor.badgeLevel === 'silver' ? 'bg-gray-100 text-gray-600' :
                         'bg-orange-100 text-orange-800'
                       }`}>
-                        {mentor.badge_level.toUpperCase()}
+                        {mentor.badgeLevel.toUpperCase()}
                       </span>
                     )}
                   </div>
@@ -187,17 +187,17 @@ const MentorProfile = () => {
                         ))}
                       </div>
                       <span className="font-semibold text-gray-900">
-                        {mentor.average_rating?.toFixed(1) || '5.0'}
+                        {(mentor.averageRating || 0).toFixed(1)}
                       </span>
                       <span className="text-gray-600">
-                        ({mentor.total_reviews || 0} reviews)
+                        ({mentor.totalReviews || 0} reviews)
                       </span>
                     </div>
                     <div className="text-gray-600">
-                      📅 {mentor.total_sessions || 0} sessions completed
+                      📅 {mentor.totalSessions || 0} sessions completed
                     </div>
                     <div className="text-gray-600">
-                      ⚡ Responds in ~{mentor.response_time_hours || 24}h
+                      ⚡ Responds in ~{mentor.responseTimeHours || 24}h
                     </div>
                   </div>
 
@@ -222,7 +222,7 @@ const MentorProfile = () => {
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 sticky top-4">
                 <div className="text-center mb-6">
                   <div className="text-3xl font-bold text-gray-900 mb-1">
-                    ${mentor.hourly_rate || 75}/hour
+                    ${mentor.hourlyRate || 75}/hour
                   </div>
                   <p className="text-sm text-gray-600">Video session</p>
                 </div>
@@ -239,19 +239,19 @@ const MentorProfile = () => {
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    {mentor.min_session_duration || 30} - {mentor.max_session_duration || 180} min sessions
+                    {mentor.minSessionDuration || 30} - {mentor.maxSessionDuration || 180} min sessions
                   </div>
                   <div className="flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    {mentor.response_rate || 100}% response rate
+                    {mentor.responseRate || 100}% response rate
                   </div>
                   <div className="flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    Book up to {mentor.advance_booking_days || 30} days ahead
+                    Book up to {mentor.advanceBookingDays || 30} days ahead
                   </div>
                 </div>
               </div>
@@ -271,14 +271,14 @@ const MentorProfile = () => {
                 {mentor.bio || 'This mentor hasn\'t added a bio yet.'}
               </p>
               
-              {mentor.years_experience && (
+              {mentor.yearsExperience && (
                 <div className="mt-4 p-4 bg-blue-50 rounded-xl">
                   <div className="flex items-center gap-2">
                     <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                     <span className="font-semibold text-blue-900">
-                      {mentor.years_experience} years of experience
+                      {mentor.yearsExperience} years of experience
                     </span>
                   </div>
                 </div>
@@ -308,7 +308,7 @@ const MentorProfile = () => {
                 <h2 className="text-2xl font-bold text-gray-900">
                   Reviews ({reviewsTotal})
                 </h2>
-                {mentor.average_rating && (
+                {mentor.averageRating && (
                   <div className="flex items-center gap-2">
                     <div className="flex text-yellow-400">
                       {[...Array(5)].map((_, i) => (
@@ -318,7 +318,7 @@ const MentorProfile = () => {
                       ))}
                     </div>
                     <span className="text-xl font-bold text-gray-900">
-                      {mentor.average_rating.toFixed(1)}
+                      {(mentor.averageRating || 0).toFixed(1)}
                     </span>
                   </div>
                 )}
@@ -371,20 +371,20 @@ const MentorProfile = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Sessions</span>
-                  <span className="font-semibold text-gray-900">{mentor.total_sessions || 0}</span>
+                  <span className="font-semibold text-gray-900">{mentor.totalSessions || 0}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Response Time</span>
-                  <span className="font-semibold text-gray-900">{mentor.response_time_hours || 24}h</span>
+                  <span className="font-semibold text-gray-900">{mentor.responseTimeHours || 24}h</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Response Rate</span>
-                  <span className="font-semibold text-gray-900">{mentor.response_rate || 100}%</span>
+                  <span className="font-semibold text-gray-900">{mentor.responseRate || 100}%</span>
                 </div>
-                {mentor.years_experience && (
+                {mentor.yearsExperience && (
                   <div className="flex items-center justify-between">
                     <span className="text-gray-600">Experience</span>
-                    <span className="font-semibold text-gray-900">{mentor.years_experience} years</span>
+                    <span className="font-semibold text-gray-900">{mentor.yearsExperience} years</span>
                   </div>
                 )}
               </div>

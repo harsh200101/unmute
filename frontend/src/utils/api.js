@@ -334,7 +334,8 @@ export const endpoints = {
     cancel: (id) => `/sessions/details/${id}/cancel`,
     reschedule: (id) => `/sessions/details/${id}/reschedule`,
     notes: (id) => `/sessions/details/${id}/notes`,
-    review: (id) => `/sessions/details/${id}/review`,
+    review: (id) => `/sessions/${id}/review`,
+    mentorReview: (id) => `/sessions/${id}/mentor-review`,
   },
 
   // Mentor endpoints

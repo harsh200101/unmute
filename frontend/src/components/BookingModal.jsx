@@ -1,31 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { format, addDays, startOfTomorrow, setHours, setMinutes } from 'date-fns';
-import { loadStripe } from '@stripe/stripe-js';
-import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-
-// Initialize Stripe
-const stripePromise = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
-  ? loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY)
-  : null;
+import PaymentButton from './PaymentButton';
 
 const BookingModal = ({ mentor, isOpen, onClose }) => {
-  const { isAuthenticated } = useAuth();
-  const [step, setStep] = useState(1); // 1: DateTime, 2: Create Session, 3: Payment, 4: Confirmation
-  const [bookingData, setBookingData] = useState({
-    selectedDate: null,
-    selectedTime: null,
-    durationMinutes: 60, // Updated to match backend
-    sessionType: 'video',
-    description: '', // Updated from notes
-    title: ''
-  });
-  const [loading, setLoading] = useState(false);
-  const [paymentIntent, setPaymentIntent] = useState(null);
-  const [availability, setAvailability] = useState([]);
-  const [loadingAvailability, setLoadingAvailability] = useState(false);
+   const { isAuthenticated } = useAuth();
+   const [step, setStep] = useState(1); // 1: DateTime, 2: Create Session, 3: Payment
+   const [bookingData, setBookingData] = useState({
+     selectedDate: null,
+     selectedTime: null,
+     durationMinutes: 60,
+     sessionType: 'video',
+     description: '',
+     title: ''
+   });
+   const [loading, setLoading] = useState(false);
+   const [createdSession, setCreatedSession] = useState(null);
+   const [availability, setAvailability] = useState([]);
+   const [loadingAvailability, setLoadingAvailability] = useState(false);
 
   // Load mentor availability when modal opens
   useEffect(() => {
@@ -136,13 +130,11 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
       };
 
       console.log('Creating session with data:', sessionData);
-      console.log('Mentor data:', mentor);
 
-      // Updated API endpoint to match backend
       const response = await api.post('/sessions', sessionData);
 
       if (response.data.success) {
-        setPaymentIntent(response.data.data.paymentIntent); // Get payment intent for payment processing
+        setCreatedSession(response.data.data.session);
         setStep(3); // Go to payment step
         toast.success('Session created! Please complete payment.');
       } else {
@@ -157,52 +149,6 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
     }
   };
 
-  const handlePaymentSubmit = async () => {
-    if (!stripe || !elements) {
-      toast.error('Stripe not initialized');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const cardElement = elements.getElement(CardElement);
-
-      // Confirm payment with Stripe
-      const { error, paymentIntent } = await stripe.confirmCardPayment(
-        paymentIntent.client_secret,
-        {
-          payment_method: {
-            card: cardElement,
-          }
-        }
-      );
-
-      if (error) {
-        console.error('Payment error:', error);
-        toast.error(error.message || 'Payment failed');
-        return;
-      }
-
-      if (paymentIntent.status === 'succeeded') {
-        // Payment successful, redirect to payment result page
-        const url = new URL(window.location);
-        url.pathname = '/payment/result';
-        url.searchParams.set('payment_intent', paymentIntent.id);
-        url.searchParams.set('payment_intent_client_secret', paymentIntent.client_secret);
-        url.searchParams.set('redirect_status', 'succeeded');
-        url.searchParams.set('session_id', paymentIntent.metadata.sessionId);
-
-        window.location.href = url.toString();
-      } else {
-        toast.error('Payment processing failed');
-      }
-    } catch (error) {
-      console.error('Payment processing error:', error);
-      toast.error('Payment processing failed');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handlePaymentComplete = () => {
     toast.success('Session booked successfully!');
@@ -222,53 +168,13 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
       description: '',
       title: ''
     });
-    setPaymentIntent(null);
+    setCreatedSession(null);
   };
 
   if (!isOpen) return null;
 
-  if (!stripePromise) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg max-w-md w-full max-h-screen overflow-y-auto">
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-900">Payment Configuration Required</h2>
-              <button
-                onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="text-center">
-              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Stripe Not Configured</h3>
-              <p className="text-gray-600 mb-6">
-                Payment processing is not configured. Please add your Stripe publishable key to the environment variables.
-              </p>
-              <button
-                onClick={onClose}
-                className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <Elements stripe={stripePromise}>
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
         <div className="bg-white rounded-lg max-w-3xl w-full max-h-screen overflow-y-auto">
           {/* Header */}
           <div className="flex justify-between items-center p-6 border-b">
@@ -318,9 +224,8 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
                 mentor={mentor}
                 calculateFees={calculateFees}
                 onBack={() => setStep(2)}
-                onSubmit={handlePaymentSubmit}
                 loading={loading}
-                paymentIntent={paymentIntent}
+                sessionId={createdSession?.id}
               />
             )}
 
@@ -334,9 +239,8 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
           </div>
         </div>
       </div>
-    </Elements>
-  );
-};
+    );
+  };
 
 // Step Indicator Component
 const StepIndicator = ({ currentStep }) => (
@@ -589,7 +493,7 @@ const CreateSessionStep = ({ bookingData, mentor, calculateFees, onBack, onSubmi
 };
 
 // Payment Step
-const PaymentStep = ({ bookingData, mentor, calculateFees, onBack, onSubmit, loading, paymentIntent }) => {
+const PaymentStep = ({ bookingData, mentor, calculateFees, onBack, loading, sessionId }) => {
   const fees = calculateFees();
 
   return (
@@ -604,13 +508,30 @@ const PaymentStep = ({ bookingData, mentor, calculateFees, onBack, onSubmit, loa
           <div>Duration: {bookingData.durationMinutes} minutes</div>
           <div>Type: {bookingData.sessionType}</div>
           <div className="font-medium pt-2 border-t border-blue-200">
-            Total: £{fees.total.toFixed(2)}
+            Total: ₹{fees.total.toFixed(2)}
           </div>
         </div>
       </div>
 
       {/* Payment Method */}
-      <StripePaymentForm onSubmit={onSubmit} loading={loading} amount={fees.total} />
+      <div className="space-y-4">
+        <h3 className="font-semibold">Payment Information</h3>
+        <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
+          <p className="text-yellow-800 text-sm">
+            🔒 Secure payment powered by PhonePe
+          </p>
+        </div>
+        <PaymentButton
+          sessionId={sessionId}
+          amount={fees.total}
+          onSuccess={() => {
+            // Payment successful, redirect will happen automatically
+          }}
+          onError={(error) => {
+            console.error('Payment error:', error);
+          }}
+        />
+      </div>
 
       {/* Navigation */}
       <div className="flex space-x-4">
@@ -620,57 +541,11 @@ const PaymentStep = ({ bookingData, mentor, calculateFees, onBack, onSubmit, loa
         >
           Back
         </button>
-        <button
-          onClick={onSubmit}
-          disabled={loading || !paymentIntent}
-          className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
-        >
-          {loading ? 'Processing Payment...' : `Pay £${fees.total.toFixed(2)}`}
-        </button>
       </div>
     </div>
   );
 };
 
-// Stripe Payment Form Component
-const StripePaymentForm = ({ onSubmit, loading, amount }) => {
-  const stripe = useStripe();
-  const elements = useElements();
-
-  const cardElementOptions = {
-    style: {
-      base: {
-        fontSize: '16px',
-        color: '#424770',
-        '::placeholder': {
-          color: '#aab7c4',
-        },
-      },
-    },
-  };
-
-  return (
-    <div className="space-y-4">
-      <h3 className="font-semibold">Payment Information</h3>
-
-      {process.env.NODE_ENV === 'development' && (
-        <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
-          <p className="text-yellow-800 text-sm">
-            🧪 <strong>Development Mode:</strong> Use test card 4242 4242 4242 4242
-          </p>
-        </div>
-      )}
-
-      <div className="border border-gray-300 rounded-md p-3">
-        <CardElement options={cardElementOptions} />
-      </div>
-
-      <div className="text-xs text-gray-500">
-        Your payment is secured by Stripe. We never store your card information.
-      </div>
-    </div>
-  );
-};
 
 // Confirmation Step
 const ConfirmationStep = ({ bookingData, mentor, onComplete }) => (

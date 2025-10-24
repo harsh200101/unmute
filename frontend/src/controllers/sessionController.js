@@ -103,6 +103,24 @@ class SessionController {
           (s.mentee && (s.mentee.fullName || `${s.mentee.firstName || ''} ${s.mentee.lastName || ''}`.trim())) ||
           s.mentee_name;
 
+        // Parse reschedule request metadata
+        let reschedule_request = null;
+        if (s.reschedule_request_metadata) {
+          try {
+            const metadata = typeof s.reschedule_request_metadata === 'string'
+              ? JSON.parse(s.reschedule_request_metadata)
+              : s.reschedule_request_metadata;
+            reschedule_request = {
+              newScheduledAt: metadata.newScheduledAt,
+              newDurationMinutes: metadata.newDurationMinutes,
+              timezone: metadata.timezone,
+              reason: metadata.reason
+            };
+          } catch (e) {
+            console.warn('Failed to parse reschedule request metadata:', e);
+          }
+        }
+
         return {
           // snake_case fields consumed by UI components (SessionCard/MyAppointments)
           id: s.id,
@@ -127,6 +145,7 @@ class SessionController {
           payment_status: s.paymentStatus ?? s.payment_status,
           mentor_name: mentorFullName,
           mentee_name: menteeFullName,
+          reschedule_request: reschedule_request,
 
           // Preserve original fields in case other parts of UI use them
           ...s
@@ -153,10 +172,10 @@ class SessionController {
    */
   async getSessionDetails(sessionId) {
     try {
-      const response = await apiClient.get(`/sessions/${sessionId}`);
+      const response = await apiClient.get(`/sessions/details/${sessionId}`);
       return {
         success: true,
-        session: response.data.data
+        session: response.data.data.session
       };
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Failed to fetch session details';
@@ -174,7 +193,7 @@ class SessionController {
    */
   async updateSessionStatus(sessionId, status, additionalData = {}) {
     try {
-      const response = await apiClient.put(`/sessions/${sessionId}/status`, {
+      const response = await apiClient.put(`/sessions/details/${sessionId}/status`, {
         status,
         ...additionalData
       });
@@ -200,7 +219,7 @@ class SessionController {
    */
   async cancelSession(sessionId, reason = '') {
     try {
-      const response = await apiClient.delete(`/sessions/${sessionId}`, {
+      const response = await apiClient.delete(`/sessions/details/${sessionId}`, {
         data: { reason }
       });
 
@@ -224,7 +243,7 @@ class SessionController {
    */
   async startSession(sessionId) {
     try {
-      const response = await apiClient.post(`/sessions/${sessionId}/start`);
+      const response = await apiClient.post(`/sessions/details/${sessionId}/start`);
       const session = response.data.data;
       
       toast.success('Session started! Participants have been notified.');
@@ -248,7 +267,7 @@ class SessionController {
    */
   async completeSession(sessionId, completionData = {}) {
     try {
-      const response = await apiClient.post(`/sessions/${sessionId}/complete`, {
+      const response = await apiClient.post(`/sessions/details/${sessionId}/complete`, {
         mentor_notes: completionData.mentorNotes,
         actual_duration_minutes: completionData.actualDuration,
         session_summary: completionData.summary
@@ -294,32 +313,65 @@ class SessionController {
   }
 
   /**
-   * Reschedule a session
-   * @param {string} sessionId - Session ID
-   * @param {Object} rescheduleData - New scheduling data
-   * @returns {Promise<Object>} Rescheduled session
-   */
-  async rescheduleSession(sessionId, rescheduleData) {
-    try {
-      const response = await apiClient.put(`/sessions/${sessionId}/reschedule`, {
-        new_scheduled_at: rescheduleData.newScheduledAt,
-        new_duration_minutes: rescheduleData.newDuration,
-        timezone: rescheduleData.timezone,
-        reason: rescheduleData.reason
-      });
+    * Reschedule a session
+    * @param {string} sessionId - Session ID
+    * @param {Object} rescheduleData - New scheduling data
+    * @returns {Promise<Object>} Rescheduled session
+    */
+   async rescheduleSession(sessionId, rescheduleData) {
+     try {
+       const response = await apiClient.put(`/sessions/details/${sessionId}/reschedule`, {
+         newScheduledAt: rescheduleData.newScheduledAt,
+         newDurationMinutes: rescheduleData.newDuration,
+         timezone: rescheduleData.timezone,
+         reason: rescheduleData.reason
+       });
 
-      const session = response.data.data;
-      toast.success('Session rescheduled successfully!');
-      return {
-        success: true,
-        session
-      };
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Failed to reschedule session';
-      toast.error(errorMessage);
-      throw new Error(errorMessage);
-    }
-  }
+       const session = response.data.data;
+       toast.success('Session rescheduled successfully!');
+       return {
+         success: true,
+         session,
+         action: response.data.data.action
+       };
+     } catch (error) {
+       const errorMessage = error.response?.data?.message || 'Failed to reschedule session';
+       toast.error(errorMessage);
+       throw new Error(errorMessage);
+     }
+   }
+
+   /**
+    * Respond to a reschedule request
+    * @param {string} sessionId - Session ID
+    * @param {Object} responseData - Response data
+    * @returns {Promise<Object>} Response result
+    */
+   async respondToRescheduleRequest(sessionId, responseData) {
+     try {
+       const response = await apiClient.post(`/sessions/details/${sessionId}/respond-to-reschedule`, {
+         action: responseData.action,
+         newScheduledAt: responseData.newScheduledAt,
+         newDurationMinutes: responseData.newDuration,
+         timezone: responseData.timezone
+       });
+
+       const session = response.data.data;
+       const message = responseData.action === 'accept'
+         ? 'Session rescheduled successfully!'
+         : 'Session cancelled successfully';
+       toast.success(message);
+       return {
+         success: true,
+         session,
+         action: response.data.data.action
+       };
+     } catch (error) {
+       const errorMessage = error.response?.data?.message || 'Failed to respond to reschedule request';
+       toast.error(errorMessage);
+       throw new Error(errorMessage);
+     }
+   }
 
   /**
    * Add or update session notes
@@ -434,20 +486,21 @@ class SessionController {
   }
 
   /**
-   * Submit session review
+   * Submit session review (mentee to mentor)
    * @param {string} sessionId - Session ID
    * @param {Object} reviewData - Review data
    * @returns {Promise<Object>} Created review
    */
   async submitSessionReview(sessionId, reviewData) {
     try {
+      // Validate rating if provided (optional now)
+      if (reviewData.overallRating !== undefined && (reviewData.overallRating < 1 || reviewData.overallRating > 5)) {
+        throw new Error('Rating must be between 1 and 5');
+      }
+
       const response = await apiClient.post(`/sessions/${sessionId}/review`, {
-        overall_rating: reviewData.overallRating,
-        communication_rating: reviewData.communicationRating,
-        knowledge_rating: reviewData.knowledgeRating,
-        helpfulness_rating: reviewData.helpfulnessRating,
-        comment: reviewData.comment,
-        is_anonymous: reviewData.isAnonymous || false
+        overall_rating: reviewData.overallRating || undefined,
+        comment: reviewData.comment || undefined
       });
 
       const review = response.data.data;
@@ -458,6 +511,33 @@ class SessionController {
       };
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Failed to submit review';
+      console.error('Review submission error:', error);
+      toast.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }
+
+  /**
+   * Submit mentor-to-mentee review
+   * @param {string} sessionId - Session ID
+   * @param {Object} reviewData - Review data
+   * @returns {Promise<Object>} Created review
+   */
+  async submitMentorReview(sessionId, reviewData) {
+    try {
+      const response = await apiClient.post(`/sessions/${sessionId}/mentor-review`, {
+        overall_rating: reviewData.overallRating || undefined,
+        comment: reviewData.comment || undefined
+      });
+
+      const review = response.data.data;
+      toast.success('Mentor review submitted successfully!');
+      return {
+        success: true,
+        review
+      };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to submit mentor review';
       toast.error(errorMessage);
       throw new Error(errorMessage);
     }
@@ -587,31 +667,104 @@ class SessionController {
   }
 
   /**
-   * Validate session timing constraints
-   * @param {string} mentorId - Mentor ID
-   * @param {string} scheduledAt - Scheduled time
-   * @param {number} durationMinutes - Duration in minutes
-   * @returns {Promise<Object>} Validation result
-   */
-  async validateSessionTiming(mentorId, scheduledAt, durationMinutes) {
-    try {
-      const response = await apiClient.post('/sessions/validate-timing', {
-        mentor_id: mentorId,
-        scheduled_at: scheduledAt,
-        duration_minutes: durationMinutes
-      });
+    * Validate session timing constraints
+    * @param {string} mentorId - Mentor ID
+    * @param {string} scheduledAt - Scheduled time
+    * @param {number} durationMinutes - Duration in minutes
+    * @returns {Promise<Object>} Validation result
+    */
+   async validateSessionTiming(mentorId, scheduledAt, durationMinutes) {
+     try {
+       const response = await apiClient.post('/sessions/validate-timing', {
+         mentor_id: mentorId,
+         scheduled_at: scheduledAt,
+         duration_minutes: durationMinutes
+       });
 
-      return {
-        success: true,
-        isValid: response.data.data.isValid,
-        conflicts: response.data.data.conflicts,
-        suggestions: response.data.data.suggestions
-      };
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Failed to validate timing';
-      throw new Error(errorMessage);
-    }
-  }
+       return {
+         success: true,
+         isValid: response.data.data.isValid,
+         conflicts: response.data.data.conflicts,
+         suggestions: response.data.data.suggestions
+       };
+     } catch (error) {
+       const errorMessage = error.response?.data?.message || 'Failed to validate timing';
+       throw new Error(errorMessage);
+     }
+   }
+
+   /**
+    * Submit reschedule request (mentor only)
+    * @param {string} sessionId - Session ID
+    * @param {Object} requestData - Request data
+    * @returns {Promise<Object>} Request result
+    */
+   async submitRescheduleRequest(sessionId, requestData) {
+     try {
+       const response = await apiClient.post(`/sessions/${sessionId}/reschedule-request`, {
+         reason: requestData.reason,
+         preferredDate: requestData.preferredDate,
+         preferredTime: requestData.preferredTime
+       });
+
+       const result = response.data.data;
+       toast.success('Reschedule request submitted successfully!');
+       return {
+         success: true,
+         rescheduleRequest: result
+       };
+     } catch (error) {
+       const errorMessage = error.response?.data?.message || 'Failed to submit reschedule request';
+       toast.error(errorMessage);
+       throw new Error(errorMessage);
+     }
+   }
+
+   /**
+    * Get pending reschedule requests (mentee only)
+    * @returns {Promise<Object>} Pending requests
+    */
+   async getPendingRescheduleRequests() {
+     try {
+       const response = await apiClient.get('/sessions/reschedule-requests/pending');
+       return {
+         success: true,
+         requests: response.data.data.requests,
+         count: response.data.data.count
+       };
+     } catch (error) {
+       const errorMessage = error.response?.data?.message || 'Failed to fetch reschedule requests';
+       console.error('Reschedule requests error:', errorMessage);
+       throw new Error(errorMessage);
+     }
+   }
+
+   /**
+    * Respond to reschedule request (mentee only)
+    * @param {string} requestId - Request ID
+    * @param {Object} responseData - Response data
+    * @returns {Promise<Object>} Response result
+    */
+   async respondToRescheduleRequest(requestId, responseData) {
+     try {
+       const response = await apiClient.post(`/sessions/reschedule-requests/${requestId}/respond`, {
+         action: responseData.action,
+         newScheduledAt: responseData.newScheduledAt,
+         reason: responseData.reason
+       });
+
+       const result = response.data.data;
+       toast.success(`Reschedule request ${responseData.action === 'accept' ? 'accepted' : 'declined'} successfully!`);
+       return {
+         success: true,
+         result
+       };
+     } catch (error) {
+       const errorMessage = error.response?.data?.message || 'Failed to respond to reschedule request';
+       toast.error(errorMessage);
+       throw new Error(errorMessage);
+     }
+   }
 }
 
 // Create singleton instance
@@ -632,12 +785,16 @@ export const {
   getUpcomingSessions,
   getSessionHistory,
   submitSessionReview,
+  submitMentorReview,
   requestRefund,
   reportSessionIssue,
   getSessionStats,
   checkMentorAvailability,
   sendSessionReminder,
-  validateSessionTiming
+  validateSessionTiming,
+  submitRescheduleRequest,
+  getPendingRescheduleRequests,
+  respondToRescheduleRequest
 } = sessionController;
 
 // Export the controller instance as default

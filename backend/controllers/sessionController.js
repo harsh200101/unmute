@@ -1,6 +1,8 @@
 const db = require('../config/database');
 const { validationResult } = require('express-validator');
 const crypto = require('crypto');
+const agoraService = require('../utils/agora');
+const { sendSessionRescheduledEmail, sendRescheduleRequestEmail, sendSessionCancelledEmail, sendMeetingInviteEmail } = require('../utils/emailService');
 
 // Mock APIs for development (replace with real APIs in production)
 const mockZoomAPI = {
@@ -141,8 +143,8 @@ exports.createSession = async (req, res) => {
           m.advance_booking_days,
           m.timezone as mentor_timezone,
           u.id as user_id,
-          u.first_name,
-          u.last_name
+          u.first_name as mentor_first_name,
+          u.last_name as mentor_last_name
         FROM mentors m
         JOIN users u ON m.user_id = u.id
         WHERE m.id = $1 AND m.status = 'active' AND m.verification_status = 'verified'
@@ -180,22 +182,10 @@ exports.createSession = async (req, res) => {
       // Create meeting if video session
       let meetingDetails = {};
       if (sessionType === 'video' || sessionType === 'voice') {
-        try {
-          const zoomMeeting = await mockZoomAPI.createMeeting({
-            topic: title || `Mentoring Session with ${mentor.first_name} ${mentor.last_name}`,
-            start_time: scheduledAt,
-            duration: durationMinutes
-          });
-
-          meetingDetails = {
-            meeting_id: zoomMeeting.id,
-            meeting_url: zoomMeeting.join_url,
-            meeting_password: zoomMeeting.password
-          };
-        } catch (error) {
-          console.error('❌ Meeting creation failed:', error);
-          throw new Error('MEETING_CREATION_FAILED');
-        }
+        // Agora meeting will be created after session insertion
+        meetingDetails = {
+          meeting_platform: 'agora'
+        };
       }
 
       // Determine session status
@@ -226,54 +216,43 @@ exports.createSession = async (req, res) => {
         mentor.currency,
         platformFee,
         mentorEarnings,
-        meetingPlatform,
-        meetingDetails.meeting_id || null,
-        meetingDetails.meeting_url || null,
-        meetingDetails.meeting_password || null,
+        meetingDetails.meeting_platform || meetingPlatform,
+        null, // meeting_id (will be set later for Agora)
+        null, // meeting_url (will be set later for Agora)
+        null, // meeting_password (not needed for Agora)
         sessionStatus
       ];
 
       const sessionResult = await client.query(sessionQuery, sessionValues);
       const session = sessionResult.rows[0];
 
-      // Create payment intent
-      const paymentIntent = await mockStripeAPI.createPaymentIntent({
-        amount: Math.round(sessionPrice * 100), // Convert to cents
-        currency: mentor.currency.toLowerCase(),
-        metadata: {
-          sessionId: session.id.toString(),
-          sessionUuid: session.uuid,
-          mentorId: mentorId.toString(),
-          menteeId: menteeId.toString(),
-          platform: 'unmute'
-        }
-      });
+      // Create video meeting for this session
+      const meetingCredentials = agoraService.generateMeetingCredentials(session.id, menteeId);
 
-      // Insert payment record
-      const paymentQuery = `
-        INSERT INTO payments (
-          session_id, amount, currency, platform_fee, processing_fee,
-          mentor_earnings, payment_status, payment_method, payment_gateway,
-          stripe_payment_intent_id
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        RETURNING *
+      const meetingQuery = `
+        INSERT INTO video_meetings (
+          session_id, channel_name, agora_app_id, agora_token, token_expires_at,
+          max_duration_minutes, meeting_status
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'scheduled')
       `;
 
-      const paymentValues = [
+      await client.query(meetingQuery, [
         session.id,
-        sessionPrice,
-        mentor.currency,
-        platformFee,
-        0, // processing fee - calculate based on payment method
-        mentorEarnings,
-        'pending',
-        'stripe',
-        'stripe',
-        paymentIntent.id
-      ];
+        meetingCredentials.channelName,
+        meetingCredentials.appId,
+        meetingCredentials.token,
+        meetingCredentials.tokenExpiresAt,
+        75 // 1 hour 15 minutes
+      ]);
 
-      const paymentResult = await client.query(paymentQuery, paymentValues);
+      // Update session with Agora meeting URL
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const agoraMeetingUrl = `${frontendUrl}/meeting/${session.id}`;
+      await client.query(`
+        UPDATE sessions
+        SET meeting_url = $1, meeting_id = $2
+        WHERE id = $3
+      `, [agoraMeetingUrl, meetingCredentials.channelName, session.id]);
 
       // Create notifications - FIXED: Consistent column names
       const notifications = [
@@ -316,9 +295,7 @@ exports.createSession = async (req, res) => {
       }
 
       return {
-        session,
-        payment: paymentResult.rows[0],
-        paymentIntent
+        session
       };
     });
 
@@ -328,19 +305,7 @@ exports.createSession = async (req, res) => {
       success: true,
       message: 'Session created successfully',
       data: {
-        session: formatSessionResponse(result.session),
-        payment: {
-          id: result.payment.id,
-          amount: result.payment.amount,
-          currency: result.payment.currency,
-          status: result.payment.payment_status
-        },
-        paymentIntent: {
-          id: result.paymentIntent.id,
-          client_secret: result.paymentIntent.client_secret,
-          amount: result.paymentIntent.amount,
-          currency: result.paymentIntent.currency
-        }
+        session: formatSessionResponse(result.session)
       }
     });
 
@@ -404,7 +369,7 @@ exports.getUserSessions = async (req, res) => {
     console.log('🔍 Fetching user sessions:', { userId, status, type, upcoming, past });
 
     let query = `
-      SELECT 
+      SELECT
         s.*,
         mentor_user.first_name as mentor_first_name,
         mentor_user.last_name as mentor_last_name,
@@ -417,13 +382,18 @@ exports.getUserSessions = async (req, res) => {
         p.payment_status,
         p.amount as payment_amount,
         r.overall_rating as session_rating,
-        r.comment as session_review
+        r.comment as session_review,
+        rr.metadata as reschedule_request_metadata
       FROM sessions s
       INNER JOIN mentors m ON s.mentor_id = m.id
       INNER JOIN users mentor_user ON m.user_id = mentor_user.id
       INNER JOIN users mentee_user ON s.mentee_id = mentee_user.id
       LEFT JOIN payments p ON s.id = p.session_id
       LEFT JOIN reviews r ON s.id = r.session_id
+      LEFT JOIN notifications rr ON s.id = rr.related_entity_id
+        AND rr.type = 'reschedule_request'
+        AND rr.user_id = $1
+        AND rr.is_read = false
       WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
     `;
 
@@ -514,11 +484,12 @@ exports.getUserSessions = async (req, res) => {
       sessionReview: session.session_review,
       isUpcoming: new Date(session.scheduled_at) > new Date(),
       isPast: new Date(session.scheduled_at) < new Date(),
-      canCancel: ['pending', 'confirmed'].includes(session.status) && 
-                 new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours notice
+      canCancel: ['pending', 'scheduled', 'confirmed'].includes(session.status) &&
+                new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours notice
       canReview: session.status === 'completed' && !session.session_rating,
-      canReschedule: ['pending', 'confirmed'].includes(session.status) && 
-                     new Date(session.scheduled_at) > new Date(Date.now() + 48 * 60 * 60 * 1000) // 48 hours notice
+      canMentorReview: session.status === 'completed' && session.mentee_id === userId, // Mentor can review mentee
+      canReschedule: ['pending', 'confirmed'].includes(session.status) &&
+                    new Date(session.scheduled_at) > new Date(Date.now() + 12 * 60 * 60 * 1000) // 12 hours notice
     }));
 
     console.log(`✅ Found ${sessions.length} sessions for user ${userId}`);
@@ -589,13 +560,13 @@ exports.cancelSession = async (req, res) => {
 
       const session = sessionResult.rows[0];
 
-      // Check if user has permission to cancel
-      if (session.mentee_id !== userId && session.mentor_user_id !== userId) {
+      // Check if user has permission to cancel (only mentee can cancel)
+      if (session.mentee_id !== userId) {
         throw new Error('UNAUTHORIZED');
       }
 
       // Check if session can be cancelled
-      if (!['pending', 'confirmed'].includes(session.status)) {
+      if (!['pending', 'scheduled', 'confirmed'].includes(session.status)) {
         throw new Error('CANNOT_CANCEL');
       }
 
@@ -725,6 +696,1352 @@ exports.cancelSession = async (req, res) => {
   }
 };
 
+// Reschedule a session
+exports.rescheduleSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { newScheduledAt, newDurationMinutes, timezone, reason } = req.body;
+    const userId = req.user.userId;
+
+    console.log('🔄 Rescheduling session:', { sessionId, userId, newScheduledAt, newDurationMinutes });
+
+    const result = await db.transaction(async (client) => {
+      // Get session details with mentor info
+      const sessionQuery = `
+        SELECT
+          s.*,
+          m.user_id as mentor_user_id,
+          mentor_user.first_name as mentor_first_name,
+          mentor_user.last_name as mentor_last_name,
+          mentee_user.first_name as mentee_first_name,
+          mentee_user.last_name as mentee_last_name
+        FROM sessions s
+        JOIN mentors m ON s.mentor_id = m.id
+        JOIN users mentor_user ON m.user_id = mentor_user.id
+        JOIN users mentee_user ON s.mentee_id = mentee_user.id
+        WHERE s.id = $1
+      `;
+
+      const sessionResult = await client.query(sessionQuery, [sessionId]);
+
+      if (sessionResult.rows.length === 0) {
+        throw new Error('SESSION_NOT_FOUND');
+      }
+
+      const session = sessionResult.rows[0];
+
+      // Check if user has permission to reschedule
+      const isMentee = session.mentee_id === userId;
+      const isMentor = session.mentor_user_id === userId;
+
+      if (!isMentee && !isMentor) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      // Check if session can be rescheduled
+      if (!['pending', 'scheduled', 'confirmed'].includes(session.status)) {
+        throw new Error('CANNOT_RESCHEDULE');
+      }
+
+      // Check 12-hour rule for mentees
+      const scheduledAt = new Date(session.scheduled_at);
+      const now = new Date();
+      const hoursUntilSession = (scheduledAt - now) / (1000 * 60 * 60);
+
+      if (isMentee && hoursUntilSession < 12) {
+        throw new Error('TOO_LATE_TO_RESCHEDULE');
+      }
+
+      // For mentors, create reschedule request instead of direct reschedule
+      if (isMentor) {
+        // Create reschedule request notification for mentee
+        await client.query(`
+          INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id, metadata)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [
+          session.mentee_id,
+          'Reschedule Request from Mentor',
+          `${session.mentor_user_first_name} ${session.mentor_user_last_name} would like to reschedule your session. Would you like to reschedule or cancel?`,
+          'reschedule_request',
+          'session',
+          sessionId,
+          JSON.stringify({
+            requestedBy: 'mentor',
+            reason: reason || 'No reason provided',
+            originalScheduledAt: session.scheduled_at,
+            newScheduledAt: newScheduledAt,
+            newDurationMinutes: newDurationMinutes,
+            timezone: timezone
+          })
+        ]);
+
+        // Send email notification to mentee
+        try {
+          const menteeQuery = `SELECT email FROM users WHERE id = $1`;
+          const menteeResult = await client.query(menteeQuery, [session.mentee_id]);
+
+          if (menteeResult.rows.length > 0) {
+            const sessionData = {
+              title: session.title,
+              scheduledAt: session.scheduled_at,
+              durationMinutes: session.duration_minutes
+            };
+            const requesterName = `${session.mentor_user_first_name} ${session.mentor_user_last_name}`;
+            await sendRescheduleRequestEmail(menteeResult.rows[0].email, sessionData, requesterName);
+          }
+        } catch (emailError) {
+          console.warn('⚠️ Failed to send reschedule request email:', emailError.message);
+        }
+
+        return {
+          session,
+          action: 'request_sent',
+          message: 'Reschedule request sent to mentee'
+        };
+      }
+
+      // For mentees: direct reschedule
+      // First, approve any existing pending reschedule requests since direct reschedule by mentee serves as approval
+      await client.query(`
+        UPDATE session_reschedule_requests
+        SET status = 'approved', responded_at = CURRENT_TIMESTAMP, response_reason = 'Approved via direct reschedule by mentee'
+        WHERE session_id = $1 AND status = 'pending'
+      `, [sessionId]);
+
+      // Validate new time is in the future and at least 12 hours from now
+      const newScheduledDate = new Date(newScheduledAt);
+      const hoursUntilNewSession = (newScheduledDate - now) / (1000 * 60 * 60);
+
+      if (newScheduledDate <= now) {
+        throw new Error('NEW_TIME_IN_PAST');
+      }
+
+      if (hoursUntilNewSession < 12) {
+        throw new Error('NEW_TIME_TOO_SOON');
+      }
+
+      // Check mentor availability for the new time
+      const newDate = new Date(newScheduledAt);
+      const dayOfWeek = newDate.getDay();
+      const timeString = newDate.toTimeString().substring(0, 5); // HH:MM format
+
+      const availabilityQuery = `
+        SELECT * FROM mentor_availability
+        WHERE mentor_id = $1
+          AND (
+            (specific_date IS NULL AND day_of_week = $2) OR
+            (specific_date = $3)
+          )
+          AND is_available = true
+          AND start_time <= $4
+          AND end_time > $4
+      `;
+
+      const availabilityResult = await client.query(availabilityQuery, [
+        session.mentor_id,
+        dayOfWeek,
+        newScheduledAt.split('T')[0], // date part for specific date overrides
+        timeString
+      ]);
+
+      if (availabilityResult.rows.length === 0) {
+        throw new Error('MENTOR_NOT_AVAILABLE');
+      }
+
+      // Check for conflicts with existing sessions
+      const conflictQuery = `
+        SELECT id FROM sessions
+        WHERE mentor_id = $1
+          AND id != $2
+          AND status IN ('scheduled', 'confirmed', 'in_progress')
+          AND scheduled_at::date = $3::date
+          AND (
+            (scheduled_at <= $4 AND scheduled_at + (duration_minutes || ' minutes')::interval > $4) OR
+            ($4 <= scheduled_at AND $4 + ($5 || ' minutes')::interval > scheduled_at)
+          )
+      `;
+
+      const conflictResult = await client.query(conflictQuery, [
+        session.mentor_id,
+        sessionId,
+        newScheduledAt.split('T')[0], // date part
+        newScheduledAt,
+        newDurationMinutes
+      ]);
+
+      if (conflictResult.rows.length > 0) {
+        throw new Error('TIME_CONFLICT');
+      }
+
+      // Update meeting if video session
+      let meetingUpdate = {};
+      if (session.session_type === 'video' || session.session_type === 'voice') {
+        try {
+          const updateData = {
+            topic: session.title || `Mentoring Session`,
+            start_time: newScheduledAt,
+            duration: newDurationMinutes || session.duration_minutes
+          };
+
+          meetingUpdate = await mockZoomAPI.updateMeeting(session.meeting_id, updateData);
+        } catch (error) {
+          console.warn('⚠️ Failed to update meeting:', error.message);
+        }
+      }
+
+      // Update session
+      const updateQuery = `
+        UPDATE sessions
+        SET scheduled_at = $2,
+            duration_minutes = COALESCE($3, duration_minutes),
+            timezone = COALESCE($4, timezone),
+            updated_at = CURRENT_TIMESTAMP,
+            admin_notes = COALESCE(admin_notes || E'\n', '') || $5
+        WHERE id = $1
+        RETURNING *
+      `;
+
+      const rescheduleNote = `Rescheduled by ${isMentee ? 'mentee' : 'mentor'}: ${reason || 'No reason provided'}`;
+      const updateResult = await client.query(updateQuery, [
+        sessionId,
+        newScheduledAt,
+        newDurationMinutes,
+        timezone,
+        rescheduleNote
+      ]);
+
+      // Create notifications for both parties
+      const notifications = [
+        // Notification for the other party
+        {
+          user_id: isMentee ? session.mentor_user_id : session.mentee_id,
+          title: 'Session Rescheduled',
+          message: `Your session has been rescheduled to ${new Date(newScheduledAt).toLocaleString()}`,
+          type: 'session_rescheduled',
+          related_entity_type: 'session',
+          related_entity_id: sessionId
+        }
+      ];
+
+      for (const notification of notifications) {
+        await client.query(`
+          INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          notification.user_id,
+          notification.title,
+          notification.message,
+          notification.type,
+          notification.related_entity_type,
+          notification.related_entity_id
+        ]);
+      }
+
+      // Send email notifications
+      try {
+        const sessionData = {
+          title: updateResult.rows[0].title,
+          scheduledAt: newScheduledAt,
+          durationMinutes: newDurationMinutes || updateResult.rows[0].duration_minutes,
+          sessionType: updateResult.rows[0].session_type,
+          meetingUrl: updateResult.rows[0].meeting_url
+        };
+
+        // Get recipient email
+        const recipientQuery = `SELECT email FROM users WHERE id = $1`;
+        const recipientResult = await client.query(recipientQuery, [isMentee ? session.mentor_user_id : session.mentee_id]);
+
+        if (recipientResult.rows.length > 0) {
+          await sendSessionRescheduledEmail(recipientResult.rows[0].email, sessionData);
+        }
+      } catch (emailError) {
+        console.warn('⚠️ Failed to send reschedule email:', emailError.message);
+      }
+
+      return {
+        session: updateResult.rows[0],
+        action: 'rescheduled',
+        message: 'Session rescheduled successfully'
+      };
+    });
+
+    console.log('✅ Session reschedule completed:', sessionId, result.action);
+
+    res.json({
+      success: true,
+      message: result.message,
+      data: {
+        session: formatSessionResponse(result.session),
+        action: result.action
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error rescheduling session:', error);
+
+    if (error.message === 'SESSION_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found',
+        code: 'SESSION_NOT_FOUND'
+      });
+    }
+
+    if (error.message === 'UNAUTHORIZED') {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to reschedule this session',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    if (error.message === 'CANNOT_RESCHEDULE') {
+      return res.status(422).json({
+        success: false,
+        message: 'This session cannot be rescheduled',
+        code: 'CANNOT_RESCHEDULE'
+      });
+    }
+
+    if (error.message === 'TOO_LATE_TO_RESCHEDULE') {
+      return res.status(422).json({
+        success: false,
+        message: 'Sessions can only be rescheduled at least 12 hours in advance',
+        code: 'TOO_LATE_TO_RESCHEDULE'
+      });
+    }
+
+    if (error.message === 'NEW_TIME_TOO_CLOSE') {
+      return res.status(422).json({
+        success: false,
+        message: 'New session time must be at least 1 hour from now',
+        code: 'NEW_TIME_TOO_CLOSE'
+      });
+    }
+
+    if (error.message === 'NEW_TIME_IN_PAST') {
+      return res.status(422).json({
+        success: false,
+        message: 'New session time cannot be in the past',
+        code: 'NEW_TIME_IN_PAST'
+      });
+    }
+
+    if (error.message === 'NEW_TIME_TOO_SOON') {
+      return res.status(422).json({
+        success: false,
+        message: 'New session time must be at least 12 hours from now',
+        code: 'NEW_TIME_TOO_SOON'
+      });
+    }
+
+    if (error.message === 'MENTOR_NOT_AVAILABLE') {
+      return res.status(422).json({
+        success: false,
+        message: 'Mentor is not available at the selected time. Please choose a different time.',
+        code: 'MENTOR_NOT_AVAILABLE'
+      });
+    }
+
+    if (error.message === 'TIME_CONFLICT') {
+      return res.status(422).json({
+        success: false,
+        message: 'The selected time conflicts with another session. Please choose a different time.',
+        code: 'TIME_CONFLICT'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reschedule session',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Respond to reschedule request (for mentees) - Simplified: mentee chooses new time
+exports.respondToRescheduleRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { action, newScheduledAt, newDuration, timezone, reason } = req.body;
+    const userId = req.user.userId;
+
+    console.log('🔄 Responding to reschedule request:', { requestId, action, userId });
+
+    const result = await db.transaction(async (client) => {
+      // Get reschedule request details
+      const requestQuery = `
+        SELECT rr.*, s.*, m.user_id as mentor_user_id,
+                mentor_user.first_name as mentor_first_name, mentor_user.last_name as mentor_last_name,
+                mentee_user.first_name as mentee_first_name, mentee_user.last_name as mentee_last_name
+        FROM session_reschedule_requests rr
+        JOIN sessions s ON rr.session_id = s.id
+        JOIN mentors m ON s.mentor_id = m.id
+        JOIN users mentor_user ON m.user_id = mentor_user.id
+        JOIN users mentee_user ON s.mentee_id = mentee_user.id
+        WHERE rr.id = $1 AND rr.status = 'pending'
+      `;
+
+      const requestResult = await client.query(requestQuery, [requestId]);
+
+      if (requestResult.rows.length === 0) {
+        throw new Error('REQUEST_NOT_FOUND');
+      }
+
+      const request = requestResult.rows[0];
+
+      if (request.mentee_id !== userId) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      if (action === 'accept') {
+        // Accept the reschedule - update session time
+        if (!newScheduledAt) {
+          throw new Error('NEW_SCHEDULED_AT_REQUIRED');
+        }
+
+        const newScheduledDateTime = new Date(newScheduledAt);
+
+        // Validate the new time is not in the past and at least 12 hours from now
+        const now = new Date();
+        const hoursUntilNewSession = (newScheduledDateTime - now) / (1000 * 60 * 60);
+
+        if (newScheduledDateTime <= now) {
+          throw new Error('NEW_TIME_IN_PAST');
+        }
+
+        if (hoursUntilNewSession < 12) {
+          throw new Error('NEW_TIME_TOO_SOON');
+        }
+
+        // Update session
+        const updateFields = ['scheduled_at = $2'];
+        const updateValues = [request.session_id, newScheduledDateTime];
+        let paramCount = 2;
+
+        if (newDuration) {
+          paramCount++;
+          updateFields.push(`duration_minutes = $${paramCount}`);
+          updateValues.push(newDuration);
+        }
+
+        if (timezone) {
+          paramCount++;
+          updateFields.push(`timezone = $${paramCount}`);
+          updateValues.push(timezone);
+        }
+
+        const updateQuery = `
+          UPDATE sessions
+          SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `;
+
+        await client.query(updateQuery, updateValues);
+
+        // Update request status
+        await client.query(`
+          UPDATE session_reschedule_requests
+          SET status = 'approved', responded_by = $2, response_reason = $3, responded_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [requestId, userId, reason || 'Accepted by mentee']);
+
+        // Create notifications
+        await client.query(`
+          INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          request.mentor_user_id,
+          'Reschedule Request Approved',
+          `Your reschedule request for the session with ${request.mentee_first_name} ${request.mentee_last_name} has been approved.`,
+          'reschedule_approved',
+          'session',
+          request.session_id
+        ]);
+
+        return { action: 'approved', sessionId: request.session_id };
+
+      } else if (action === 'decline') {
+        // Decline the reschedule - cancel session and process refund
+        await client.query(`
+          UPDATE sessions
+          SET status = 'cancelled_by_mentee', cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [request.session_id]);
+
+        // Update request status
+        await client.query(`
+          UPDATE session_reschedule_requests
+          SET status = 'declined', responded_by = $2, response_reason = $3, responded_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [requestId, userId, reason || 'Declined by mentee']);
+
+        // Process refund
+        await client.query(`
+          UPDATE payments
+          SET payment_status = 'refunded', refund_amount = amount, refund_reason = $2, refunded_at = CURRENT_TIMESTAMP
+          WHERE session_id = $1
+        `, [request.session_id, 'Session rescheduled and cancelled by mentee']);
+
+        // Create notifications
+        await client.query(`
+          INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          request.mentor_user_id,
+          'Reschedule Request Declined',
+          `Your reschedule request for the session with ${request.mentee_first_name} ${request.mentee_last_name} has been declined. The session has been cancelled.`,
+          'reschedule_declined',
+          'session',
+          request.session_id
+        ]);
+
+        return { action: 'declined', sessionId: request.session_id };
+      }
+
+      throw new Error('INVALID_ACTION');
+    });
+
+    console.log('✅ Reschedule request response processed:', result);
+
+    res.json({
+      success: true,
+      message: `Reschedule request ${result.action} successfully`,
+      data: result
+    });
+
+  } catch (error) {
+    console.error('❌ Error responding to reschedule request:', error);
+
+    if (error.message === 'REQUEST_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'Reschedule request not found',
+        code: 'REQUEST_NOT_FOUND'
+      });
+    }
+
+    if (error.message === 'UNAUTHORIZED') {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to respond to this request',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    if (error.message === 'INVALID_ACTION') {
+      return res.status(422).json({
+        success: false,
+        message: 'Invalid action. Must be "accept" or "decline"',
+        code: 'INVALID_ACTION'
+      });
+    }
+
+    if (error.message === 'NEW_SCHEDULED_AT_REQUIRED') {
+      return res.status(422).json({
+        success: false,
+        message: 'New scheduled time is required for reschedule',
+        code: 'NEW_SCHEDULED_AT_REQUIRED'
+      });
+    }
+
+    if (error.message === 'NEW_TIME_IN_PAST') {
+      return res.status(422).json({
+        success: false,
+        message: 'New session time cannot be in the past',
+        code: 'NEW_TIME_IN_PAST'
+      });
+    }
+
+    if (error.message === 'NEW_TIME_TOO_SOON') {
+      return res.status(422).json({
+        success: false,
+        message: 'New session time must be at least 12 hours from now',
+        code: 'NEW_TIME_TOO_SOON'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process reschedule response',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Submit reschedule request (for mentors)
+exports.submitRescheduleRequest = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { reason, preferredDate, preferredTime } = req.body;
+    const userId = req.user.userId;
+
+    console.log('🔄 Submitting reschedule request:', { sessionId, userId, reason });
+
+    const result = await db.transaction(async (client) => {
+      // Get session details and verify mentor ownership
+      const sessionQuery = `
+        SELECT s.*, m.user_id as mentor_user_id, m.first_name as mentor_first_name, m.last_name as mentor_last_name,
+               u.first_name as mentee_first_name, u.last_name as mentee_last_name
+        FROM sessions s
+        JOIN mentors m ON s.mentor_id = m.id
+        JOIN users u ON s.mentee_id = u.id
+        WHERE s.id = $1
+      `;
+
+      const sessionResult = await client.query(sessionQuery, [sessionId]);
+
+      if (sessionResult.rows.length === 0) {
+        throw new Error('SESSION_NOT_FOUND');
+      }
+
+      const session = sessionResult.rows[0];
+
+      if (session.mentor_user_id !== userId) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      // Check if session can be rescheduled (not too close to session time)
+      const scheduledAt = new Date(session.scheduled_at);
+      const now = new Date();
+      const hoursUntilSession = (scheduledAt - now) / (1000 * 60 * 60);
+
+      if (hoursUntilSession < 24) {
+        throw new Error('TOO_CLOSE_TO_SESSION');
+      }
+
+      // Create reschedule request record
+      const requestQuery = `
+        INSERT INTO session_reschedule_requests (
+          session_id, requested_by, reason, preferred_date, preferred_time, status, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, 'pending', CURRENT_TIMESTAMP)
+        RETURNING *
+      `;
+
+      const requestValues = [
+        sessionId,
+        'mentor',
+        reason || 'Mentor requested reschedule',
+        preferredDate ? new Date(preferredDate) : null,
+        preferredTime || null
+      ];
+
+      const requestResult = await client.query(requestQuery, requestValues);
+      const rescheduleRequest = requestResult.rows[0];
+
+      // Create notification for mentee
+      const notificationQuery = `
+        INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+      `;
+
+      await client.query(notificationQuery, [
+        session.mentee_id,
+        'Reschedule Request from Mentor',
+        `${session.mentor_first_name} ${session.mentor_last_name} has requested to reschedule your session. Please review and respond.`,
+        'reschedule_request',
+        'session_reschedule_request',
+        rescheduleRequest.id
+      ]);
+
+      return {
+        session,
+        rescheduleRequest
+      };
+    });
+
+    console.log('✅ Reschedule request submitted successfully:', result.rescheduleRequest.id);
+
+    res.json({
+      success: true,
+      message: 'Reschedule request submitted successfully',
+      data: {
+        rescheduleRequest: result.rescheduleRequest
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error submitting reschedule request:', error);
+
+    if (error.message === 'SESSION_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found',
+        code: 'SESSION_NOT_FOUND'
+      });
+    }
+
+    if (error.message === 'UNAUTHORIZED') {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to request reschedule for this session',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    if (error.message === 'TOO_CLOSE_TO_SESSION') {
+      return res.status(422).json({
+        success: false,
+        message: 'Cannot request reschedule less than 24 hours before the session',
+        code: 'TOO_CLOSE_TO_SESSION'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit reschedule request',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Get pending reschedule requests for mentee
+exports.getPendingRescheduleRequests = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const query = `
+      SELECT
+        r.*,
+        s.id as session_id,
+        s.title,
+        s.scheduled_at,
+        s.duration_minutes,
+        s.price,
+        s.currency,
+        m.first_name as mentor_first_name,
+        m.last_name as mentor_last_name,
+        u.first_name as mentee_first_name,
+        u.last_name as mentee_last_name
+      FROM session_reschedule_requests r
+      JOIN sessions s ON r.session_id = s.id
+      JOIN mentors ment ON s.mentor_id = ment.id
+      JOIN users m ON ment.user_id = m.id
+      JOIN users u ON s.mentee_id = u.id
+      WHERE s.mentee_id = $1 AND r.status = 'pending'
+      ORDER BY r.created_at DESC
+    `;
+
+    const result = await db.query(query, [userId]);
+
+    res.json({
+      success: true,
+      data: {
+        requests: result.rows
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching reschedule requests:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch reschedule requests',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Respond to reschedule request (mentee)
+exports.respondToRescheduleRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { action, newScheduledAt, reason } = req.body; // action: 'reschedule' or 'cancel'
+    const userId = req.user.userId;
+
+    console.log('🔄 Responding to reschedule request:', { requestId, action, userId });
+
+    const result = await db.transaction(async (client) => {
+      // Get request details and verify ownership
+      const requestQuery = `
+        SELECT r.*, s.*, m.user_id as mentor_user_id,
+               ment.first_name as mentor_first_name, ment.last_name as mentor_last_name,
+               u.first_name as mentee_first_name, u.last_name as mentee_last_name
+        FROM session_reschedule_requests r
+        JOIN sessions s ON r.session_id = s.id
+        JOIN mentors ment_profile ON s.mentor_id = ment_profile.id
+        JOIN users ment ON ment_profile.user_id = ment.id
+        JOIN users u ON s.mentee_id = u.id
+        WHERE r.id = $1
+      `;
+
+      const requestResult = await client.query(requestQuery, [requestId]);
+
+      if (requestResult.rows.length === 0) {
+        throw new Error('REQUEST_NOT_FOUND');
+      }
+
+      const request = requestResult.rows[0];
+
+      if (request.mentee_id !== userId) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      if (request.status !== 'pending') {
+        throw new Error('REQUEST_ALREADY_RESPONDED');
+      }
+
+      // Update request status
+      await client.query(
+        'UPDATE session_reschedule_requests SET status = $1, responded_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [action === 'reschedule' ? 'approved' : 'cancelled', requestId]
+      );
+
+      if (action === 'reschedule') {
+        // Reschedule the session
+        if (!newScheduledAt) {
+          throw new Error('NEW_TIME_REQUIRED');
+        }
+
+        // Check 12-hour rule for new time
+        const newDateTime = new Date(newScheduledAt);
+        const now = new Date();
+        const hoursUntilNewSession = (newDateTime - now) / (1000 * 60 * 60);
+
+        if (hoursUntilNewSession < 12) {
+          throw new Error('INVALID_NEW_TIME');
+        }
+
+        // Update session time
+        await client.query(
+          'UPDATE sessions SET scheduled_at = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+          [new Date(newScheduledAt), request.session_id]
+        );
+
+        // Update meeting if exists
+        if (request.meeting_id) {
+          try {
+            await mockZoomAPI.updateMeeting(request.meeting_id, {
+              start_time: newScheduledAt
+            });
+          } catch (error) {
+            console.warn('⚠️ Failed to update meeting:', error.message);
+          }
+        }
+
+        // Notify mentor of approval
+        await client.query(`
+          INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          request.mentor_user_id,
+          'Reschedule Request Approved',
+          `${request.mentee_first_name} ${request.mentee_last_name} has approved your reschedule request. The session has been moved to ${new Date(newScheduledAt).toLocaleString()}.`,
+          'reschedule_approved',
+          'session',
+          request.session_id
+        ]);
+
+      } else if (action === 'cancel') {
+        // Cancel the session and process refund
+        await client.query(
+          'UPDATE sessions SET status = $1, cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+          ['cancelled_by_mentee', request.session_id]
+        );
+
+        // Process refund
+        await client.query(`
+          UPDATE payments
+          SET payment_status = 'refunded',
+              refund_amount = amount,
+              refund_reason = $2,
+              refunded_at = CURRENT_TIMESTAMP
+          WHERE session_id = $1
+        `, [request.session_id, reason || 'Mentee cancelled due to reschedule request']);
+
+        // Delete meeting if exists
+        if (request.meeting_id) {
+          try {
+            await mockZoomAPI.deleteMeeting(request.meeting_id);
+          } catch (error) {
+            console.warn('⚠️ Failed to delete meeting:', error.message);
+          }
+        }
+
+        // Notify mentor of cancellation
+        await client.query(`
+          INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          request.mentor_user_id,
+          'Session Cancelled',
+          `${request.mentee_first_name} ${request.mentee_last_name} has cancelled the session due to your reschedule request. A full refund has been processed.`,
+          'session_cancelled',
+          'session',
+          request.session_id
+        ]);
+      }
+
+      return { request, action };
+    });
+
+    console.log('✅ Reschedule request response processed:', action);
+
+    res.json({
+      success: true,
+      message: `Reschedule request ${action === 'reschedule' ? 'approved' : 'cancelled'} successfully`,
+      data: {
+        action,
+        request: result.request
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error responding to reschedule request:', error);
+
+    if (error.message === 'REQUEST_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'Reschedule request not found',
+        code: 'REQUEST_NOT_FOUND'
+      });
+    }
+
+    if (error.message === 'UNAUTHORIZED') {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to respond to this request',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    if (error.message === 'REQUEST_ALREADY_RESPONDED') {
+      return res.status(422).json({
+        success: false,
+        message: 'This request has already been responded to',
+        code: 'REQUEST_ALREADY_RESPONDED'
+      });
+    }
+
+    if (error.message === 'NEW_TIME_REQUIRED') {
+      return res.status(422).json({
+        success: false,
+        message: 'New session time is required for reschedule',
+        code: 'NEW_TIME_REQUIRED'
+      });
+    }
+
+    if (error.message === 'INVALID_NEW_TIME') {
+      return res.status(422).json({
+        success: false,
+        message: 'New session time must be at least 12 hours from now',
+        code: 'INVALID_NEW_TIME'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to respond to reschedule request',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Submit reschedule request (for mentors) - Simplified: mentor requests, mentee chooses time
+exports.submitRescheduleRequest = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { reason } = req.body;
+    const userId = req.user.userId;
+
+    console.log('🔄 Submitting reschedule request:', { sessionId, userId, reason });
+
+    const result = await db.transaction(async (client) => {
+      // Get session details and verify mentor ownership
+      const sessionQuery = `
+        SELECT s.*, m.user_id as mentor_user_id,
+                mentor_user.first_name as mentor_first_name, mentor_user.last_name as mentor_last_name,
+                u.first_name as mentee_first_name, u.last_name as mentee_last_name, u.email as mentee_email
+        FROM sessions s
+        JOIN mentors m ON s.mentor_id = m.id
+        JOIN users mentor_user ON m.user_id = mentor_user.id
+        JOIN users u ON s.mentee_id = u.id
+        WHERE s.id = $1
+      `;
+
+      const sessionResult = await client.query(sessionQuery, [sessionId]);
+
+      if (sessionResult.rows.length === 0) {
+        throw new Error('SESSION_NOT_FOUND');
+      }
+
+      const session = sessionResult.rows[0];
+
+      if (session.mentor_user_id !== userId) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      // Check if session can be rescheduled
+      if (!['pending', 'scheduled', 'confirmed'].includes(session.status)) {
+        throw new Error('CANNOT_RESCHEDULE');
+      }
+
+      // Check if there's already a pending reschedule request
+      const existingRequestQuery = `
+        SELECT id FROM session_reschedule_requests
+        WHERE session_id = $1 AND status = 'pending'
+      `;
+
+      const existingRequest = await client.query(existingRequestQuery, [sessionId]);
+
+      if (existingRequest.rows.length > 0) {
+        throw new Error('PENDING_REQUEST_EXISTS');
+      }
+
+      // Insert reschedule request
+      const insertQuery = `
+        INSERT INTO session_reschedule_requests (
+          session_id, requested_by, reason
+        )
+        VALUES ($1, $2, $3)
+        RETURNING *
+      `;
+
+      const insertResult = await client.query(insertQuery, [
+        sessionId,
+        'mentor',
+        reason
+      ]);
+
+      const rescheduleRequest = insertResult.rows[0];
+
+      // Create notification for mentee
+      await client.query(`
+        INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [
+        session.mentee_id,
+        'Reschedule Request from Mentor',
+        `${session.mentor_first_name} ${session.mentor_last_name} wants to reschedule your session. Please choose a new time or decline.`,
+        'reschedule_request',
+        'session',
+        sessionId,
+        JSON.stringify({
+          rescheduleRequestId: rescheduleRequest.id,
+          reason
+        })
+      ]);
+
+      return rescheduleRequest;
+    });
+
+    console.log('✅ Reschedule request submitted successfully:', result.id);
+
+    // Send email notification
+    try {
+      const sessionData = {
+        title: session.title,
+        scheduledAt: session.scheduled_at,
+        durationMinutes: session.duration_minutes
+      };
+      const requesterName = `${session.mentor_first_name} ${session.mentor_last_name}`;
+      await sendRescheduleRequestEmail(session.mentee_email, sessionData, requesterName);
+    } catch (emailError) {
+      console.warn('⚠️ Failed to send reschedule request email:', emailError.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Reschedule request submitted successfully',
+      data: {
+        rescheduleRequest: result
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error submitting reschedule request:', error);
+
+    if (error.message === 'SESSION_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found',
+        code: 'SESSION_NOT_FOUND'
+      });
+    }
+
+    if (error.message === 'UNAUTHORIZED') {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to reschedule this session',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    if (error.message === 'CANNOT_RESCHEDULE') {
+      return res.status(422).json({
+        success: false,
+        message: 'This session cannot be rescheduled',
+        code: 'CANNOT_RESCHEDULE'
+      });
+    }
+
+    if (error.message === 'PENDING_REQUEST_EXISTS') {
+      return res.status(422).json({
+        success: false,
+        message: 'A reschedule request is already pending for this session',
+        code: 'PENDING_REQUEST_EXISTS'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit reschedule request',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Get pending reschedule requests (for mentees)
+exports.getPendingRescheduleRequests = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    console.log('🔍 Fetching pending reschedule requests for user:', userId);
+
+    const query = `
+      SELECT
+        rr.*,
+        s.id as session_id,
+        s.title as session_title,
+        s.scheduled_at,
+        s.duration_minutes,
+        m.first_name as mentor_first_name,
+        m.last_name as mentor_last_name,
+        u.email as mentor_email
+      FROM session_reschedule_requests rr
+      JOIN sessions s ON rr.session_id = s.id
+      JOIN mentors mt ON s.mentor_id = mt.id
+      JOIN users m ON mt.user_id = m.id
+      JOIN users u ON mt.user_id = u.id
+      WHERE s.mentee_id = $1 AND rr.status = 'pending'
+      ORDER BY rr.created_at DESC
+    `;
+
+    const result = await db.query(query, [userId]);
+
+    const requests = result.rows.map(request => ({
+      id: request.id,
+      sessionId: request.session_id,
+      sessionTitle: request.session_title,
+      scheduledAt: request.scheduled_at,
+      durationMinutes: request.duration_minutes,
+      requestedBy: request.requested_by,
+      reason: request.reason,
+      status: request.status,
+      createdAt: request.created_at,
+      mentor: {
+        firstName: request.mentor_first_name,
+        lastName: request.mentor_last_name,
+        email: request.mentor_email
+      }
+    }));
+
+    console.log(`✅ Found ${requests.length} pending reschedule requests for user ${userId}`);
+
+    res.json({
+      success: true,
+      data: {
+        requests,
+        count: requests.length
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching pending reschedule requests:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pending reschedule requests',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Respond to reschedule request (for mentees)
+exports.respondToRescheduleRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { action, newScheduledAt, newDuration, timezone, reason } = req.body;
+    const userId = req.user.userId;
+
+    console.log('🔄 Responding to reschedule request:', { requestId, action, userId });
+
+    const result = await db.transaction(async (client) => {
+      // Get reschedule request details
+      const requestQuery = `
+        SELECT rr.*, s.*, m.user_id as mentor_user_id,
+               mentor_user.first_name as mentor_first_name, mentor_user.last_name as mentor_last_name,
+               mentee_user.first_name as mentee_first_name, mentee_user.last_name as mentee_last_name
+        FROM session_reschedule_requests rr
+        JOIN sessions s ON rr.session_id = s.id
+        JOIN mentors m ON s.mentor_id = m.id
+        JOIN users mentor_user ON m.user_id = mentor_user.id
+        JOIN users mentee_user ON s.mentee_id = mentee_user.id
+        WHERE rr.id = $1 AND rr.status = 'pending'
+      `;
+
+      const requestResult = await client.query(requestQuery, [requestId]);
+
+      if (requestResult.rows.length === 0) {
+        throw new Error('REQUEST_NOT_FOUND');
+      }
+
+      const request = requestResult.rows[0];
+
+      if (request.mentee_id !== userId) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      if (action === 'accept') {
+        // Accept the reschedule - update session time
+        if (!newScheduledAt) {
+          throw new Error('NEW_SCHEDULED_AT_REQUIRED');
+        }
+
+        const newScheduledDateTime = new Date(newScheduledAt);
+
+        // Validate the new time is not in the past and at least 12 hours from now
+        const now = new Date();
+        const hoursUntilNewSession = (newScheduledDateTime - now) / (1000 * 60 * 60);
+
+        if (newScheduledDateTime <= now) {
+          throw new Error('NEW_TIME_IN_PAST');
+        }
+
+        if (hoursUntilNewSession < 12) {
+          throw new Error('NEW_TIME_TOO_SOON');
+        }
+
+        // Update session
+        const updateFields = ['scheduled_at = $2'];
+        const updateValues = [request.session_id, newScheduledDateTime];
+        let paramCount = 2;
+
+        if (newDuration) {
+          paramCount++;
+          updateFields.push(`duration_minutes = $${paramCount}`);
+          updateValues.push(newDuration);
+        }
+
+        if (timezone) {
+          paramCount++;
+          updateFields.push(`timezone = $${paramCount}`);
+          updateValues.push(timezone);
+        }
+
+        const updateQuery = `
+          UPDATE sessions
+          SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `;
+
+        await client.query(updateQuery, updateValues);
+
+        // Update request status
+        await client.query(`
+          UPDATE session_reschedule_requests
+          SET status = 'approved', responded_by = $2, response_reason = $3, responded_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [requestId, userId, reason || 'Accepted by mentee']);
+
+        // Create notifications
+        await client.query(`
+          INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          request.mentor_user_id,
+          'Reschedule Request Approved',
+          `Your reschedule request for the session with ${request.mentee_first_name} ${request.mentee_last_name} has been approved.`,
+          'reschedule_approved',
+          'session',
+          request.session_id
+        ]);
+
+        return { action: 'approved', sessionId: request.session_id };
+
+      } else if (action === 'decline') {
+        // Decline the reschedule - cancel session and process refund
+        await client.query(`
+          UPDATE sessions
+          SET status = 'cancelled_by_mentee', cancelled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [request.session_id]);
+
+        // Update request status
+        await client.query(`
+          UPDATE session_reschedule_requests
+          SET status = 'declined', responded_by = $2, response_reason = $3, responded_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [requestId, userId, reason || 'Declined by mentee']);
+
+        // Process refund
+        await client.query(`
+          UPDATE payments
+          SET payment_status = 'refunded', refund_amount = amount, refund_reason = $2, refunded_at = CURRENT_TIMESTAMP
+          WHERE session_id = $1
+        `, [request.session_id, 'Session rescheduled and cancelled by mentee']);
+
+        // Create notifications
+        await client.query(`
+          INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          request.mentor_user_id,
+          'Reschedule Request Declined',
+          `Your reschedule request for the session with ${request.mentee_first_name} ${request.mentee_last_name} has been declined. The session has been cancelled.`,
+          'reschedule_declined',
+          'session',
+          request.session_id
+        ]);
+
+        return { action: 'declined', sessionId: request.session_id };
+      }
+
+      throw new Error('INVALID_ACTION');
+    });
+
+    console.log('✅ Reschedule request response processed:', result);
+
+    res.json({
+      success: true,
+      message: `Reschedule request ${result.action} successfully`,
+      data: result
+    });
+
+  } catch (error) {
+    console.error('❌ Error responding to reschedule request:', error);
+
+    if (error.message === 'REQUEST_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'Reschedule request not found',
+        code: 'REQUEST_NOT_FOUND'
+      });
+    }
+
+    if (error.message === 'UNAUTHORIZED') {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to respond to this request',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    if (error.message === 'INVALID_ACTION') {
+      return res.status(422).json({
+        success: false,
+        message: 'Invalid action. Must be "accept" or "decline"',
+        code: 'INVALID_ACTION'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process reschedule response',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
 // Update session status (for mentors to confirm/reject)
 exports.updateSessionStatus = async (req, res) => {
   try {
@@ -840,10 +2157,303 @@ exports.updateSessionStatus = async (req, res) => {
   }
 };
 
+// Submit session review (mentee to mentor)
+exports.submitSessionReview = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user.userId;
+
+    const {
+      overall_rating,
+      comment
+    } = req.body;
+
+    // Validate rating if provided (optional now)
+    if (overall_rating !== undefined && (typeof overall_rating !== 'number' || overall_rating < 1 || overall_rating > 5)) {
+      return res.status(422).json({
+        success: false,
+        message: 'Rating must be between 1 and 5',
+        code: 'INVALID_RATING'
+      });
+    }
+
+    console.log('🔄 Submitting session review:', { sessionId, userId, overall_rating });
+
+    const result = await db.transaction(async (client) => {
+      // Verify session exists and user is the mentee
+      const sessionQuery = `
+        SELECT s.*, m.user_id as mentor_user_id, u.first_name as mentee_first_name, u.last_name as mentee_last_name
+        FROM sessions s
+        JOIN mentors m ON s.mentor_id = m.id
+        JOIN users u ON s.mentee_id = u.id
+        WHERE s.id = $1 AND s.status = 'completed'
+      `;
+
+      const sessionResult = await client.query(sessionQuery, [sessionId]);
+
+      if (sessionResult.rows.length === 0) {
+        throw new Error('SESSION_NOT_FOUND');
+      }
+
+      const session = sessionResult.rows[0];
+
+      // Check if user is the mentee
+      if (session.mentee_id !== userId) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      // Check if mentee already reviewed this session
+      const existingReviewQuery = `
+        SELECT id FROM reviews
+        WHERE session_id = $1 AND reviewer_type = 'mentee'
+      `;
+
+      const existingReview = await client.query(existingReviewQuery, [sessionId]);
+
+      if (existingReview.rows.length > 0) {
+        throw new Error('REVIEW_ALREADY_EXISTS');
+      }
+
+      // Insert mentee review
+      const reviewQuery = `
+        INSERT INTO reviews (
+          session_id, mentor_id, mentee_id, reviewer_type, review_target,
+          overall_rating, comment, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, 'mentee', 'mentor', $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+      `;
+
+      const reviewValues = [
+        sessionId,
+        session.mentor_id,
+        session.mentee_id,
+        overall_rating || null,
+        comment || null
+      ];
+
+      console.log('Inserting review with values:', reviewValues);
+
+      const reviewResult = await client.query(reviewQuery, reviewValues);
+      const review = reviewResult.rows[0];
+
+      // Create notification for mentor
+      await client.query(`
+        INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
+        session.mentor_user_id,
+        'New Review from Mentee',
+        `${session.mentee_first_name} ${session.mentee_last_name} has left a review for your session.`,
+        'review_received',
+        'review',
+        review.id
+      ]);
+
+      return review;
+    });
+
+    console.log('✅ Session review submitted successfully:', result.id);
+
+    res.json({
+      success: true,
+      message: 'Review submitted successfully',
+      data: {
+        review: {
+          id: result.id,
+          sessionId: result.session_id,
+          reviewerType: result.reviewer_type,
+          reviewTarget: result.review_target,
+          overallRating: result.overall_rating,
+          comment: result.comment,
+          createdAt: result.created_at
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error submitting session review:', error);
+
+    if (error.message === 'SESSION_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found or not completed',
+        code: 'SESSION_NOT_FOUND'
+      });
+    }
+
+    if (error.message === 'UNAUTHORIZED') {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to review this session',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    if (error.message === 'REVIEW_ALREADY_EXISTS') {
+      return res.status(422).json({
+        success: false,
+        message: 'You have already reviewed this session',
+        code: 'REVIEW_ALREADY_EXISTS'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit review',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Submit mentor-to-mentee review
+exports.submitMentorReview = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user.userId;
+
+    const {
+      overall_rating,
+      comment
+    } = req.body;
+
+    console.log('🔄 Submitting mentor review:', { sessionId, userId, overall_rating });
+
+    const result = await db.transaction(async (client) => {
+      // Verify session exists and user is the mentor
+      const sessionQuery = `
+        SELECT s.*, m.user_id as mentor_user_id, u.first_name as mentee_first_name, u.last_name as mentee_last_name
+        FROM sessions s
+        JOIN mentors m ON s.mentor_id = m.id
+        JOIN users u ON s.mentee_id = u.id
+        WHERE s.id = $1 AND s.status = 'completed'
+      `;
+
+      const sessionResult = await client.query(sessionQuery, [sessionId]);
+
+      if (sessionResult.rows.length === 0) {
+        throw new Error('SESSION_NOT_FOUND');
+      }
+
+      const session = sessionResult.rows[0];
+
+      // Check if user is the mentor
+      if (session.mentor_user_id !== userId) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      // Check if mentor already reviewed this session
+      const existingReviewQuery = `
+        SELECT id FROM reviews
+        WHERE session_id = $1 AND reviewer_type = 'mentor'
+      `;
+
+      const existingReview = await client.query(existingReviewQuery, [sessionId]);
+
+      if (existingReview.rows.length > 0) {
+        throw new Error('REVIEW_ALREADY_EXISTS');
+      }
+
+      // Insert mentor review with proper reviewer_type and review_target (only overall rating and comment, no detailed ratings)
+      const reviewQuery = `
+        INSERT INTO reviews (
+          session_id, mentor_id, mentee_id, reviewer_type, review_target,
+          overall_rating, comment, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, 'mentor', 'mentee', $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+      `;
+
+      const reviewValues = [
+        sessionId,
+        session.mentor_id,
+        session.mentee_id,
+        overall_rating || null,
+        comment || null
+      ];
+
+      const reviewResult = await client.query(reviewQuery, reviewValues);
+      const review = reviewResult.rows[0];
+
+      // Create notification for mentee
+      await client.query(`
+        INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
+        session.mentee_id,
+        'New Review from Mentor',
+        `${session.mentor_first_name} ${session.mentor_last_name} has left a review for your session.`,
+        'review_received',
+        'review',
+        review.id
+      ]);
+
+      return review;
+    });
+
+    console.log('✅ Mentor review submitted successfully:', result.id);
+
+    res.json({
+      success: true,
+      message: 'Mentor review submitted successfully',
+      data: {
+        review: {
+          id: result.id,
+          sessionId: result.session_id,
+          reviewerType: result.reviewer_type,
+          reviewTarget: result.review_target,
+          overallRating: result.overall_rating,
+          comment: result.comment,
+          createdAt: result.created_at
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error submitting mentor review:', error);
+
+    if (error.message === 'SESSION_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found or not completed',
+        code: 'SESSION_NOT_FOUND'
+      });
+    }
+
+    if (error.message === 'UNAUTHORIZED') {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to review this session',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    if (error.message === 'REVIEW_ALREADY_EXISTS') {
+      return res.status(422).json({
+        success: false,
+        message: 'You have already reviewed this session',
+        code: 'REVIEW_ALREADY_EXISTS'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit mentor review',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
 module.exports = {
   createSession: exports.createSession,
   getUserSessions: exports.getUserSessions,
   cancelSession: exports.cancelSession,
+  rescheduleSession: exports.rescheduleSession,
+  respondToRescheduleRequest: exports.respondToRescheduleRequest,
+  submitRescheduleRequest: exports.submitRescheduleRequest,
+  getPendingRescheduleRequests: exports.getPendingRescheduleRequests,
   updateSessionStatus: exports.updateSessionStatus,
+  submitSessionReview: exports.submitSessionReview,
+  submitMentorReview: exports.submitMentorReview,
   formatSessionResponse
 };

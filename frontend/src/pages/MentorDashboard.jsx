@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const MentorDashboard = () => {
   const { user, isAuthenticated, isMentor } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // State management
   const [loading, setLoading] = useState(false);
@@ -15,9 +17,17 @@ const MentorDashboard = () => {
   const [recentSessions, setRecentSessions] = useState([]);
   const [earnings, setEarnings] = useState({});
   const [stats, setStats] = useState({});
+  const [sessionStats, setSessionStats] = useState([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  // Refs to prevent multiple loads and handle timeouts
+  const hasLoadedRef = useRef(false);
+  const loadTimeoutRef = useRef(null);
+  const navigationRef = useRef(false);
 
   // Load mentor profile
   const loadMentorProfile = async () => {
+    console.log('🔄 MentorDashboard: Loading mentor profile...');
     try {
       const response = await fetch('/api/mentors/profile', {
         headers: {
@@ -28,10 +38,13 @@ const MentorDashboard = () => {
 
       if (response.ok) {
         const data = await response.json();
+        console.log('✅ MentorDashboard: Mentor profile loaded:', data.data.mentor);
         setMentorProfile(data.data.mentor);
+      } else {
+        console.error('❌ MentorDashboard: Failed to load mentor profile, status:', response.status);
       }
     } catch (error) {
-      console.error('Failed to load mentor profile:', error);
+      console.error('❌ MentorDashboard: Error loading mentor profile:', error);
     }
   };
 
@@ -111,44 +124,127 @@ const MentorDashboard = () => {
     }
   };
 
+  // Load session stats for chart
+  const loadSessionStats = async () => {
+    try {
+      const response = await fetch('/api/mentors/session-stats', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSessionStats(data.data?.monthlySessions || []);
+      }
+    } catch (error) {
+      console.error('Failed to load session stats:', error);
+    }
+  };
+
   // Load all dashboard data
   const loadDashboardData = async () => {
-    if (!isAuthenticated || !isMentor()) return;
+    if (!isAuthenticated || !isMentor() || dataLoaded) {
+      console.log('🚫 MentorDashboard: Skipping load - auth:', isAuthenticated, 'mentor:', isMentor(), 'loaded:', dataLoaded);
+      return;
+    }
 
+    console.log('🚀 MentorDashboard: Starting dashboard data load...');
     setLoading(true);
+
+    // Set timeout to stop loading after 30 seconds
+    loadTimeoutRef.current = setTimeout(() => {
+      console.log('⏰ MentorDashboard: Load timeout reached, stopping loading');
+      setLoading(false);
+      toast.error('Loading took too long. Please refresh the page.');
+    }, 30000);
+
     try {
       await Promise.all([
         loadMentorProfile(),
         loadUpcomingSessions(),
         loadRecentSessions(),
         loadEarnings(),
-        loadStats()
+        loadStats(),
+        loadSessionStats()
       ]);
+      setDataLoaded(true);
+      console.log('✅ MentorDashboard: Dashboard data loaded successfully');
     } catch (error) {
-      console.error('Dashboard loading error:', error);
+      console.error('❌ MentorDashboard: Dashboard loading error:', error);
       toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
+      }
     }
   };
+
+  // Reset data when navigating to this component (location.key changes on navigation)
+  useEffect(() => {
+    console.log('🔄 MentorDashboard: Location key changed, resetting data');
+    setDataLoaded(false);
+    setMentorProfile(null);
+    setUpcomingSessions([]);
+    setRecentSessions([]);
+    setEarnings({});
+    setStats({});
+  }, [location.key]);
 
   // Load data on mount
   useEffect(() => {
     if (isAuthenticated && isMentor()) {
       loadDashboardData();
+    } else {
+      // Reset data when user logs out or changes role
+      setDataLoaded(false);
+      setMentorProfile(null);
+      setUpcomingSessions([]);
+      setRecentSessions([]);
+      setEarnings({});
+      setStats({});
+      setSessionStats([]);
+      setSessionStats([]);
     }
-  }, [isAuthenticated, isMentor()]);
+  }, [isAuthenticated]);
 
-  // Redirect if not authenticated or not a mentor
-  if (!isAuthenticated) {
-    navigate('/login');
-    return null;
-  }
+  // Reset navigation ref on location change
+  useEffect(() => {
+    navigationRef.current = false;
+  }, [location.key]);
 
-  if (!isMentor()) {
-    navigate('/dashboard');
-    return null;
-  }
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Handle redirects
+  useEffect(() => {
+    console.log('🔍 MentorDashboard: Checking redirects', {
+      isAuthenticated,
+      isMentor: isMentor(),
+      userRole: user?.role,
+      userId: user?.id,
+      hasMentorProfile: !!mentorProfile
+    });
+
+    if (!isAuthenticated && !navigationRef.current) {
+      console.log('🔍 MentorDashboard: Redirecting to /login - not authenticated');
+      navigationRef.current = true;
+      navigate('/login');
+    } else if (!isMentor() && !navigationRef.current) {
+      console.log('🔍 MentorDashboard: Redirecting to /dashboard - not a mentor, user role:', user?.role, 'isMentor():', isMentor());
+      navigationRef.current = true;
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, isMentor, user?.role, navigate, mentorProfile]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
@@ -187,7 +283,7 @@ const MentorDashboard = () => {
                      'Inactive'}
                   </span>
                   <span className="text-sm text-gray-500">
-                    ⭐ {mentorProfile?.averageRating?.toFixed(1) || '0.0'} ({mentorProfile?.totalReviews || 0} reviews)
+                    ⭐ {(mentorProfile?.averageRating || 0).toFixed(1)} ({mentorProfile?.totalReviews || 0} reviews)
                   </span>
                 </div>
               </div>
@@ -195,7 +291,10 @@ const MentorDashboard = () => {
 
             <div className="flex flex-wrap gap-3">
               <button
-                onClick={loadDashboardData}
+                onClick={() => {
+                  setDataLoaded(false);
+                  loadDashboardData();
+                }}
                 disabled={loading}
                 className="px-4 py-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 font-semibold rounded-xl transition-all duration-200 flex items-center gap-2"
               >
@@ -229,7 +328,7 @@ const MentorDashboard = () => {
                   {stats.totalSessions || 0}
                 </p>
                 <p className="text-sm text-green-600 mt-1">
-                  +{stats.sessionsThisMonth || 0} this month
+                  Completed sessions
                 </p>
               </div>
               <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
@@ -243,9 +342,28 @@ const MentorDashboard = () => {
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-shadow">
             <div className="flex items-center justify-between">
               <div>
+                <p className="text-sm font-medium text-gray-600">Sessions Today</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">
+                  {stats.sessionsToday || 0}
+                </p>
+                <p className="text-sm text-blue-600 mt-1">
+                  Scheduled for today
+                </p>
+              </div>
+              <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
                 <p className="text-sm font-medium text-gray-600">Average Rating</p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {stats.averageRating?.toFixed(1) || '0.0'} ⭐
+                  {(stats.averageRating || 0).toFixed(1)} ⭐
                 </p>
                 <p className="text-sm text-green-600 mt-1">
                   {stats.totalReviews || 0} reviews
@@ -278,27 +396,73 @@ const MentorDashboard = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Response Rate</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {stats.responseRate || 0}%
-                </p>
-                <p className="text-sm text-green-600 mt-1">
-                  Avg {stats.responseTime || 0}h response time
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Sessions Chart */}
+          <div className="lg:col-span-3 mb-8">
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                📈 Sessions Per Month
+              </h2>
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <LoadingSpinner size="md" />
+                  <span className="ml-3 text-gray-600">Loading chart data...</span>
+                </div>
+              ) : sessionStats.length > 0 ? (
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sessionStats}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis
+                        dataKey="month"
+                        stroke="#6b7280"
+                        fontSize={12}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        stroke="#6b7280"
+                        fontSize={12}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                        }}
+                        labelStyle={{ color: '#374151', fontWeight: '600' }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="sessions"
+                        stroke="#3b82f6"
+                        strokeWidth={3}
+                        dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2, fill: '#ffffff' }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                  <p className="text-gray-500 text-lg mb-2">No session data available</p>
+                  <p className="text-gray-400 text-sm">
+                    Chart will show data once you complete your first sessions
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-8">
             {/* Upcoming Sessions */}
@@ -335,14 +499,15 @@ const MentorDashboard = () => {
                                 weekday: 'long',
                                 year: 'numeric',
                                 month: 'long',
-                                day: 'numeric'
+                                day: 'numeric',
+                                timeZone: 'Asia/Kolkata'
                               })}
                             </p>
                             <p className="text-sm text-gray-500">
-                              {new Date(session.scheduledAt).toLocaleTimeString([], {
+                              {new Date(session.scheduledAt).toLocaleTimeString('en-US', {
                                 hour: '2-digit',
                                 minute: '2-digit',
-                                timeZoneName: 'short'
+                                timeZone: 'Asia/Kolkata'
                               })} • {session.durationMinutes} minutes
                             </p>
                             <div className="flex items-center gap-4 mt-2">
@@ -448,37 +613,6 @@ const MentorDashboard = () => {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Profile Completion */}
-            {mentorProfile && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">📊 Profile Status</h3>
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>Profile Completion</span>
-                      <span>{mentorProfile.profileCompletionPercentage || 0}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${mentorProfile.profileCompletionPercentage || 0}%` }}
-                      ></div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 pt-2">
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-indigo-600">{mentorProfile.totalSessions || 0}</p>
-                      <p className="text-xs text-gray-500">Sessions</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-green-600">${mentorProfile.totalEarnings || 0}</p>
-                      <p className="text-xs text-gray-500">Earned</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Quick Actions */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">

@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import SessionCard from '../components/SessionCard';
 import LoadingSpinner from '../components/LoadingSpinner';
+import MenteeRescheduleRequests from './MenteeRescheduleRequests';
 import sessionController from '../controllers/sessionController';
 import { toast } from 'react-hot-toast';
 
@@ -85,16 +86,41 @@ const MyAppointments = () => {
     }
   };
 
-  // Load sessions when filters change
+  // Load sessions when filters change or component mounts
   useEffect(() => {
     loadSessions();
+  }, [activeTab, statusFilter, typeFilter, page]);
+
+  // Auto-refresh when there are active meetings (in_progress status)
+  useEffect(() => {
+    // Check if there are any in_progress sessions
+    const hasActiveMeetings = sessions.some(session => session.status === 'in_progress');
+
+    if (hasActiveMeetings) {
+      // Refresh every 10 seconds when there are active meetings
+      const refreshInterval = setInterval(() => {
+        loadSessions();
+      }, 10000); // 10 seconds
+
+      return () => clearInterval(refreshInterval);
+    }
+  }, [sessions, activeTab, statusFilter, typeFilter, page]);
+
+  // Refresh when window regains focus (user might be returning from meeting)
+  useEffect(() => {
+    const handleFocus = () => {
+      loadSessions();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [activeTab, statusFilter, typeFilter, page]);
 
   // Session action handlers
   const handleJoinSession = async (sessionId, meetingUrl) => {
     try {
-      await sessionController.joinSession(sessionId, meetingUrl);
-      await loadSessions(); // Refresh list
+      // Navigate to the video meeting room instead of opening URL
+      navigate(`/meeting/${sessionId}`);
     } catch (error) {
       console.error('Join session error:', error);
     }
@@ -114,6 +140,16 @@ const MyAppointments = () => {
   const handleRescheduleSession = async (sessionId) => {
     // Navigate to reschedule page or open modal
     navigate(`/sessions/${sessionId}/reschedule`);
+  };
+
+  const handleRespondToReschedule = async (sessionId, responseData) => {
+    // Handle mentee response to mentor's reschedule request
+    try {
+      await sessionController.respondToRescheduleRequest(sessionId, responseData);
+      await loadSessions(); // Refresh list
+    } catch (error) {
+      console.error('Respond to reschedule error:', error);
+    }
   };
 
   const handleStartSession = async (sessionId) => {
@@ -239,6 +275,13 @@ const MyAppointments = () => {
           ))}
         </div>
 
+        {/* Reschedule Requests for Mentees */}
+        {isMentee() && (
+          <div className="mb-8">
+            <MenteeRescheduleRequests />
+          </div>
+        )}
+
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <select
@@ -318,6 +361,7 @@ const MyAppointments = () => {
                   onJoinSession={handleJoinSession}
                   onCancelSession={handleCancelSession}
                   onRescheduleSession={handleRescheduleSession}
+                  onRespondToReschedule={handleRespondToReschedule}
                   onStartSession={handleStartSession}
                   onCompleteSession={handleCompleteSession}
                   onAddNotes={handleAddNotes}

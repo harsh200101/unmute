@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
+import SessionCard from '../components/SessionCard';
 import { toast } from 'react-hot-toast';
 
 const MentorSessions = () => {
@@ -11,9 +12,40 @@ const MentorSessions = () => {
   // State management
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState([]);
+  const [activeTab, setActiveTab] = useState('all'); // all, upcoming, past, pending
+  const [statusFilter, setStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
+  const [summary, setSummary] = useState(null); // from API (total, upcoming, past, pending)
+
+  // Tab options
+  const tabOptions = [
+    { id: 'all', label: 'All Sessions', count: 0 },
+    { id: 'upcoming', label: 'Upcoming', count: 0 },
+    { id: 'pending', label: 'Pending', count: 0 },
+    { id: 'past', label: 'Past', count: 0 }
+  ];
+
+  // Status options for filtering
+  const statusOptions = [
+    { value: '', label: 'All Status' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'confirmed', label: 'Confirmed' },
+    { value: 'in_progress', label: 'In Progress' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'cancelled_by_mentee', label: 'Cancelled by Mentee' },
+    { value: 'cancelled_by_mentor', label: 'Cancelled by Mentor' }
+  ];
+
+  // Type options
+  const typeOptions = [
+    { value: '', label: 'All Types' },
+    { value: 'video', label: 'Video Call' },
+    { value: 'voice', label: 'Voice Call' },
+    { value: 'chat', label: 'Chat Session' }
+  ];
 
   // Load sessions
   const loadSessions = async () => {
@@ -21,7 +53,24 @@ const MentorSessions = () => {
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/sessions/mentor/upcoming?page=${page}&limit=20`, {
+      const params = new URLSearchParams();
+      params.append('page', page);
+      params.append('limit', 10);
+
+      // Add filters to params
+      if (statusFilter) params.append('status', statusFilter);
+      if (typeFilter) params.append('type', typeFilter);
+
+      // Apply tab-specific filters
+      if (activeTab === 'upcoming') {
+        params.append('upcoming', true);
+      } else if (activeTab === 'past') {
+        params.append('past', true);
+      } else if (activeTab === 'pending') {
+        params.append('status', 'pending');
+      }
+
+      const response = await fetch(`/api/sessions/mentor/all?${params}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
           'Content-Type': 'application/json'
@@ -31,8 +80,10 @@ const MentorSessions = () => {
       if (response.ok) {
         const data = await response.json();
         setSessions(data.data?.sessions || []);
-        setTotalPages(data.pagination?.totalPages || 1);
-        setTotalItems(data.pagination?.totalItems || 0);
+        setTotalPages(data.data?.pagination?.totalPages || 1);
+        const total = data.data?.pagination?.totalSessions ?? data.data?.summary?.total ?? data.data?.sessions?.length ?? 0;
+        setTotalItems(total);
+        setSummary(data.data?.summary || null);
       } else {
         setSessions([]);
         toast.error('Failed to load sessions');
@@ -46,18 +97,150 @@ const MentorSessions = () => {
     }
   };
 
-  // Load data on mount and page change
+  // Load data on mount and when filters change
   useEffect(() => {
     if (isAuthenticated && isMentor()) {
       loadSessions();
     }
-  }, [isAuthenticated, isMentor(), page]);
+  }, [isAuthenticated, isMentor(), activeTab, statusFilter, typeFilter, page]);
 
   // Redirect if not authenticated or not a mentor
   if (!isAuthenticated) {
     navigate('/login');
     return null;
   }
+
+  // Session action handlers
+  const handleJoinSession = async (sessionId, meetingUrl) => {
+    try {
+      window.open(meetingUrl, '_blank');
+      toast.success('Joining session...');
+    } catch (error) {
+      console.error('Join session error:', error);
+    }
+  };
+
+  const handleCancelSession = async (sessionId) => {
+    if (window.confirm('Are you sure you want to cancel this session?')) {
+      try {
+        // Use the API to cancel session
+        const response = await fetch(`/api/sessions/details/${sessionId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ reason: 'Cancelled by mentor' })
+        });
+
+        if (response.ok) {
+          toast.success('Session cancelled successfully');
+          await loadSessions(); // Refresh list
+        } else {
+          toast.error('Failed to cancel session');
+        }
+      } catch (error) {
+        console.error('Cancel session error:', error);
+        toast.error('Error cancelling session');
+      }
+    }
+  };
+
+  const handleRescheduleSession = async (sessionId) => {
+    // For mentors, this should open a modal or navigate to reschedule request page
+    navigate(`/sessions/${sessionId}/mentor-reschedule`);
+  };
+
+  const handleStartSession = async (sessionId) => {
+    try {
+      const response = await fetch(`/api/sessions/details/${sessionId}/start`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        toast.success('Session started!');
+        await loadSessions(); // Refresh list
+      } else {
+        toast.error('Failed to start session');
+      }
+    } catch (error) {
+      console.error('Start session error:', error);
+      toast.error('Error starting session');
+    }
+  };
+
+  const handleCompleteSession = async (sessionId) => {
+    try {
+      const response = await fetch(`/api/sessions/details/${sessionId}/complete`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ notes: 'Session completed by mentor' })
+      });
+
+      if (response.ok) {
+        toast.success('Session completed successfully!');
+        await loadSessions(); // Refresh list
+      } else {
+        toast.error('Failed to complete session');
+      }
+    } catch (error) {
+      console.error('Complete session error:', error);
+      toast.error('Error completing session');
+    }
+  };
+
+  const handleAddNotes = async (sessionId) => {
+    navigate(`/sessions/${sessionId}/notes`);
+  };
+
+  // Filter handlers
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId);
+    setPage(1);
+  };
+
+  const handleStatusFilterChange = (e) => {
+    setStatusFilter(e.target.value);
+    setPage(1);
+  };
+
+  const handleTypeFilterChange = (e) => {
+    setTypeFilter(e.target.value);
+    setPage(1);
+  };
+
+  const handlePageChange = (newPage) => {
+    setPage(newPage);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Get tab counts (prefer API summary if available)
+  const getTabCounts = () => {
+    if (summary) {
+      return {
+        all: summary.total ?? totalItems,
+        upcoming: summary.upcoming ?? 0,
+        pending: summary.pending ?? 0,
+        past: summary.past ?? 0,
+      };
+    }
+    // Fallback: compute from current page items
+    return {
+      all: totalItems,
+      upcoming: sessions.filter(s => ['pending', 'confirmed'].includes(s.status) && new Date(s.scheduled_at) > new Date()).length,
+      pending: sessions.filter(s => s.status === 'pending').length,
+      past: sessions.filter(s => ['completed', 'cancelled_by_mentee', 'cancelled_by_mentor'].includes(s.status)).length
+    };
+  };
+
+  const tabCounts = getTabCounts();
 
   if (!isMentor()) {
     navigate('/dashboard');
@@ -71,9 +254,9 @@ const MentorSessions = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">All Upcoming Sessions</h1>
+              <h1 className="text-3xl font-bold text-gray-900">All Sessions</h1>
               <p className="text-gray-600 mt-1">
-                View and manage all your scheduled mentoring sessions
+                View and manage all your mentoring sessions with advanced filtering
               </p>
             </div>
             <button
@@ -87,96 +270,123 @@ const MentorSessions = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats */}
-        <div className="mb-8">
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Upcoming Sessions</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">{totalItems}</p>
-              </div>
-              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </div>
-            </div>
+        {/* Tabs */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          {tabOptions.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => handleTabChange(tab.id)}
+              className={`px-4 py-2 rounded-xl font-medium transition-all duration-200 ${
+                activeTab === tab.id
+                  ? 'bg-indigo-600 text-white shadow-lg'
+                  : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'
+              }`}
+            >
+              {tab.label}
+              {tabCounts[tab.id] > 0 && (
+                <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
+                  activeTab === tab.id
+                    ? 'bg-indigo-500 text-white'
+                    : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {tabCounts[tab.id]}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          <select
+            value={statusFilter}
+            onChange={handleStatusFilterChange}
+            className="px-4 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={typeFilter}
+            onChange={handleTypeFilterChange}
+            className="px-4 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {typeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex-1"></div>
+
+          <div className="text-sm text-gray-600 flex items-center">
+            Showing {sessions.length} of {totalItems} sessions
           </div>
         </div>
 
-        {/* Sessions List */}
+        {/* Loading State */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <LoadingSpinner size="xl" />
-            <span className="ml-3 text-gray-600">Loading sessions...</span>
+            <LoadingSpinner size="xl" variant="gradient" />
           </div>
-        ) : sessions.length > 0 ? (
-          <div className="space-y-6">
-            {sessions.map((session) => (
-              <div key={session.id} className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-gray-900">{session.title}</h3>
-                    <p className="text-gray-600 mt-2">{session.description}</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Date & Time</p>
-                        <p className="text-gray-900">
-                          {new Date(session.scheduledAt).toLocaleDateString('en-US', {
-                            weekday: 'long',
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                          })}
-                        </p>
-                        <p className="text-gray-500">
-                          {new Date(session.scheduledAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            timeZoneName: 'short'
-                          })} • {session.durationMinutes} minutes
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Mentee</p>
-                        <p className="text-gray-900">
-                          {session.mentee?.firstName} {session.mentee?.lastName}
-                        </p>
-                        <p className="text-gray-500">{session.mentee?.email}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Session Details</p>
-                        <p className="text-gray-900">${session.price}</p>
-                        <p className="text-gray-500 capitalize">{session.sessionType}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-3 ml-6">
-                    <span className={`px-4 py-2 rounded-full text-sm font-medium ${
-                      session.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                      session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {session.status}
-                    </span>
-                    {session.meetingUrl && (
-                      <button
-                        onClick={() => window.open(session.meetingUrl, '_blank')}
-                        className="px-6 py-3 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition-colors font-medium"
-                      >
-                        Join Call
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
+        ) : sessions.length === 0 ? (
+          /* Empty State */
+          <div className="text-center py-20">
+            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              {activeTab === 'upcoming' ? 'No upcoming sessions' :
+               activeTab === 'past' ? 'No past sessions' :
+               activeTab === 'pending' ? 'No pending sessions' :
+               'No sessions found'}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {activeTab === 'upcoming' ? "You don't have any upcoming mentoring sessions scheduled." :
+               activeTab === 'past' ? "You don't have any completed sessions yet." :
+               activeTab === 'pending' ? "You don't have any pending sessions." :
+               "You don't have any sessions yet."}
+            </p>
+            {activeTab === 'upcoming' && (
+              <button
+                onClick={() => navigate('/mentor/availability')}
+                className="px-6 py-3 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 transition-colors"
+              >
+                Set Your Availability
+              </button>
+            )}
+          </div>
+        ) : (
+          /* Sessions List */
+          <>
+            <div className="space-y-6">
+              {sessions.map((session) => (
+                <SessionCard
+                  key={session.id}
+                  session={session}
+                  userRole="mentor"
+                  onJoinSession={handleJoinSession}
+                  onCancelSession={handleCancelSession}
+                  onRescheduleSession={handleRescheduleSession}
+                  onStartSession={handleStartSession}
+                  onCompleteSession={handleCompleteSession}
+                  onAddNotes={handleAddNotes}
+                />
+              ))}
+            </div>
 
             {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex items-center justify-center gap-2 mt-8">
                 <button
-                  onClick={() => setPage(page - 1)}
+                  onClick={() => handlePageChange(page - 1)}
                   disabled={page <= 1}
                   className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
@@ -191,7 +401,7 @@ const MentorSessions = () => {
                   return (
                     <button
                       key={pageNum}
-                      onClick={() => setPage(pageNum)}
+                      onClick={() => handlePageChange(pageNum)}
                       className={`px-3 py-2 border rounded-lg transition-colors ${
                         pageNum === page
                           ? 'bg-indigo-600 text-white border-indigo-600'
@@ -204,7 +414,7 @@ const MentorSessions = () => {
                 })}
 
                 <button
-                  onClick={() => setPage(page + 1)}
+                  onClick={() => handlePageChange(page + 1)}
                   disabled={page >= totalPages}
                   className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
@@ -212,24 +422,39 @@ const MentorSessions = () => {
                 </button>
               </div>
             )}
-          </div>
-        ) : (
-          <div className="text-center py-20">
-            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+          </>
+        )}
+
+        {/* Quick Stats */}
+        {!loading && sessions.length > 0 && (
+          <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 text-center">
+              <div className="text-2xl font-bold text-indigo-600 mb-1">
+                {sessions.filter(s => s.status === 'completed').length}
+              </div>
+              <div className="text-sm text-gray-600">Completed</div>
             </div>
-            <h3 className="text-2xl font-semibold text-gray-900 mb-2">No upcoming sessions</h3>
-            <p className="text-gray-600 mb-6">
-              You don't have any upcoming mentoring sessions scheduled.
-            </p>
-            <button
-              onClick={() => navigate('/mentor/availability')}
-              className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl transition-colors"
-            >
-              Set Your Availability
-            </button>
+
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 text-center">
+              <div className="text-2xl font-bold text-green-600 mb-1">
+                {sessions.filter(s => ['pending', 'confirmed'].includes(s.status)).length}
+              </div>
+              <div className="text-sm text-gray-600">Upcoming</div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 text-center">
+              <div className="text-2xl font-bold text-yellow-600 mb-1">
+                {sessions.filter(s => s.status === 'pending').length}
+              </div>
+              <div className="text-sm text-gray-600">Pending</div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 text-center">
+              <div className="text-2xl font-bold text-purple-600 mb-1">
+                ${Math.round(sessions.filter(s => s.status === 'completed').reduce((acc, s) => acc + (s.mentorEarnings || 0), 0))}
+              </div>
+              <div className="text-sm text-gray-600">Total Earnings</div>
+            </div>
           </div>
         )}
       </div>

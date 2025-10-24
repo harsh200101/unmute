@@ -183,14 +183,16 @@ const PaymentResult = () => {
                         weekday: 'long',
                         year: 'numeric',
                         month: 'long',
-                        day: 'numeric'
+                        day: 'numeric',
+                        timeZone: 'Asia/Kolkata'
                       })}
                     </p>
                     <p className="text-sm text-gray-600">
                       {new Date(sessionData.scheduled_at).toLocaleTimeString('en-US', {
                         hour: 'numeric',
                         minute: '2-digit',
-                        hour12: true
+                        hour12: true,
+                        timeZone: 'Asia/Kolkata'
                       })}
                     </p>
                   </div>

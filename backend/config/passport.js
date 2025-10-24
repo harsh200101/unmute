@@ -89,7 +89,9 @@ passport.use(new GoogleStrategy({
             ['mentor', user.id]
           );
           user.role = roleUpdate.rows[0].role;
-          console.log('✅ Updated user role to mentor based on existing profile');
+          console.log('✅ Updated new user role to mentor based on existing profile, user id:', user.id);
+        } else {
+          console.log('ℹ️ New user has no mentor profile, keeping role as mentee, user id:', user.id);
         }
 
         // Log successful user creation
@@ -120,14 +122,16 @@ passport.use(new GoogleStrategy({
             ['mentor', user.id]
           );
           user.role = 'mentor';
-          console.log('✅ Corrected user role to mentor');
+          console.log('✅ Corrected existing user role to mentor, user id:', user.id);
         } else if (!shouldBeMentor && currentRole === 'mentor') {
           await client.query(
             'UPDATE users SET role = $1 WHERE id = $2',
             ['mentee', user.id]
           );
           user.role = 'mentee';
-          console.log('✅ Corrected user role to mentee');
+          console.log('✅ Corrected existing user role to mentee, user id:', user.id);
+        } else {
+          console.log('ℹ️ Existing user role is correct:', currentRole, 'user id:', user.id, 'has mentor profile:', shouldBeMentor);
         }
 
         // Update existing user with fresh login data

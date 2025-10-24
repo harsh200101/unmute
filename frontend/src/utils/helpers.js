@@ -12,14 +12,15 @@ import { toast } from 'react-hot-toast';
  */
 export const formatDate = (date, options = {}) => {
   if (!date) return '';
-  
+
   const defaultOptions = {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    timeZone: 'Asia/Kolkata',
     ...options
   };
-  
+
   try {
     return new Date(date).toLocaleDateString('en-US', defaultOptions);
   } catch (error) {
@@ -36,14 +37,15 @@ export const formatDate = (date, options = {}) => {
  */
 export const formatTime = (date, options = {}) => {
   if (!date) return '';
-  
+
   const defaultOptions = {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
+    timeZone: 'Asia/Kolkata',
     ...options
   };
-  
+
   try {
     return new Date(date).toLocaleTimeString('en-US', defaultOptions);
   } catch (error) {

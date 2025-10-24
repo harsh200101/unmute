@@ -15,6 +15,8 @@
     "@headlessui/react": "^2.2.8",
     "@heroicons/react": "^2.2.0",
     "@tailwindcss/forms": "^0.5.10",
+    "agora-rtc-sdk-ng": "^4.24.0",
+    "agora-token": "^2.0.5",
     "axios": "^1.12.1",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",

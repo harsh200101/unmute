@@ -629,8 +629,8 @@ const SessionManagement = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {new Date(session.scheduled_at).toLocaleDateString()} <br />
-                            {new Date(session.scheduled_at).toLocaleTimeString()}
+                            {new Date(session.scheduled_at).toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' })} <br />
+                            {new Date(session.scheduled_at).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata' })}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">

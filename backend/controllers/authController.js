@@ -231,34 +231,53 @@ exports.register = async (req, res) => {
 exports.forgotPassword = async (req, res) => {
   const { email } = req.body;
 
+  console.log('🚨 FORGOT PASSWORD FUNCTION CALLED FOR EMAIL:', email);
+
   try {
+    console.log('🔍 Forgot password request for email:', email);
+
     // Find user (don't reveal if exists)
     const userResult = await db.query('SELECT id, email FROM users WHERE email = $1', [email]);
     const user = userResult.rows[0];
 
+    console.log('🔍 User lookup result:', user ? `✅ USER FOUND with ID: ${user.id}, Email: ${user.email}` : '❌ USER NOT FOUND');
+    console.log('🔍 Total users found in query:', userResult.rows.length);
+
     // Always respond the same way
     if (!user) {
+      console.log('⚠️ No user found for email:', email);
       return res.json({ success: true, message: 'If an account with that email exists, a reset link has been sent.' });
     }
+
+    console.log('✅ User found, proceeding with password reset for user ID:', user.id);
 
     // Generate token and expiry
     const token = crypto.randomBytes(32).toString('hex');
     const tokenHash = await bcrypt.hash(token, 12);
     const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
+    console.log('🔑 Generated reset token, expires at:', expiry);
+
     // Store hashed token
-    await db.query(
+    const insertResult = await db.query(
       'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
       [user.id, tokenHash, expiry]
     );
 
+    console.log('💾 Password reset token stored in database');
+
     // Send email
     const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${token}&id=${user.id}`;
+    console.log('📧 Attempting to send password reset email to:', user.email);
+    console.log('🔗 Reset URL:', resetUrl);
+
     await sendPasswordResetEmail(user.email, resetUrl);
+
+    console.log('✅ Password reset email sent successfully');
 
     res.json({ success: true, message: 'If an account with that email exists, a reset link has been sent.' });
   } catch (error) {
-    console.error('Forgot password error:', error);
+    console.error('❌ Forgot password error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
@@ -272,7 +291,16 @@ exports.resetPassword = async (req, res) => {
       'SELECT token_hash, expires_at, used_at FROM password_reset_tokens WHERE user_id = $1',
       [id]
     );
-    const tokenRecord = tokenResult.rows.find(async (row) => await bcrypt.compare(token, row.token_hash));
+
+    // Find valid token by checking each one asynchronously
+    let tokenRecord = null;
+    for (const row of tokenResult.rows) {
+      const isValidToken = await bcrypt.compare(token, row.token_hash);
+      if (isValidToken) {
+        tokenRecord = row;
+        break;
+      }
+    }
 
     if (!tokenRecord || tokenRecord.used_at || new Date() > tokenRecord.expires_at) {
       return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
@@ -779,6 +807,8 @@ module.exports = {
   updateProfile: exports.updateProfile,
   sendVerificationEmail: exports.sendVerificationEmail,
   verifyEmail: exports.verifyEmail,
+  forgotPassword: exports.forgotPassword,
+  resetPassword: exports.resetPassword,
   generateTokens,
   formatUserResponse
 };

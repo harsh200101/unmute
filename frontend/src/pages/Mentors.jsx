@@ -484,11 +484,11 @@ const Mentors = () => {
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                   {mentors.map((mentor) => (
-                    <div
-                      key={mentor.id}
-                      onClick={() => handleMentorClick(mentor.id)}
-                      className="group cursor-pointer bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
-                    >
+                      <div
+                        key={mentor.id}
+                        onClick={() => handleMentorClick(mentor.id)}
+                        className="group cursor-pointer bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
+                      >
                       {/* Mentor Header */}
                       <div className="flex items-start gap-4 mb-4">
                         <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
@@ -501,15 +501,15 @@ const Mentors = () => {
                                 ? `${mentor.firstName} ${mentor.lastName}`
                                 : mentor.fullName || 'Mentor'}
                             </h3>
-                            {mentor.is_featured && (
+                            {mentor.isFeatured && (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 flex-shrink-0">
                                 Featured
                               </span>
                             )}
                           </div>
                           <p className="text-sm text-gray-600 line-clamp-1">
-                            {Array.isArray(mentor.specializations) 
-                              ? mentor.specializations.slice(0, 2).join(', ')
+                            {Array.isArray(mentor.categories)
+                              ? mentor.categories.slice(0, 2).join(', ')
                               : 'Professional Mentor'}
                           </p>
                         </div>
@@ -527,7 +527,7 @@ const Mentors = () => {
                             {[1, 2, 3, 4, 5].map((star) => (
                               <svg
                                 key={star}
-                                className={`w-4 h-4 ${star <= Math.round(mentor.average_rating || 5) ? 'text-yellow-400' : 'text-gray-300'}`}
+                                className={`w-4 h-4 ${star <= Math.round(mentor.averageRating || 0) ? 'text-yellow-400' : 'text-gray-300'}`}
                                 fill="currentColor"
                                 viewBox="0 0 20 20"
                               >
@@ -536,18 +536,18 @@ const Mentors = () => {
                             ))}
                           </div>
                           <span className="text-sm font-medium text-gray-900">
-                            {(mentor.average_rating || 5.0).toFixed(1)}
+                            {(mentor.averageRating || 0).toFixed(1)}
                           </span>
                           <span className="text-sm text-gray-500">
-                            ({mentor.total_reviews || 0})
+                            ({mentor.totalReviews || 0})
                           </span>
                         </div>
 
-                        {mentor.badge_level && (
+                        {mentor.badgeLevel && (
                           <span className={`text-xs font-medium ${
-                            badgeLevels.find(b => b.value === mentor.badge_level)?.color || 'text-gray-600'
+                            badgeLevels.find(b => b.value === mentor.badgeLevel)?.color || 'text-gray-600'
                           }`}>
-                            {mentor.badge_level.toUpperCase()}
+                            {mentor.badgeLevel.toUpperCase()}
                           </span>
                         )}
                       </div>
@@ -568,14 +568,14 @@ const Mentors = () => {
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                           </svg>
-                          <span>{mentor.total_sessions || 0} sessions</span>
+                          <span>{mentor.sessionCount || 0} sessions</span>
                         </div>
                       </div>
 
                       {/* Price and CTA */}
                       <div className="flex items-center justify-between">
                         <div className="text-2xl font-bold text-gray-900">
-                          ${mentor.hourly_rate || 75}
+                          ${mentor.hourlyRate || 25}
                           <span className="text-sm font-normal text-gray-600">/hour</span>
                         </div>
                         

@@ -1,17 +1,27 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate, useLocation } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
+
+// Global flag to prevent multiple mentor redirects across component mounts
+let globalMentorRedirected = false;
 
 const Dashboard = () => {
   const { user, isAuthenticated, isMentor, isMentee, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Simple state management
   const [loading, setLoading] = useState(false);
   const [upcomingSessions, setUpcomingSessions] = useState([]);
   const [sessionStats, setSessionStats] = useState({});
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  // Refs to prevent excessive operations during OAuth flows
+  const processedStateRef = useRef('');
+  const navigationRef = useRef(false);
+  const dataLoadRef = useRef(false); // Prevent multiple data loads
 
   // Load upcoming sessions
   const loadUpcomingSessions = useCallback(async () => {
@@ -26,14 +36,14 @@ const Dashboard = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('Sessions API response:', data);
+        console.log('✅ Sessions API success:', data);
         setUpcomingSessions(data.data?.upcomingSessions || []);
       } else {
-        console.warn('Sessions API failed:', response.status);
+        console.error('❌ Sessions API failed:', response.status, response.statusText);
         setUpcomingSessions([]);
       }
     } catch (error) {
-      console.warn('Sessions API error:', error);
+      console.error('❌ Sessions API error:', error.message);
       setUpcomingSessions([]);
     }
   }, []);
@@ -51,22 +61,38 @@ const Dashboard = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('Stats API response:', data);
+        console.log('✅ Stats API success:', data);
         setSessionStats(data.data || {});
       } else {
-        console.warn('Stats API failed:', response.status);
+        console.error('❌ Stats API failed:', response.status, response.statusText);
         setSessionStats({});
       }
     } catch (error) {
-      console.warn('Stats API error:', error);
+      console.error('❌ Stats API error:', error.message);
       setSessionStats({});
     }
   }, []);
 
   // Load all dashboard data
   const loadDashboardData = useCallback(async () => {
-    if (!isAuthenticated) return;
+    // Prevent loading if not authenticated, already loaded, or if user is mentor (should be redirected)
+    if (!isAuthenticated || dataLoaded || isMentor() || dataLoadRef.current) {
+      console.log('🚫 Skipping dashboard data load:', {
+        isAuthenticated,
+        dataLoaded,
+        isMentor: isMentor(),
+        dataLoadInProgress: dataLoadRef.current
+      });
+      return;
+    }
 
+    // Prevent multiple simultaneous loads
+    if (loading) {
+      console.log('🚫 Dashboard data load already in progress');
+      return;
+    }
+
+    dataLoadRef.current = true;
     setLoading(true);
     console.log('🚀 Loading dashboard data...');
 
@@ -75,37 +101,93 @@ const Dashboard = () => {
         loadUpcomingSessions(),
         loadSessionStats()
       ]);
+      setDataLoaded(true);
       console.log('✅ Dashboard data loaded successfully');
     } catch (error) {
-      console.error('Dashboard loading error:', error);
+      console.error('❌ Dashboard loading error:', error);
       toast.error('Failed to load dashboard data');
+      // Don't set dataLoaded to true if loading failed
     } finally {
       setLoading(false);
+      dataLoadRef.current = false;
     }
-  }, [isAuthenticated, loadUpcomingSessions, loadSessionStats]);
+  }, [isAuthenticated, dataLoaded, loading, loadUpcomingSessions, loadSessionStats, isMentor]);
 
   // Load data on mount and handle redirects
   useEffect(() => {
-    console.log('🔄 Dashboard useEffect running at', new Date().toISOString(), { isAuthenticated, isMentor: isMentor() });
+    // Create a stable state key to prevent excessive processing
+    const currentStateKey = `${isAuthenticated}-${user?.role || 'none'}-${dataLoaded}`;
+
+    if (processedStateRef.current !== currentStateKey) {
+      processedStateRef.current = currentStateKey;
+
+      if (!isAuthenticated) {
+        navigate('/login');
+        setDataLoaded(false);
+        return;
+      }
+
+      // Load dashboard data only if authenticated and not a mentor
+      if (!dataLoaded && !loading) {
+        loadDashboardData();
+      }
+    }
+  }, [isAuthenticated, user?.role, dataLoaded, loading, isMentor, navigate, loadDashboardData]);
+
+  // Reset redirect flag and data load ref when authentication state changes or navigation occurs
+  useEffect(() => {
     if (!isAuthenticated) {
-      navigate('/login');
-      return;
+      globalMentorRedirected = false;
+      dataLoadRef.current = false;
+      setDataLoaded(false);
     }
+  }, [isAuthenticated]);
 
-    if (isMentor()) {
-      navigate('/mentor/dashboard');
-      return;
-    }
-
-    // Load dashboard data only if authenticated and not a mentor
-    loadDashboardData();
+  useEffect(() => {
+    globalMentorRedirected = false;
+    navigationRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      dataLoadRef.current = false;
+    };
+  }, []);
+
+  // Handle mentor redirect
+  useEffect(() => {
+    if (isMentor() && !globalMentorRedirected) {
+      console.log('🔄 [NAV] Redirecting mentor to /mentor/dashboard');
+      globalMentorRedirected = true;
+      navigate('/mentor/dashboard', { replace: true });
+    }
+  }, [isMentor, navigate, location.key]);
+
+  // Debug logging for navigation decisions
+  console.log('🔄 [NAV] Dashboard render check:', {
+    isAuthenticated,
+    isMentor: isMentor(),
+    userRole: user?.role,
+    userId: user?.id,
+    shouldRedirectMentor: isMentor(),
+    shouldRedirectUnauth: !isAuthenticated,
+    dataLoaded
+  });
+
+  // Redirect mentors to their dashboard (handled in useEffect)
+
+  // Handle unauthenticated redirect
+  useEffect(() => {
+    if (!isAuthenticated && !navigationRef.current) {
+      console.log('🔄 [NAV] Redirecting unauthenticated user to /login');
+      navigationRef.current = true;
+      navigate('/login', { replace: true });
+    }
   }, [isAuthenticated, navigate]);
 
-  // Don't render if not authenticated or if mentor (will redirect)
-  if (!isAuthenticated || isMentor()) {
-    return null;
-  }
+  console.log('🔄 [NAV] Rendering Dashboard component for authenticated non-mentor user');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -131,7 +213,10 @@ const Dashboard = () => {
 
             <div className="flex gap-3 mt-4 md:mt-0">
               <button
-                onClick={loadDashboardData}
+                onClick={() => {
+                  setDataLoaded(false);
+                  loadDashboardData();
+                }}
                 disabled={loading}
                 className="px-4 py-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 font-semibold rounded-xl transition-all duration-200 flex items-center gap-2"
               >
@@ -285,7 +370,7 @@ const Dashboard = () => {
                           <div className="flex-1">
                             <h3 className="font-semibold text-gray-900">{session.title}</h3>
                             <p className="text-sm text-gray-600 mt-1">
-                              {new Date(session.scheduledAt).toLocaleDateString()} at {new Date(session.scheduledAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              {new Date(session.scheduledAt).toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' })} at {new Date(session.scheduledAt).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'})}
                             </p>
                             <p className="text-sm text-gray-500">
                               With {session.participant?.firstName} {session.participant?.lastName}

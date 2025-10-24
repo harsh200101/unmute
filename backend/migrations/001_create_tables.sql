@@ -244,7 +244,7 @@ CREATE TABLE sessions (
     )),
     
     -- Meeting Details
-    meeting_platform VARCHAR(50) DEFAULT 'zoom' CHECK (meeting_platform IN ('zoom', 'google_meet', 'teams', 'custom')),
+    meeting_platform VARCHAR(50) DEFAULT 'agora' CHECK (meeting_platform = 'agora'),
     meeting_id VARCHAR(100),
     meeting_url VARCHAR(500),
     meeting_password VARCHAR(50),
@@ -399,8 +399,8 @@ CREATE TABLE notifications (
     message TEXT NOT NULL,
     type VARCHAR(50) NOT NULL CHECK (type IN (
         'booking_request', 'booking_confirmed', 'booking_cancelled', 'session_reminder',
-        'session_started', 'session_completed', 'review_received', 'payment_received',
-        'payout_processed', 'profile_verified', 'system_announcement', 'promotional'
+        'session_started', 'session_completed', 'session_rescheduled', 'review_received',
+        'payment_received', 'payout_processed', 'profile_verified', 'system_announcement', 'promotional'
     )),
     
     -- Related Entities
@@ -596,29 +596,29 @@ CREATE TRIGGER trigger_payments_updated_at BEFORE UPDATE ON payments FOR EACH RO
 -- ==========================================
 
 -- Insert initial categories
-INSERT INTO categories (name, description, slug, color_hex) VALUES 
-('Personal Growth & Support', 'Personal development and mental health support', 'personal-growth-support', '#10B981'),
-('Dating & Relationships', 'Relationship advice and dating guidance', 'dating-relationships', '#EC4899'),
-('Career & Professional', 'Career guidance and professional development', 'career-professional', '#3B82F6'),
-('Entrepreneurship', 'Business and startup mentoring', 'entrepreneurship', '#F59E0B'),
-('Leadership & Management', 'Leadership skills and team management', 'leadership-management', '#8B5CF6'),
-('Technology & Engineering', 'Tech skills and engineering guidance', 'technology-engineering', '#06B6D4'),
-('Creative Industries', 'Art, design, writing, and creative careers', 'creative-industries', '#EF4444'),
-('Health & Wellness', 'Physical and mental health guidance', 'health-wellness', '#84CC16'),
-('Finance & Investment', 'Financial planning and investment advice', 'finance-investment', '#059669');
+INSERT INTO categories (name, description, slug, color_hex) VALUES
+('Spiritual Guidance', 'Spiritual awakening, meditation, and inner peace', 'spiritual-guidance', '#8B5CF6'),
+('Life Coaching', 'Personal development and life direction guidance', 'life-coaching', '#10B981'),
+('Mental Health Support', 'Anxiety, depression, and emotional wellness', 'mental-health-support', '#EC4899'),
+('Relationship Counseling', 'Love, marriage, and interpersonal relationships', 'relationship-counseling', '#F59E0B'),
+('Career Transition', 'Finding purpose and meaningful work', 'career-transition', '#3B82F6'),
+('Grief & Loss', 'Coping with loss and bereavement', 'grief-loss', '#EF4444'),
+('Stress Management', 'Techniques for managing daily stress and overwhelm', 'stress-management', '#06B6D4'),
+('Self-Discovery', 'Finding your true self and life purpose', 'self-discovery', '#84CC16'),
+('Parenting Support', 'Guidance for parents and family dynamics', 'parenting-support', '#059669');
 
 -- Insert sample expertise tags
-INSERT INTO expertise_tags (name, category) VALUES 
-('Leadership', 'Management'),
-('Python Programming', 'Technology'),
-('Digital Marketing', 'Business'),
-('UI/UX Design', 'Creative'),
-('Financial Planning', 'Finance'),
-('Mindfulness', 'Wellness'),
-('Public Speaking', 'Communication'),
-('Data Science', 'Technology'),
-('Content Writing', 'Creative'),
-('Project Management', 'Business');
+INSERT INTO expertise_tags (name, category) VALUES
+('Meditation', 'Spirituality'),
+('CBT', 'Psychology'),
+('Life Coaching', 'Personal Development'),
+('Spiritual Counseling', 'Spirituality'),
+('Emotional Intelligence', 'Psychology'),
+('Grief Counseling', 'Mental Health'),
+('Relationship Counseling', 'Relationships'),
+('Stress Management', 'Wellness'),
+('Mindfulness', 'Spirituality'),
+('Career Guidance', 'Personal Development');
 
 
 CREATE TABLE IF NOT EXISTS password_reset_tokens (

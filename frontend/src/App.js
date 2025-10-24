@@ -30,9 +30,13 @@ const MentorAvailability = lazy(() => import('./pages/MentorAvailability'));
 const MentorEarnings = lazy(() => import('./pages/MentorEarnings'));
 const MentorReviews = lazy(() => import('./pages/MentorReviews'));
 const MentorSessions = lazy(() => import('./pages/MentorSessions'));
+const MentorRescheduleRequest = lazy(() => import('./pages/MentorRescheduleRequest'));
 const OAuthCallback = lazy(() => import('./pages/OAuthCallback'));
 const PaymentResult = lazy(() => import('./pages/PaymentResult'));
+const PaymentStatusPage = lazy(() => import('./pages/PaymentStatusPage'));
 const EmailVerification = lazy(() => import('./pages/EmailVerification'));
+const RescheduleSession = lazy(() => import('./pages/RescheduleSession'));
+const MeetingRoom = lazy(() => import('./pages/MeetingRoom'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 // Loading fallback component
@@ -144,15 +148,26 @@ function App() {
               />
 
               {/* Payment Routes */}
-              <Route 
-                path="/payment/result" 
+              <Route
+                path="/payment/result"
                 element={
                   <ProtectedRoute>
                     <AppLayout>
                       <PaymentResult />
                     </AppLayout>
                   </ProtectedRoute>
-                } 
+                }
+              />
+
+              <Route
+                path="/payment-status"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout showHeader={false} showFooter={false}>
+                      <PaymentStatusPage />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
               />
 
               {/* Protected User Routes */}
@@ -261,15 +276,59 @@ function App() {
                 } 
               />
               
-              <Route 
-                path="/sessions/manage" 
+              <Route
+                path="/sessions/manage"
                 element={
                   <ProtectedRoute>
                     <AppLayout>
                       <SessionManagement />
                     </AppLayout>
                   </ProtectedRoute>
-                } 
+                }
+              />
+
+              <Route
+                path="/sessions/:sessionId/reschedule"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <RescheduleSession />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/reschedule-session/:sessionId"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <RescheduleSession />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/sessions/:sessionId/mentor-reschedule"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <MentorRescheduleRequest />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/meeting/:sessionId"
+                element={
+                  <ProtectedRoute>
+                    <AuthLayout>
+                      <MeetingRoom />
+                    </AuthLayout>
+                  </ProtectedRoute>
+                }
               />
 
               {/* Mentor Application Routes */}

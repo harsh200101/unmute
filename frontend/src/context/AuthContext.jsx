@@ -162,6 +162,7 @@ export const AuthProvider = ({ children }) => {
   // Request deduplication tracking
   const pendingRequests = React.useRef(new Map());
   const isInitializing = React.useRef(false);
+  const isLoggingOut = React.useRef(false);
 
   // Prevent duplicate requests
   const shouldMakeRequest = React.useCallback((requestKey, ttl = 5000) => {
@@ -320,6 +321,8 @@ export const AuthProvider = ({ children }) => {
 
           localStorage.setItem('user', JSON.stringify(user));
 
+          console.log('✅ AUTH: Profile fetched - user role:', user.role, 'user id:', user.id);
+
           dispatch({
             type: ActionTypes.INITIALIZE_AUTH,
             payload: {
@@ -336,6 +339,7 @@ export const AuthProvider = ({ children }) => {
           // If profile fetch fails, use stored user data
           if (userData) {
             const user = JSON.parse(userData);
+            console.log('✅ AUTH: Profile fetch failed, using stored user data - role:', user.role, 'user id:', user.id);
             dispatch({
               type: ActionTypes.INITIALIZE_AUTH,
               payload: {
@@ -491,12 +495,16 @@ export const AuthProvider = ({ children }) => {
       const response = await apiClient.get('/auth/profile');
       const user = response.data.data.user;
 
+      console.log('✅ AUTH: OAuth profile fetched - role:', user.role, 'user id:', user.id, 'isMentor check:', user.role === 'mentor' || user.role === 'super_admin');
+
       localStorage.setItem('user', JSON.stringify(user));
 
       dispatch({
         type: ActionTypes.LOGIN_SUCCESS,
         payload: { user, accessToken, refreshToken },
       });
+
+      console.log('✅ AUTH: OAuth user dispatched to context - role:', user.role);
 
       toast.success(`Welcome, ${user.first_name}! You're now logged in.`);
       return { success: true, user };
@@ -515,6 +523,13 @@ export const AuthProvider = ({ children }) => {
 
   // Logout Function
   const logout = useCallback(async () => {
+    if (isLoggingOut.current) {
+      console.log('🚫 AUTH: Logout already in progress, skipping...');
+      return;
+    }
+
+    isLoggingOut.current = true;
+
     try {
       // Attempt to invalidate tokens on server
       if (state.refreshToken) {
@@ -528,6 +543,7 @@ export const AuthProvider = ({ children }) => {
       clearTokens();
       dispatch({ type: ActionTypes.LOGOUT });
       toast.success('You have been logged out successfully.');
+      isLoggingOut.current = false;
     }
   }, [state.refreshToken, clearTokens]);
 
@@ -703,11 +719,11 @@ export const AuthProvider = ({ children }) => {
   const isEmailVerified = useCallback(() => !!state.user?.email_verified_at, [state.user]);
   const isMentorVerified = useCallback(() => state.user?.mentor_profile?.verification_status === 'verified', [state.user]);
 
-  // Context Value
-  const contextValue = {
+  // Context Value - Memoized to prevent unnecessary re-renders
+  const contextValue = React.useMemo(() => ({
     // State
     ...state,
-    
+
     // Actions
     register,
     login,
@@ -721,10 +737,10 @@ export const AuthProvider = ({ children }) => {
     checkTokenValidity,
     refreshAccessToken,
     updateActivity,
-    
+
     // Utilities
     clearError,
-    
+
     // Role Checking Utilities
     hasRole,
     isMentor,
@@ -732,7 +748,28 @@ export const AuthProvider = ({ children }) => {
     isAdmin,
     isEmailVerified,
     isMentorVerified,
-  };
+  }), [
+    state,
+    register,
+    login,
+    loginWithGoogle,
+    handleOAuthCallback,
+    logout,
+    updateProfile,
+    changePassword,
+    sendEmailVerification,
+    verifyEmail,
+    checkTokenValidity,
+    refreshAccessToken,
+    updateActivity,
+    clearError,
+    hasRole,
+    isMentor,
+    isMentee,
+    isAdmin,
+    isEmailVerified,
+    isMentorVerified,
+  ]);
 
   return (
     <AuthContext.Provider value={contextValue}>

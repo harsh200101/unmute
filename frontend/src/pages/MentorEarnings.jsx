@@ -236,12 +236,13 @@ const MentorEarnings = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-900">
-                              {new Date(earning.scheduledAt).toLocaleDateString()}
+                              {new Date(earning.scheduledAt).toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' })}
                             </div>
                             <div className="text-sm text-gray-500">
-                              {new Date(earning.scheduledAt).toLocaleTimeString([], {
+                              {new Date(earning.scheduledAt).toLocaleTimeString('en-US', {
                                 hour: '2-digit',
-                                minute: '2-digit'
+                                minute: '2-digit',
+                                timeZone: 'Asia/Kolkata'
                               })}
                             </div>
                           </td>

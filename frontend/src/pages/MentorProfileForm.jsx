@@ -13,37 +13,56 @@ const MentorProfileForm = () => {
   const [saving, setSaving] = useState(false);
   const [mentorProfile, setMentorProfile] = useState(null);
   const [formData, setFormData] = useState({
-    // Professional Information
+    // Professional Information (from users table)
     bio: '',
-    yearsExperience: '',
-    currentRole: '',
-    currentCompany: '',
 
-    // Expertise & Specializations
+    // Mentor Profile (from mentors table)
+    yearsExperience: 1,
     specializations: [],
-    categories: [],
+    industries: [],
+    skills: [],
     languages: ['en'],
-
-    // Pricing & Availability
     hourlyRate: 75,
+    profileImage: '',
+    videoIntroUrl: '',
+    portfolioUrls: [],
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    instantBooking: false,
+    advanceBookingDays: 30,
     minSessionDuration: 30,
     maxSessionDuration: 120,
-    sessionBuffer: 15,
-    advanceBookingDays: 30,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    sessionBufferMinutes: 15,
+
+    // Categories (relationship table)
+    categories: [],
 
     // Additional Settings
-    instantBooking: false,
     publicProfile: true
   });
 
   const [formErrors, setFormErrors] = useState({});
   const [availableCategories, setAvailableCategories] = useState([]);
   const [availableSpecializations] = useState([
-    'Software Development', 'Product Management', 'Data Science', 'UI/UX Design',
-    'Digital Marketing', 'Business Strategy', 'Career Development', 'Leadership',
-    'Entrepreneurship', 'Finance', 'Sales', 'Project Management', 'DevOps',
-    'Machine Learning', 'Cybersecurity', 'Mobile Development', 'Web Development'
+    'Life Coaching', 'Spiritual Guidance', 'Career Counseling', 'Relationship Counseling',
+    'Personal Development', 'Mindfulness & Meditation', 'Stress Management', 'Emotional Intelligence',
+    'Leadership Development', 'Work-Life Balance', 'Grief Counseling', 'Anxiety Management',
+    'Self-Confidence Building', 'Goal Setting', 'Life Transitions', 'Purpose Discovery',
+    'Communication Skills', 'Conflict Resolution', 'Parenting Guidance', 'Retirement Planning'
+  ]);
+
+  const [availableIndustries] = useState([
+    'Personal Development', 'Mental Health', 'Education', 'Healthcare', 'Corporate Wellness',
+    'Non-profit Organizations', 'Community Services', 'Spiritual Centers', 'Counseling Centers',
+    'Life Coaching Practices', 'Wellness Retreats', 'Educational Institutions',
+    'Corporate Training', 'Government Services', 'Religious Organizations', 'Therapy Practices'
+  ]);
+
+  const [availableSkills] = useState([
+    'Empathy', 'Active Listening', 'Emotional Intelligence', 'Communication', 'Motivation',
+    'Goal Setting', 'Conflict Resolution', 'Stress Management', 'Mindfulness', 'Meditation',
+    'Counseling Techniques', 'Life Coaching', 'Spiritual Guidance', 'Psychology', 'CBT',
+    'NLP', 'Public Speaking', 'Workshop Facilitation', 'Group Counseling', 'Crisis Intervention',
+    'Relationship Counseling', 'Career Guidance', 'Personal Development', 'Leadership'
   ]);
 
   // Load mentor profile and categories
@@ -65,22 +84,36 @@ const MentorProfileForm = () => {
         const mentor = profileData.data.mentor;
         setMentorProfile(mentor);
 
+        // Convert category names to IDs for form compatibility
+        const categoryIds = [];
+        if (mentor.categories && availableCategories.length > 0) {
+          mentor.categories.forEach(catName => {
+            const category = availableCategories.find(cat => cat.name === catName);
+            if (category) {
+              categoryIds.push(category.id);
+            }
+          });
+        }
+
         // Populate form with existing data
         setFormData({
           bio: mentor.bio || '',
-          yearsExperience: mentor.yearsExperience || '',
-          currentRole: mentor.currentRole || '',
-          currentCompany: mentor.currentCompany || '',
+          yearsExperience: mentor.yearsExperience || 1,
           specializations: mentor.specializations || [],
-          categories: mentor.categories || [],
+          industries: mentor.industries || [],
+          skills: mentor.skills || [],
           languages: mentor.languages || ['en'],
           hourlyRate: mentor.hourlyRate || 75,
-          minSessionDuration: mentor.minSessionDuration || 30,
-          maxSessionDuration: mentor.maxSessionDuration || 120,
-          sessionBuffer: mentor.sessionBufferMinutes || 15,
-          advanceBookingDays: mentor.advanceBookingDays || 30,
+          profileImage: mentor.profileImage || '',
+          videoIntroUrl: mentor.videoIntroUrl || '',
+          portfolioUrls: mentor.portfolioUrls || [],
           timezone: mentor.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
           instantBooking: mentor.instantBooking || false,
+          advanceBookingDays: mentor.advanceBookingDays || 30,
+          minSessionDuration: mentor.minSessionDuration || 30,
+          maxSessionDuration: mentor.maxSessionDuration || 120,
+          sessionBufferMinutes: mentor.sessionBufferMinutes || 15,
+          categories: categoryIds,
           publicProfile: mentor.publicProfile !== undefined ? mentor.publicProfile : true
         });
       }
@@ -158,12 +191,8 @@ const MentorProfileForm = () => {
       errors.bio = 'Bio must be at least 100 characters';
     }
 
-    if (!formData.yearsExperience) {
+    if (!formData.yearsExperience || formData.yearsExperience < 1) {
       errors.yearsExperience = 'Years of experience is required';
-    }
-
-    if (!formData.currentRole.trim()) {
-      errors.currentRole = 'Current role is required';
     }
 
     if (formData.specializations.length === 0) {
@@ -178,6 +207,10 @@ const MentorProfileForm = () => {
       errors.hourlyRate = 'Hourly rate must be at least $10';
     }
 
+    if (formData.languages.length === 0) {
+      errors.languages = 'Select at least one language';
+    }
+
     if (!formData.minSessionDuration) {
       errors.minSessionDuration = 'Minimum session duration is required';
     }
@@ -188,6 +221,18 @@ const MentorProfileForm = () => {
 
     if (formData.minSessionDuration >= formData.maxSessionDuration) {
       errors.maxSessionDuration = 'Maximum duration must be greater than minimum';
+    }
+
+    if (formData.profileImage && !formData.profileImage.match(/^https?:\/\/.+/)) {
+      errors.profileImage = 'Profile image must be a valid URL';
+    }
+
+    if (formData.videoIntroUrl && !formData.videoIntroUrl.match(/^https?:\/\/.+/)) {
+      errors.videoIntroUrl = 'Video intro URL must be a valid URL';
+    }
+
+    if (formData.portfolioUrls.some(url => url && !url.match(/^https?:\/\/.+/))) {
+      errors.portfolioUrls = 'All portfolio URLs must be valid';
     }
 
     setFormErrors(errors);
@@ -208,18 +253,21 @@ const MentorProfileForm = () => {
       const submitData = {
         bio: formData.bio,
         years_experience: parseInt(formData.yearsExperience),
-        current_role: formData.currentRole,
-        current_company: formData.currentCompany,
         specializations: formData.specializations,
-        categories: formData.categories,
+        industries: formData.industries,
+        skills: formData.skills,
         languages: formData.languages,
         hourly_rate: parseFloat(formData.hourlyRate),
-        min_session_duration: parseInt(formData.minSessionDuration),
-        max_session_duration: parseInt(formData.maxSessionDuration),
-        session_buffer_minutes: parseInt(formData.sessionBuffer),
-        advance_booking_days: parseInt(formData.advanceBookingDays),
+        profile_image: formData.profileImage,
+        video_intro_url: formData.videoIntroUrl,
+        portfolio_urls: formData.portfolioUrls,
         timezone: formData.timezone,
         instant_booking: formData.instantBooking,
+        advance_booking_days: parseInt(formData.advanceBookingDays),
+        min_session_duration: parseInt(formData.minSessionDuration),
+        max_session_duration: parseInt(formData.maxSessionDuration),
+        session_buffer_minutes: parseInt(formData.sessionBufferMinutes),
+        categories: formData.categories,
         public_profile: formData.publicProfile
       };
 
@@ -274,9 +322,9 @@ const MentorProfileForm = () => {
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Complete Your Mentor Profile</h1>
+              <h1 className="text-3xl font-bold text-gray-900">Complete Your Life Mentor Profile</h1>
               <p className="text-gray-600 mt-2">
-                Fill out your details to attract more mentees and provide better guidance
+                Share your wisdom and experience to help others navigate life's challenges and find their path
               </p>
             </div>
             <button
@@ -304,7 +352,7 @@ const MentorProfileForm = () => {
                   onChange={(e) => handleChange('bio', e.target.value)}
                   rows={6}
                   className={`w-full px-4 py-3 rounded-xl border ${formErrors.bio ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none`}
-                  placeholder="Write a compelling bio that showcases your expertise and experience..."
+                  placeholder="Share your journey, wisdom, and what inspires you to guide others on their life path..."
                 />
                 <div className="flex justify-between mt-1">
                   {formErrors.bio && <p className="text-sm text-red-600">{formErrors.bio}</p>}
@@ -312,57 +360,106 @@ const MentorProfileForm = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Years of Experience <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={formData.yearsExperience}
-                    onChange={(e) => handleChange('yearsExperience', e.target.value)}
-                    className={`w-full px-4 py-3 rounded-xl border ${formErrors.yearsExperience ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500`}
-                  >
-                    <option value="">Select experience</option>
-                    <option value="1-2">1-2 years</option>
-                    <option value="3-5">3-5 years</option>
-                    <option value="6-10">6-10 years</option>
-                    <option value="11-15">11-15 years</option>
-                    <option value="16+">16+ years</option>
-                  </select>
-                  {formErrors.yearsExperience && <p className="mt-1 text-sm text-red-600">{formErrors.yearsExperience}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Current Role <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.currentRole}
-                    onChange={(e) => handleChange('currentRole', e.target.value)}
-                    className={`w-full px-4 py-3 rounded-xl border ${formErrors.currentRole ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500`}
-                    placeholder="e.g. Senior Software Engineer"
-                  />
-                  {formErrors.currentRole && <p className="mt-1 text-sm text-red-600">{formErrors.currentRole}</p>}
-                </div>
-              </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Current Company</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Years of Experience <span className="text-red-500">*</span>
+                </label>
                 <input
-                  type="text"
-                  value={formData.currentCompany}
-                  onChange={(e) => handleChange('currentCompany', e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="e.g. Google, Microsoft, Startup"
+                  type="number"
+                  value={formData.yearsExperience}
+                  onChange={(e) => handleChange('yearsExperience', parseInt(e.target.value) || 1)}
+                  min="1"
+                  max="50"
+                  className={`w-full px-4 py-3 rounded-xl border ${formErrors.yearsExperience ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500`}
+                  placeholder="e.g. 5"
                 />
+                {formErrors.yearsExperience && <p className="mt-1 text-sm text-red-600">{formErrors.yearsExperience}</p>}
               </div>
             </div>
           </div>
 
-          {/* Expertise & Specializations */}
+          {/* Media & Portfolio */}
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">Expertise & Specializations</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-6">Media & Portfolio</h2>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Profile Image URL <span className="text-gray-500">(optional)</span>
+                </label>
+                <input
+                  type="url"
+                  value={formData.profileImage}
+                  onChange={(e) => handleChange('profileImage', e.target.value)}
+                  className={`w-full px-4 py-3 rounded-xl border ${formErrors.profileImage ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500`}
+                  placeholder="https://example.com/profile-image.jpg"
+                />
+                {formErrors.profileImage && <p className="mt-1 text-sm text-red-600">{formErrors.profileImage}</p>}
+                <p className="mt-1 text-sm text-gray-600">URL to your professional profile image</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Video Introduction URL <span className="text-gray-500">(optional)</span>
+                </label>
+                <input
+                  type="url"
+                  value={formData.videoIntroUrl}
+                  onChange={(e) => handleChange('videoIntroUrl', e.target.value)}
+                  className={`w-full px-4 py-3 rounded-xl border ${formErrors.videoIntroUrl ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500`}
+                  placeholder="https://example.com/intro-video.mp4"
+                />
+                {formErrors.videoIntroUrl && <p className="mt-1 text-sm text-red-600">{formErrors.videoIntroUrl}</p>}
+                <p className="mt-1 text-sm text-gray-600">URL to your introduction video</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Portfolio URLs <span className="text-gray-500">(optional)</span>
+                </label>
+                <div className="space-y-2">
+                  {formData.portfolioUrls.map((url, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        type="url"
+                        value={url}
+                        onChange={(e) => {
+                          const newUrls = [...formData.portfolioUrls];
+                          newUrls[index] = e.target.value;
+                          handleChange('portfolioUrls', newUrls);
+                        }}
+                        className="flex-1 px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        placeholder="https://github.com/yourusername"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newUrls = formData.portfolioUrls.filter((_, i) => i !== index);
+                          handleChange('portfolioUrls', newUrls);
+                        }}
+                        className="px-3 py-3 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => handleChange('portfolioUrls', [...formData.portfolioUrls, ''])}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm"
+                  >
+                    + Add Portfolio URL
+                  </button>
+                </div>
+                {formErrors.portfolioUrls && <p className="mt-1 text-sm text-red-600">{formErrors.portfolioUrls}</p>}
+                <p className="mt-1 text-sm text-gray-600">Links to your website, blog, LinkedIn, or other professional profiles</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Areas of Guidance */}
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-6">Areas of Guidance</h2>
 
             <div className="space-y-6">
               <div>
@@ -409,7 +506,47 @@ const MentorProfileForm = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Languages</label>
+                <label className="block text-sm font-medium text-gray-700 mb-4">
+                  Industries <span className="text-gray-500">(optional)</span>
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {availableIndustries.map((industry) => (
+                    <label key={industry} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.industries.includes(industry)}
+                        onChange={() => handleArrayChange('industries', industry)}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      />
+                      <span className="text-sm text-gray-700">{industry}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-4">
+                  Skills <span className="text-gray-500">(optional)</span>
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {availableSkills.map((skill) => (
+                    <label key={skill} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.skills.includes(skill)}
+                        onChange={() => handleArrayChange('skills', skill)}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      />
+                      <span className="text-sm text-gray-700">{skill}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Languages <span className="text-red-500">*</span>
+                </label>
                 <div className="flex flex-wrap gap-2">
                   {['English', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Portuguese', 'Hindi'].map((lang) => (
                     <label key={lang} className="flex items-center space-x-2 cursor-pointer">
@@ -423,6 +560,7 @@ const MentorProfileForm = () => {
                     </label>
                   ))}
                 </div>
+                {formErrors.languages && <p className="mt-2 text-sm text-red-600">{formErrors.languages}</p>}
               </div>
             </div>
           </div>
@@ -449,7 +587,7 @@ const MentorProfileForm = () => {
                   />
                 </div>
                 {formErrors.hourlyRate && <p className="mt-1 text-sm text-red-600">{formErrors.hourlyRate}</p>}
-                <p className="mt-1 text-sm text-gray-600">Average mentor rate is $75/hour</p>
+                <p className="mt-1 text-sm text-gray-600">Typical life coaching session rate</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

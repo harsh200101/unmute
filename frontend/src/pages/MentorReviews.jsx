@@ -21,7 +21,7 @@ const MentorReviews = () => {
       params.append('page', page);
       params.append('limit', 10);
 
-      const response = await fetch(`/api/mentors/reviews?${params.toString()}`, {
+      const response = await fetch(`/api/mentors/my-reviews?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
           'Content-Type': 'application/json'
@@ -118,10 +118,7 @@ const MentorReviews = () => {
                 </div>
                 <div className="text-center">
                   <div className="text-3xl font-bold text-yellow-600">
-                    {reviews.length > 0
-                      ? (reviews.reduce((acc, review) => acc + review.rating.overall, 0) / reviews.length).toFixed(1)
-                      : '0.0'
-                    } ⭐
+                    {(pagination.averageRating || 0).toFixed(1)} ⭐
                   </div>
                   <div className="text-sm text-gray-600">Average Rating</div>
                 </div>
@@ -173,7 +170,7 @@ const MentorReviews = () => {
                               {renderStars(review.rating.overall)}
                             </div>
                             <span className="text-sm text-gray-600">
-                              {new Date(review.createdAt).toLocaleDateString()}
+                              {new Date(review.createdAt).toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' })}
                             </span>
                           </div>
                         </div>
@@ -188,27 +185,29 @@ const MentorReviews = () => {
                       </div>
                     </div>
 
-                    {/* Detailed Ratings */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 rounded-xl">
-                      <div className="text-center">
-                        <div className="text-sm text-gray-600">Communication</div>
-                        <div className="flex justify-center mt-1">
-                          {renderStars(review.rating.communication)}
+                    {/* Detailed Ratings - Only show if available */}
+                    {review.rating.communication && review.rating.knowledge && review.rating.helpfulness && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 rounded-xl">
+                        <div className="text-center">
+                          <div className="text-sm text-gray-600">Communication</div>
+                          <div className="flex justify-center mt-1">
+                            {renderStars(review.rating.communication)}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-sm text-gray-600">Knowledge</div>
+                          <div className="flex justify-center mt-1">
+                            {renderStars(review.rating.knowledge)}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-sm text-gray-600">Helpfulness</div>
+                          <div className="flex justify-center mt-1">
+                            {renderStars(review.rating.helpfulness)}
+                          </div>
                         </div>
                       </div>
-                      <div className="text-center">
-                        <div className="text-sm text-gray-600">Knowledge</div>
-                        <div className="flex justify-center mt-1">
-                          {renderStars(review.rating.knowledge)}
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-sm text-gray-600">Helpfulness</div>
-                        <div className="flex justify-center mt-1">
-                          {renderStars(review.rating.helpfulness)}
-                        </div>
-                      </div>
-                    </div>
+                    )}
 
                     {/* Review Comment */}
                     <div className="mb-4">
@@ -243,7 +242,7 @@ const MentorReviews = () => {
                           </svg>
                           <span className="text-sm font-medium text-green-800">Your Response</span>
                           <span className="text-xs text-green-600">
-                            {new Date(review.mentorResponseAt).toLocaleDateString()}
+                            {new Date(review.mentorResponseAt).toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' })}
                           </span>
                         </div>
                         <p className="text-green-800 text-sm">

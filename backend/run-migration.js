@@ -5,35 +5,37 @@ const path = require('path');
 
 async function runMigration() {
   try {
-    console.log('🔄 Running database migration...');
+    // Get migration file from command line argument or default to latest
+    const migrationFile = process.argv[2] || '002_performance_optimizations.sql';
+    console.log(`🔄 Running database migration: ${migrationFile}`);
 
     // Read the migration file
-    const migrationPath = path.join(__dirname, 'migrations', '001_create_tables.sql');
+    const migrationPath = path.join(__dirname, 'migrations', migrationFile);
     const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
 
-    // Split the SQL into individual statements (basic approach)
-    const statements = migrationSQL
-      .split(';')
-      .map(stmt => stmt.trim())
-      .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
+    // For complex migrations with functions, execute as one statement
+    // Remove comments and clean up the SQL
+    const cleanSQL = migrationSQL
+      .split('\n')
+      .filter(line => !line.trim().startsWith('--') || line.trim() === '')
+      .join('\n')
+      .trim();
 
-    console.log(`📄 Found ${statements.length} SQL statements to execute`);
+    console.log('📄 Executing migration as single statement...');
 
-    // Execute each statement
-    for (let i = 0; i < statements.length; i++) {
-      const statement = statements[i];
-      if (statement.trim()) {
-        try {
-          console.log(`⚡ Executing statement ${i + 1}/${statements.length}...`);
-          await db.query(statement);
-        } catch (error) {
-          // Ignore "already exists" errors for tables and indexes
-          if (error.code === '42P07' || error.code === '23505') {
-            console.log(`⚠️ Statement ${i + 1} skipped (already exists):`, error.message);
-          } else {
-            throw error;
-          }
-        }
+    try {
+      console.log('⚡ Executing migration...');
+      await db.query(cleanSQL);
+    } catch (error) {
+      // Handle specific PostgreSQL errors
+      if (error.code === '42P07') {
+        console.log('⚠️ Migration skipped (table already exists):', error.message);
+      } else if (error.code === '23505') {
+        console.log('⚠️ Migration skipped (constraint already exists):', error.message);
+      } else if (error.code === '42710') {
+        console.log('⚠️ Migration skipped (object already exists):', error.message);
+      } else {
+        throw error;
       }
     }
 

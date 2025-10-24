@@ -235,7 +235,7 @@ router.get('/google/callback',
   }
 );
 
-// Password Reset Request (placeholder - implement email service)
+// Password Reset Request
 router.post('/forgot-password',
   rateLimit(3, 60 * 60 * 1000), // 3 attempts per hour
   [
@@ -244,30 +244,26 @@ router.post('/forgot-password',
       .withMessage('Please provide a valid email address')
       .normalizeEmail()
   ],
-  async (req, res) => {
-    try {
-      const { email } = req.body;
-      
-      // TODO: Implement password reset logic
-      // 1. Check if user exists
-      // 2. Generate reset token
-      // 3. Store token in database with expiry
-      // 4. Send reset email
-      
-      // Always return success to prevent email enumeration
-      res.json({
-        success: true,
-        message: 'If an account with that email exists, a password reset link has been sent.'
-      });
-      
-    } catch (error) {
-      console.error('❌ Forgot password error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to process password reset request'
-      });
-    }
-  }
+  authController.forgotPassword
+);
+
+// Password Reset (using token)
+router.post('/reset-password',
+  rateLimit(5, 60 * 60 * 1000), // 5 attempts per hour
+  [
+    body('token')
+      .isLength({ min: 32, max: 128 })
+      .withMessage('Invalid reset token'),
+    body('id')
+      .isInt({ min: 1 })
+      .withMessage('Invalid user ID'),
+    body('newPassword')
+      .isLength({ min: 8 })
+      .withMessage('New password must be at least 8 characters long')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+      .withMessage('New password must contain at least one lowercase letter, one uppercase letter, and one number')
+  ],
+  authController.resetPassword
 );
 
 // Send Email Verification
@@ -306,8 +302,9 @@ router.put('/profile',
 );
 
 // Logout (invalidate tokens)
-router.post('/logout', 
+router.post('/logout',
   auth,
+  rateLimit(5, 60 * 1000), // 5 logouts per minute
   authController.logout
 );
 

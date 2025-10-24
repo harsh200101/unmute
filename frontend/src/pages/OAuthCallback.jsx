@@ -65,11 +65,15 @@ const OAuthCallback = () => {
           // Handle processed OAuth callback
           const result = await handleOAuthCallback(searchParams);
           if (result.success) {
-            console.log('🔍 OAuthCallback: OAuth callback successful, redirecting to dashboard');
+            console.log('🔍 OAuthCallback: OAuth callback successful, user role:', result.user?.role);
             setProgress(100);
             setTimeout(() => {
-              const redirectTo = localStorage.getItem('oauth_redirect') || '/dashboard';
+              const storedRedirect = localStorage.getItem('oauth_redirect');
               localStorage.removeItem('oauth_redirect');
+              // Redirect based on user role
+              const roleBasedRedirect = result.user?.role === 'mentor' ? '/mentor/dashboard' : '/dashboard';
+              const redirectTo = storedRedirect || roleBasedRedirect;
+              console.log('🔍 OAuthCallback: Redirecting to:', redirectTo);
               navigate(redirectTo, { replace: true });
             }, 1000);
           } else {

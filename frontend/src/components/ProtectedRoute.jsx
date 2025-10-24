@@ -3,24 +3,36 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
 
-const ProtectedRoute = ({ 
-  children, 
-  requireAuth = true, 
-  requiredRoles = [], 
+const ProtectedRoute = ({
+  children,
+  requireAuth = true,
+  requiredRoles = [],
   requireEmailVerification = false,
   requireMentorVerification = false,
   redirectTo = '/login',
-  showAccessDenied = true 
+  showAccessDenied = true
 }) => {
   const { user, isLoading, isAuthenticated, checkTokenValidity } = useAuth();
   const location = useLocation();
-  const [isValidating, setIsValidating] = useState(true);
+  const [isValidating, setIsValidating] = useState(false); // Start as false, only validate when needed
   const [validationError, setValidationError] = useState(null);
+  const [lastValidationTime, setLastValidationTime] = useState(0);
+  const [validationCache, setValidationCache] = useState(null);
 
-  // Real-time JWT validation
+  // Real-time JWT validation with caching
   useEffect(() => {
     const validateAccess = async () => {
       if (!requireAuth) {
+        setIsValidating(false);
+        return;
+      }
+
+      const now = Date.now();
+      const cacheKey = `${user?.id}-${user?.role}-${isAuthenticated}-${requiredRoles.join(',')}-${requireEmailVerification}-${requireMentorVerification}`;
+
+      // Check if we have a recent validation for the same user state
+      if (validationCache === cacheKey && (now - lastValidationTime) < 30000) { // 30 seconds cache
+        console.log('🔄 ProtectedRoute: Using cached validation result');
         setIsValidating(false);
         return;
       }
@@ -33,18 +45,20 @@ const ProtectedRoute = ({
         const isValid = await checkTokenValidity();
         if (!isValid) {
           setValidationError('SESSION_EXPIRED');
+          setValidationCache(null);
           return;
         }
 
         // Role-based access control
         if (requiredRoles.length > 0 && user) {
           const userRoles = Array.isArray(user.role) ? user.role : [user.role];
-          const hasRequiredRole = requiredRoles.some(role => 
+          const hasRequiredRole = requiredRoles.some(role =>
             userRoles.includes(role) || userRoles.includes('super_admin')
           );
-          
+
           if (!hasRequiredRole) {
             setValidationError('INSUFFICIENT_PERMISSIONS');
+            setValidationCache(null);
             return;
           }
         }
@@ -52,6 +66,7 @@ const ProtectedRoute = ({
         // Email verification gate
         if (requireEmailVerification && user && !user.email_verified_at) {
           setValidationError('EMAIL_NOT_VERIFIED');
+          setValidationCache(null);
           return;
         }
 
@@ -59,13 +74,19 @@ const ProtectedRoute = ({
         if (requireMentorVerification && user && user.role === 'mentor') {
           if (!user.mentor_profile || user.mentor_profile.verification_status !== 'verified') {
             setValidationError('MENTOR_NOT_VERIFIED');
+            setValidationCache(null);
             return;
           }
         }
 
+        // Cache successful validation
+        setValidationCache(cacheKey);
+        setLastValidationTime(now);
+
       } catch (error) {
         console.error('Access validation error:', error);
         setValidationError('VALIDATION_ERROR');
+        setValidationCache(null);
       } finally {
         setIsValidating(false);
       }
@@ -75,23 +96,33 @@ const ProtectedRoute = ({
       validateAccess();
     }
   }, [
-    user, 
-    isLoading, 
-    isAuthenticated, 
-    requireAuth, 
-    requiredRoles, 
-    requireEmailVerification, 
+    user,
+    isLoading,
+    isAuthenticated,
+    requireAuth,
+    requiredRoles,
+    requireEmailVerification,
     requireMentorVerification,
-    checkTokenValidity
+    checkTokenValidity,
+    validationCache,
+    lastValidationTime
   ]);
 
+  // Clear validation cache when route changes
+  useEffect(() => {
+    setValidationCache(null);
+    setLastValidationTime(0);
+  }, [location.pathname]);
+
   // Show loading spinner during initial auth check or validation
-  if (isLoading || isValidating) {
+  if (isLoading || (isValidating && !validationCache)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="text-center">
           <LoadingSpinner size="lg" variant="gradient" />
-          <p className="text-gray-600 mt-4 font-medium">Verifying access...</p>
+          <p className="text-gray-600 mt-4 font-medium">
+            {isLoading ? 'Loading...' : 'Verifying access...'}
+          </p>
         </div>
       </div>
     );

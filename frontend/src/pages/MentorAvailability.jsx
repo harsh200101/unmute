@@ -616,7 +616,8 @@ const MentorAvailability = () => {
                                     weekday: 'long',
                                     year: 'numeric',
                                     month: 'long',
-                                    day: 'numeric'
+                                    day: 'numeric',
+                                    timeZone: 'Asia/Kolkata'
                                   })}
                                 </h3>
                                 <label className="flex items-center">

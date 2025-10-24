@@ -129,7 +129,7 @@ const createRateLimit = (windowMs, max, message) => rateLimit({
   message: { error: message },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/api/health'
+  skip: (req) => req.path === '/api/health' || req.path === '/api/meetings/test/config' || req.path === '/api/test/agora-config'
 });
 
 // General API rate limiting
@@ -138,6 +138,11 @@ app.use('/api/', createRateLimit(
   100, // 100 requests per window
   'Too many requests, please try again later'
 ));
+
+// Skip rate limiting for test endpoints
+app.use('/api/meetings/test/', (req, res, next) => {
+  next();
+});
 
 // Stricter rate limiting for auth endpoints
 app.use('/api/auth/', createRateLimit(
@@ -195,29 +200,35 @@ async function initializeDatabase() {
   const maxRetries = 5;
   let retries = 0;
 
+  // Wait 3 seconds before first attempt to allow DNS/network to stabilize
+  console.log('⏳ Waiting for database to be ready...');
+  await new Promise(resolve => setTimeout(resolve, 3000));
+
   while (retries < maxRetries) {
     try {
-      console.log('🔄 Testing database connection...');
+      console.log(`🔄 Testing database connection (attempt ${retries + 1}/${maxRetries})...`);
       await db.testConnection();
       console.log('✅ Database initialized successfully');
-      
+
       const stats = db.getPoolStats?.();
       if (stats) {
         console.log('📊 Database pool stats:', stats);
       }
-      
+
       return;
     } catch (error) {
       retries++;
       console.error(`❌ Database initialization failed (attempt ${retries}/${maxRetries}):`, error.message);
-      
+
       if (retries >= maxRetries) {
         console.error('💥 Max database connection retries reached. Exiting.');
         process.exit(1);
       }
-      
-      console.log(`🔄 Retrying in ${retries * 2} seconds...`);
-      await new Promise(resolve => setTimeout(resolve, retries * 2000));
+
+      // Exponential backoff: 2s, 4s, 6s, 8s
+      const delay = retries * 2 * 1000;
+      console.log(`🔄 Retrying in ${delay/1000} seconds...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
 }
@@ -347,6 +358,49 @@ app.get('/api', (req, res) => {
   });
 });
 
+// Test route for Agora configuration (no auth required) - placed before other API routes
+console.log('🔧 Registering Agora test route...');
+app.get('/api/test/agora-config', async (req, res) => {
+  try {
+    console.log('🔧 Testing Agora configuration...');
+
+    const agoraService = require('./utils/agora');
+
+    // Test token generation
+    const testChannel = 'test_channel_' + Date.now();
+    const testUid = 999;
+    const token = agoraService.generateToken(testChannel, testUid);
+
+    console.log('🔧 Agora test successful:', {
+      appIdConfigured: !!process.env.AGORA_APP_ID,
+      appCertificateConfigured: !!process.env.AGORA_APP_CERTIFICATE,
+      tokenGenerated: !!token,
+      tokenLength: token.length
+    });
+
+    res.json({
+      success: true,
+      message: 'Agora configuration test successful',
+      data: {
+        appIdConfigured: !!process.env.AGORA_APP_ID,
+        appCertificateConfigured: !!process.env.AGORA_APP_CERTIFICATE,
+        tokenGenerated: !!token,
+        tokenLength: token.length,
+        testChannel,
+        testUid
+      }
+    });
+
+  } catch (error) {
+    console.error('🔧 Agora configuration test failed:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Agora configuration test failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Configuration error'
+    });
+  }
+});
+
 // API routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/auth', require('./routes/googleAuth'));
@@ -354,6 +408,7 @@ app.use('/api/mentors', require('./routes/mentors'));
 app.use('/api/sessions', require('./routes/sessions'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/reviews', require('./routes/reviews'));
+app.use('/api/meetings', require('./routes/videoMeetings'));
 
 // Categories endpoint
 app.get('/api/categories', (req, res) => {
@@ -398,6 +453,43 @@ app.get('/api/mentors/meta/categories', (req, res) => {
 });
 
 // Featured mentors and reviews endpoints are now handled by routes/mentors.js and routes/reviews.js
+
+// POST /payment-status - Handle PhonePe redirect (PhonePe POSTs to redirect URL)
+app.post('/payment-status', (req, res) => {
+  try {
+    console.log('Payment status POST received at root level:', {
+      body: req.body,
+      query: req.query,
+      url: req.url,
+      originalUrl: req.originalUrl
+    });
+
+    // PhonePe might POST transaction data to redirect URL
+    const { transactionId } = req.body;
+    const queryTransactionId = req.query.transactionId;
+
+    const finalTransactionId = transactionId || queryTransactionId;
+
+    console.log('Extracted transaction ID:', finalTransactionId);
+
+    if (finalTransactionId) {
+      // Redirect to frontend with transaction ID
+      const frontendUrl = `${process.env.FRONTEND_REDIRECT_URL}?transactionId=${finalTransactionId}`;
+      console.log('Redirecting to frontend:', frontendUrl);
+      return res.redirect(302, frontendUrl);
+    }
+
+    // If no transaction ID, redirect to generic payment status page
+    const fallbackUrl = process.env.FRONTEND_REDIRECT_URL || 'http://localhost:3000/payment-status';
+    console.log('Redirecting to fallback:', fallbackUrl);
+    return res.redirect(302, fallbackUrl);
+  } catch (error) {
+    console.error('Payment status redirect error:', error);
+    const errorUrl = 'http://localhost:3000/payment-status';
+    console.log('Redirecting to error fallback:', errorUrl);
+    return res.redirect(302, errorUrl);
+  }
+});
 
 // Webhook routes with raw body parsing
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }), (req, res, next) => {

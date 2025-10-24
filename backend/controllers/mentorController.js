@@ -13,6 +13,7 @@ const formatMentorResponse = (mentor) => {
     fullName: `${mentor.first_name} ${mentor.last_name}`.trim(),
     email: mentor.email,
     avatarUrl: mentor.avatar_url || mentor.profile_image,
+    bio: mentor.user_bio || mentor.bio,
     
     // Professional Information
     specializations: mentor.specializations || [],
@@ -39,10 +40,10 @@ const formatMentorResponse = (mentor) => {
     
     // Statistics
     totalSessions: mentor.total_sessions || 0,
-    completedSessions: mentor.completed_sessions || 0,
-    averageRating: parseFloat(mentor.average_rating || 0),
-    totalReviews: mentor.total_reviews || 0,
-    totalEarnings: parseFloat(mentor.total_earnings || 0),
+    completedSessions: mentor.completed_sessions || mentor.session_count || 0,
+    averageRating: parseFloat(mentor.calculated_rating || 0),
+    totalReviews: mentor.total_reviews || mentor.review_count || 0,
+    totalEarnings: parseFloat(mentor.calculated_earnings || mentor.total_earnings || 0),
     
     // Availability & Settings
     timezone: mentor.timezone || 'UTC',
@@ -78,6 +79,9 @@ const formatMentorResponse = (mentor) => {
 
 // Get all active mentors with advanced filtering and pagination
 exports.getActiveMentors = async (req, res) => {
+  const startTime = Date.now();
+  console.log('🚀 Starting getActiveMentors at', new Date().toISOString());
+
   try {
     const {
       page = 1,
@@ -99,23 +103,25 @@ exports.getActiveMentors = async (req, res) => {
     });
 
     let query = `
-      SELECT 
+      SELECT
         m.*,
         u.first_name,
         u.last_name,
         u.email,
         u.avatar_url,
+        u.bio as user_bio,
         u.is_verified,
         COALESCE(AVG(r.overall_rating), 0) as calculated_rating,
         COUNT(DISTINCT r.id) as review_count,
         COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'completed') as session_count,
+        COALESCE(SUM(CASE WHEN s.status = 'completed' THEN s.mentor_earnings ELSE 0 END), 0) as calculated_earnings,
         ARRAY_AGG(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL) as categories,
         ARRAY_AGG(DISTINCT et.name) FILTER (WHERE et.name IS NOT NULL) as expertise_tags
       FROM mentors m
       INNER JOIN users u ON m.user_id = u.id
       LEFT JOIN mentor_categories mc ON m.id = mc.mentor_id
       LEFT JOIN categories c ON mc.category_id = c.id
-      LEFT JOIN reviews r ON m.id = r.mentor_id AND r.is_hidden = false
+      LEFT JOIN reviews r ON m.id = r.mentor_id AND r.is_hidden = false AND r.reviewer_type = 'mentee'
       LEFT JOIN sessions s ON m.id = s.mentor_id
       LEFT JOIN mentor_expertise me ON m.id = me.mentor_id
       LEFT JOIN expertise_tags et ON me.tag_id = et.id
@@ -177,7 +183,7 @@ exports.getActiveMentors = async (req, res) => {
     // Rating filter
     if (minRating) {
       paramCount++;
-      query += ` AND m.average_rating >= $${paramCount}`;
+      query += ` AND COALESCE(AVG(r.overall_rating) FILTER (WHERE r.reviewer_type = 'mentee'), 0) >= $${paramCount}`;
       params.push(parseFloat(minRating));
     }
 
@@ -235,8 +241,12 @@ exports.getActiveMentors = async (req, res) => {
     params.push(offset);
 
     console.log('🔍 Executing mentor query with params:', params.length);
+    console.time('Main mentor query execution');
 
     const result = await db.query(query, params);
+
+    console.timeEnd('Main mentor query execution');
+    console.log(`📊 Main query returned ${result.rows.length} rows`);
 
     // If no mentors found in database, return empty array instead of error
     if (result.rows.length === 0) {
@@ -327,7 +337,12 @@ exports.getActiveMentors = async (req, res) => {
 
     if (minRating) {
       countParamCount++;
-      countQuery += ` AND m.average_rating >= $${countParamCount}`;
+      countQuery += ` AND EXISTS (
+        SELECT 1 FROM reviews r2
+        WHERE r2.mentor_id = m.id AND r2.is_hidden = false AND r2.reviewer_type = 'mentee'
+        GROUP BY r2.mentor_id
+        HAVING AVG(r2.overall_rating) >= $${countParamCount}
+      )`;
       countParams.push(parseFloat(minRating));
     }
 
@@ -345,20 +360,26 @@ exports.getActiveMentors = async (req, res) => {
       countQuery += ` AND m.is_featured = true`;
     }
 
+    console.time('Count query execution');
     const countResult = await db.query(countQuery, countParams);
+    console.timeEnd('Count query execution');
     const totalMentors = parseInt(countResult.rows[0].total);
+    console.log(`📊 Count query returned total: ${totalMentors}`);
 
     // Format mentor data
+    console.time('Mentor data formatting');
     const mentors = result.rows.map(mentor => ({
       ...formatMentorResponse(mentor),
-      calculatedRating: parseFloat(mentor.calculated_rating || 0),
       reviewCount: parseInt(mentor.review_count || 0),
       sessionCount: parseInt(mentor.session_count || 0),
       categories: mentor.categories || [],
       expertiseTags: mentor.expertise_tags || []
     }));
+    console.timeEnd('Mentor data formatting');
 
     console.log(`✅ Found ${mentors.length} mentors, total: ${totalMentors}`);
+    const totalTime = Date.now() - startTime;
+    console.log(`⏱️ Total getActiveMentors execution time: ${totalTime}ms`);
 
     res.json({
       success: true,
@@ -438,7 +459,7 @@ exports.getMentorProfile = async (req, res) => {
       INNER JOIN users u ON m.user_id = u.id
       LEFT JOIN mentor_categories mc ON m.id = mc.mentor_id
       LEFT JOIN categories c ON mc.category_id = c.id
-      LEFT JOIN reviews r ON m.id = r.mentor_id AND r.is_hidden = false
+      LEFT JOIN reviews r ON m.id = r.mentor_id AND r.is_hidden = false AND r.reviewer_type = 'mentee'
       LEFT JOIN sessions s ON m.id = s.mentor_id
       LEFT JOIN mentor_expertise me ON m.id = me.mentor_id
       LEFT JOIN expertise_tags et ON me.tag_id = et.id
@@ -477,8 +498,9 @@ exports.getMentorProfile = async (req, res) => {
       ) as recent_reviews
       FROM reviews r
       JOIN users u ON r.mentee_id = u.id
-      WHERE r.mentor_id = $1 
+      WHERE r.mentor_id = $1
         AND r.is_hidden = false
+        AND r.reviewer_type = 'mentee'
       LIMIT 5
     `;
 
@@ -509,7 +531,7 @@ exports.getMentorProfile = async (req, res) => {
       userLocation: mentor.user_location || {},
       socialLinks: mentor.social_links || {},
       userCreatedAt: mentor.user_created_at,
-      calculatedRating: parseFloat(mentor.calculated_rating || 0),
+      averageRating: parseFloat(mentor.calculated_rating || 0),
       reviewCount: parseInt(mentor.review_count || 0),
       completedSessionCount: parseInt(mentor.completed_session_count || 0),
       categories: mentor.categories || [],
@@ -793,11 +815,80 @@ exports.updateMentorStatus = async (req, res) => {
     });
   }
 };
+// Get monthly session statistics for mentor dashboard chart
+exports.getMentorSessionStats = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Get mentor ID first
+    const mentorQuery = 'SELECT id FROM mentors WHERE user_id = $1';
+    const mentorResult = await db.query(mentorQuery, [userId]);
+
+    if (mentorResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mentor profile not found',
+        code: 'MENTOR_NOT_FOUND'
+      });
+    }
+
+    const mentorId = mentorResult.rows[0].id;
+
+    // Get sessions per month for the last 12 months
+    const query = `
+      SELECT
+        DATE_TRUNC('month', s.scheduled_at) as month,
+        COUNT(*) as session_count
+      FROM sessions s
+      WHERE s.mentor_id = $1
+        AND s.status = 'completed'
+        AND s.scheduled_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '11 months')
+      GROUP BY DATE_TRUNC('month', s.scheduled_at)
+      ORDER BY month ASC
+    `;
+
+    const result = await db.query(query, [mentorId]);
+
+    // Format data for chart - fill in missing months with 0
+    const data = [];
+    const now = new Date();
+
+    for (let i = 11; i >= 0; i--) {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = monthDate.toISOString().slice(0, 7); // YYYY-MM format
+
+      const existingData = result.rows.find(row =>
+        row.month.toISOString().slice(0, 7) === monthKey
+      );
+
+      data.push({
+        month: monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+        sessions: existingData ? parseInt(existingData.session_count) : 0
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        monthlySessions: data
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching mentor session stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch session statistics',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
 
 module.exports = {
   getActiveMentors: exports.getActiveMentors,
   getMentorProfile: exports.getMentorProfile,
   registerMentor: exports.registerMentor,
   updateMentorStatus: exports.updateMentorStatus,
+  getMentorSessionStats: exports.getMentorSessionStats,
   formatMentorResponse
 };
