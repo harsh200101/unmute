@@ -172,7 +172,7 @@ exports.createSession = async (req, res) => {
         throw new Error(`BOOKING_TOO_FAR: Cannot book more than ${mentor.advance_booking_days} days in advance`);
       }
 
-      // Calculate pricing
+      // Calculate pricing - mentee pays exact displayed price, platform fee deducted internally
       const hourlyRate = parseFloat(mentor.hourly_rate);
       const sessionPrice = (hourlyRate * durationMinutes) / 60;
       const platformFeeRate = parseFloat(process.env.PLATFORM_FEE_RATE || '0.1'); // 10% default
@@ -367,7 +367,7 @@ exports.getUserSessions = async (req, res) => {
       INNER JOIN users mentee_user ON s.mentee_id = mentee_user.id
       LEFT JOIN payments p ON s.id = p.session_id
       LEFT JOIN reviews r ON s.id = r.session_id AND r.reviewer_type = 'mentee'
-      WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
+      WHERE ((s.mentee_id = $1 AND s.status != 'pending') OR mentor_user.id = $1)
     `;
 
     const params = [userId];
@@ -417,7 +417,7 @@ exports.getUserSessions = async (req, res) => {
       FROM sessions s
       INNER JOIN mentors m ON s.mentor_id = m.id
       INNER JOIN users mentor_user ON m.user_id = mentor_user.id
-      WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
+      WHERE ((s.mentee_id = $1 AND s.status != 'pending') OR mentor_user.id = $1)
     `;
 
     const countParams = [userId];
@@ -1268,10 +1268,11 @@ exports.submitRescheduleRequest = async (req, res) => {
     const result = await db.transaction(async (client) => {
       // Get session details and verify mentor ownership
       const sessionQuery = `
-        SELECT s.*, m.user_id as mentor_user_id, m.first_name as mentor_first_name, m.last_name as mentor_last_name,
+        SELECT s.*, m.user_id as mentor_user_id, mentor_user.first_name as mentor_first_name, mentor_user.last_name as mentor_last_name,
                u.first_name as mentee_first_name, u.last_name as mentee_last_name
         FROM sessions s
         JOIN mentors m ON s.mentor_id = m.id
+        JOIN users mentor_user ON m.user_id = mentor_user.id
         JOIN users u ON s.mentee_id = u.id
         WHERE s.id = $1
       `;
@@ -1397,8 +1398,8 @@ exports.getPendingRescheduleRequests = async (req, res) => {
         s.duration_minutes,
         s.price,
         s.currency,
-        m.first_name as mentor_first_name,
-        m.last_name as mentor_last_name,
+        mentor_user.first_name as mentor_first_name,
+        mentor_user.last_name as mentor_last_name,
         u.first_name as mentee_first_name,
         u.last_name as mentee_last_name
       FROM session_reschedule_requests r
@@ -1794,12 +1795,11 @@ exports.getPendingRescheduleRequests = async (req, res) => {
         s.duration_minutes,
         m.first_name as mentor_first_name,
         m.last_name as mentor_last_name,
-        u.email as mentor_email
+        m.email as mentor_email
       FROM session_reschedule_requests rr
       JOIN sessions s ON rr.session_id = s.id
       JOIN mentors mt ON s.mentor_id = mt.id
       JOIN users m ON mt.user_id = m.id
-      JOIN users u ON mt.user_id = u.id
       WHERE s.mentee_id = $1 AND rr.status = 'pending'
       ORDER BY rr.created_at DESC
     `;

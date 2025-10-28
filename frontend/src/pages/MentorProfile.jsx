@@ -17,6 +17,7 @@ const MentorProfile = () => {
   const [loading, setLoading] = useState(true);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [categories, setCategories] = useState([]);
 
   // Pagination for reviews
   const [reviewsPage, setReviewsPage] = useState(1);
@@ -28,7 +29,15 @@ const MentorProfile = () => {
     const loadMentorData = async () => {
       try {
         setLoading(true);
-        
+
+        // Load categories first
+        const categoriesResponse = await fetch('/api/mentors/meta/categories');
+        if (categoriesResponse.ok) {
+          const categoriesData = await categoriesResponse.json();
+          const categoriesList = categoriesData.data?.categories || [];
+          setCategories(categoriesList);
+        }
+
         // Load mentor profile
         const mentorResponse = await fetch(`/api/mentors/${mentorId}`);
         if (!mentorResponse.ok) {
@@ -190,6 +199,46 @@ const MentorProfile = () => {
                     {mentor.specializations?.join(' • ') || 'Professional Mentor'}
                   </p>
 
+                  {/* Categories */}
+                  {mentor.categories && mentor.categories.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <span className="text-sm font-medium text-gray-700">Categories:</span>
+                      {mentor.categories.map((category, index) => {
+                        // Handle both object and string formats
+                        const categoryName = typeof category === 'object' ? category.name : category;
+                        const categoryColor = typeof category === 'object' ? category.colorHex : '#6B7280';
+                        return (
+                          <span
+                            key={index}
+                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium"
+                            style={{
+                              backgroundColor: `${categoryColor}20`,
+                              color: categoryColor,
+                              border: `1px solid ${categoryColor}40`
+                            }}
+                          >
+                            {categoryName}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Languages */}
+                  {mentor.languages && mentor.languages.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <span className="text-sm font-medium text-gray-700">Languages:</span>
+                      {mentor.languages.map((lang, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                        >
+                          🌐 {lang.toUpperCase()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-4 mb-4">
                     <div className="flex items-center gap-2">
                       <div className="flex text-yellow-400">
@@ -214,18 +263,6 @@ const MentorProfile = () => {
                     </div>
                   </div>
 
-                  {mentor.languages && (
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {mentor.languages.map((lang) => (
-                        <span
-                          key={lang}
-                          className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800"
-                        >
-                          🌐 {lang.toUpperCase()}
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -309,6 +346,56 @@ const MentorProfile = () => {
                       className="inline-flex items-center px-4 py-2 rounded-xl bg-gradient-to-r from-blue-100 to-purple-100 text-blue-800 font-medium"
                     >
                       {spec}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Categories */}
+            {mentor.categories && mentor.categories.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-4">Categories</h2>
+                <div className="flex flex-wrap gap-3">
+                  {mentor.categories.map((category, index) => {
+                    // Handle both object and string formats
+                    const categoryName = typeof category === 'object' ? category.name : category;
+                    const categoryColor = typeof category === 'object' ? category.colorHex : '#6B7280';
+                    const categoryDesc = typeof category === 'object' ? category.description : '';
+                    return (
+                      <div
+                        key={index}
+                        className="flex-1 min-w-0 p-4 rounded-xl border"
+                        style={{ borderColor: `${categoryColor}40` }}
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: categoryColor }}
+                          ></div>
+                          <span className="font-medium text-gray-900">{categoryName}</span>
+                        </div>
+                        {categoryDesc && (
+                          <p className="text-sm text-gray-600">{categoryDesc}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Languages */}
+            {mentor.languages && mentor.languages.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-4">Languages</h2>
+                <div className="flex flex-wrap gap-3">
+                  {mentor.languages.map((lang, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-4 py-2 rounded-xl bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 font-medium"
+                    >
+                      🌐 {lang.toUpperCase()}
                     </span>
                   ))}
                 </div>

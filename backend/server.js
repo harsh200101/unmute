@@ -410,46 +410,106 @@ app.use('/api/payments', require('./routes/payments'));
 app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/meetings', require('./routes/videoMeetings'));
 
-// Categories endpoint
-app.get('/api/categories', (req, res) => {
-  const categories = [
-    { id: 1, name: 'Technology', slug: 'technology', description: 'Software development, programming, and tech skills' },
-    { id: 2, name: 'Business', slug: 'business', description: 'Entrepreneurship, management, and business strategy' },
-    { id: 3, name: 'Design', slug: 'design', description: 'UI/UX design, graphic design, and creative skills' },
-    { id: 4, name: 'Marketing', slug: 'marketing', description: 'Digital marketing, SEO, and growth strategies' },
-    { id: 5, name: 'Career Development', slug: 'career', description: 'Resume building, interview prep, and career growth' },
-    { id: 6, name: 'Finance', slug: 'finance', description: 'Personal finance, investing, and financial planning' },
-    { id: 7, name: 'Language Learning', slug: 'languages', description: 'English, Spanish, French, and other languages' },
-    { id: 8, name: 'Health & Wellness', slug: 'health', description: 'Fitness, nutrition, and mental health' },
-    { id: 9, name: 'Education', slug: 'education', description: 'Teaching, tutoring, and academic support' },
-    { id: 10, name: 'Creative Arts', slug: 'arts', description: 'Writing, music, photography, and creative expression' }
-  ];
-  
-  res.json({
-    success: true,
-    data: categories
-  });
+// Categories endpoint - Database-driven
+app.get('/api/categories', async (req, res) => {
+  try {
+    console.log('🔍 Fetching categories from database');
+
+    const query = `
+      SELECT
+        c.id,
+        c.name,
+        c.slug,
+        c.description,
+        c.icon_url,
+        c.color_hex,
+        c.sort_order,
+        COUNT(mc.mentor_id) as mentor_count
+      FROM categories c
+      LEFT JOIN mentor_categories mc ON c.id = mc.category_id
+      LEFT JOIN mentors m ON mc.mentor_id = m.id AND m.status = 'active' AND m.verification_status = 'verified'
+      WHERE c.is_active = true
+      GROUP BY c.id
+      ORDER BY c.sort_order, c.name
+    `;
+
+    const result = await db.query(query);
+
+    const categories = result.rows.map(category => ({
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+      description: category.description,
+      iconUrl: category.icon_url,
+      colorHex: category.color_hex,
+      sortOrder: category.sort_order,
+      mentorCount: parseInt(category.mentor_count || 0)
+    }));
+
+    res.json({
+      success: true,
+      data: categories
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching categories:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch categories',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
 });
 
-// Mentor meta endpoints
-app.get('/api/mentors/meta/categories', (req, res) => {
-  const categories = [
-    { id: 1, name: 'Technology', slug: 'technology', description: 'Software development, programming, and tech skills' },
-    { id: 2, name: 'Business', slug: 'business', description: 'Entrepreneurship, management, and business strategy' },
-    { id: 3, name: 'Design', slug: 'design', description: 'UI/UX design, graphic design, and creative skills' },
-    { id: 4, name: 'Marketing', slug: 'marketing', description: 'Digital marketing, SEO, and growth strategies' },
-    { id: 5, name: 'Career Development', slug: 'career', description: 'Resume building, interview prep, and career growth' },
-    { id: 6, name: 'Finance', slug: 'finance', description: 'Personal finance, investing, and financial planning' },
-    { id: 7, name: 'Language Learning', slug: 'languages', description: 'English, Spanish, French, and other languages' },
-    { id: 8, name: 'Health & Wellness', slug: 'health', description: 'Fitness, nutrition, and mental health' },
-    { id: 9, name: 'Education', slug: 'education', description: 'Teaching, tutoring, and academic support' },
-    { id: 10, name: 'Creative Arts', slug: 'arts', description: 'Writing, music, photography, and creative expression' }
-  ];
-  
-  res.json({
-    success: true,
-    data: categories
-  });
+// Mentor meta endpoints - Database-driven
+app.get('/api/mentors/meta/categories', async (req, res) => {
+  try {
+    console.log('🔍 Fetching mentor meta categories from database');
+
+    const query = `
+      SELECT
+        c.id,
+        c.name,
+        c.slug,
+        c.description,
+        c.icon_url,
+        c.color_hex,
+        c.sort_order,
+        COUNT(mc.mentor_id) as mentor_count
+      FROM categories c
+      LEFT JOIN mentor_categories mc ON c.id = mc.category_id
+      LEFT JOIN mentors m ON mc.mentor_id = m.id AND m.status = 'active' AND m.verification_status = 'verified'
+      WHERE c.is_active = true
+      GROUP BY c.id
+      ORDER BY c.sort_order, c.name
+    `;
+
+    const result = await db.query(query);
+
+    const categories = result.rows.map(category => ({
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+      description: category.description,
+      iconUrl: category.icon_url,
+      colorHex: category.color_hex,
+      sortOrder: category.sort_order,
+      mentorCount: parseInt(category.mentor_count || 0)
+    }));
+
+    res.json({
+      success: true,
+      data: categories
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching mentor meta categories:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch categories',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
 });
 
 // Featured mentors and reviews endpoints are now handled by routes/mentors.js and routes/reviews.js

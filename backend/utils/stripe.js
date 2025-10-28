@@ -1,5 +1,6 @@
 const Stripe = require('stripe');
 const db = require('../config/database');
+const { sendPaymentSuccessEmail, sendMeetingReadyEmail } = require('./emailService');
 
 class StripePayments {
   constructor() {
@@ -448,16 +449,32 @@ class StripePayments {
   async handlePaymentSuccess(paymentIntent) {
     try {
       const sessionId = paymentIntent.metadata.session_id;
-      
+
       if (!sessionId) {
         console.warn('⚠️ Payment success without session_id in metadata');
         return;
       }
 
+      // Get session details for emails
+      const sessionDetails = await db.query(
+        `SELECT s.*, mentor_user.first_name as mentor_first_name, mentor_user.last_name as mentor_last_name,
+               u.first_name as mentee_first_name, u.last_name as mentee_last_name, u.email as mentee_email,
+               mt.user_id as mentor_user_id, mentor_user.email as mentor_email
+         FROM sessions s
+         JOIN mentors m ON s.mentor_id = m.id
+         JOIN users u ON s.mentee_id = u.id
+         JOIN mentors mt ON s.mentor_id = mt.id
+         JOIN users mentor_user ON mt.user_id = mentor_user.id
+         WHERE s.id = $1`,
+        [sessionId]
+      );
+
+      const session = sessionDetails.rows[0];
+
       await db.transaction(async (client) => {
         // Update payment status
         await client.query(`
-          UPDATE payments 
+          UPDATE payments
           SET payment_status = 'completed',
               stripe_charge_id = $2,
               updated_at = CURRENT_TIMESTAMP
@@ -466,15 +483,107 @@ class StripePayments {
 
         // Update session status if payment was completed
         await client.query(`
-          UPDATE sessions 
+          UPDATE sessions
           SET status = 'confirmed',
               confirmed_at = CURRENT_TIMESTAMP,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1 AND status = 'pending'
         `, [sessionId]);
 
+        // Create video meeting if it doesn't exist
+        const existingMeeting = await client.query(
+          `SELECT id FROM video_meetings WHERE session_id = $1`,
+          [sessionId]
+        );
+
+        if (existingMeeting.rows.length === 0) {
+          // Import Agora service dynamically
+          const agoraService = require('../utils/agora');
+
+          // Generate meeting credentials
+          const meetingCredentials = agoraService.generateMeetingCredentials(session.id, session.mentee_id);
+
+          // Create video_meetings entry
+          await client.query(
+            `INSERT INTO video_meetings (
+              session_id, channel_name, agora_app_id, agora_token, token_expires_at,
+              meeting_status, actual_start_time, actual_end_time, actual_duration_minutes,
+              participants_joined, max_participants, max_duration_minutes, auto_end_enabled,
+              video_quality, audio_enabled, video_enabled, screen_share_enabled,
+              join_logs, quality_logs, error_logs, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+            [
+              session.id,
+              meetingCredentials.channelName,
+              meetingCredentials.appId,
+              meetingCredentials.token,
+              meetingCredentials.tokenExpiresAt,
+              'scheduled',
+              null, // actual_start_time
+              null, // actual_end_time
+              null, // actual_duration_minutes
+              '[]', // participants_joined
+              2, // max_participants
+              75, // max_duration_minutes (1h 15m)
+              true, // auto_end_enabled
+              'high', // video_quality
+              true, // audio_enabled
+              true, // video_enabled
+              false, // screen_share_enabled
+              '[]', // join_logs
+              '[]', // quality_logs
+              '[]', // error_logs
+            ]
+          );
+
+          // Update session with meeting URL
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+          const meetingUrl = `${frontendUrl}/meeting/${session.id}`;
+
+          await client.query(
+            `UPDATE sessions
+             SET meeting_url = $2, meeting_id = $3, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1`,
+            [session.id, meetingUrl, meetingCredentials.channelName]
+          );
+        }
+
         console.log('✅ Payment success processed for session:', sessionId);
       });
+
+      // Send payment success email to mentee
+      try {
+        const paymentEmailData = {
+          transactionId: paymentIntent.id,
+          amount: paymentIntent.amount / 100, // Convert from cents
+          sessionTitle: session.title,
+          mentorName: `${session.mentor_first_name} ${session.mentor_last_name}`,
+          scheduledAt: session.scheduled_at
+        };
+        await sendPaymentSuccessEmail(session.mentee_email, paymentEmailData);
+        console.log('✅ Payment success email sent to mentee');
+      } catch (emailError) {
+        console.warn('⚠️ Failed to send payment success email:', emailError.message);
+      }
+
+      // Send meeting ready emails to both parties
+      try {
+        const meetingUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/meeting/${sessionId}`;
+        const meetingEmailData = {
+          title: session.title,
+          scheduledAt: session.scheduled_at,
+          durationMinutes: session.duration_minutes,
+          mentorName: `${session.mentor_first_name} ${session.mentor_last_name}`,
+          menteeName: `${session.mentee_first_name} ${session.mentee_last_name}`,
+          meetingUrl: meetingUrl
+        };
+
+        await sendMeetingReadyEmail(session.mentee_email, meetingEmailData, 'mentee');
+        await sendMeetingReadyEmail(session.mentor_email, meetingEmailData, 'mentor');
+        console.log('✅ Meeting ready emails sent to both parties');
+      } catch (emailError) {
+        console.warn('⚠️ Failed to send meeting ready emails:', emailError.message);
+      }
 
     } catch (error) {
       console.error('❌ Error processing payment success:', error);

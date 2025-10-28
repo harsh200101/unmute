@@ -6,6 +6,7 @@ const { rateLimit } = require('../middleware/auth');
 const axios = require('axios');
 const crypto = require('crypto');
 const dns = require('dns').promises;
+const { sendPaymentSuccessEmail, sendMeetingReadyEmail } = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -136,7 +137,7 @@ router.post(
       if (response.data.success) {
         const paymentUrl = response.data.data.instrumentResponse.redirectInfo.url;
 
-        // Calculate mentor earnings (amount - platform fee)
+        // Calculate mentor earnings - mentee pays exact displayed price, platform fee deducted internally
         // Using 10% platform fee as in session creation
         const platformFeeRate = parseFloat(process.env.PLATFORM_FEE_RATE || '0.1');
         const platformFee = amountInRupees * platformFeeRate;
@@ -351,6 +352,37 @@ router.post('/callback', async (req, res) => {
 
       console.log(`🔄 Updating session ${sessionId} status to confirmed and creating meeting`);
 
+      // Get session details for emails
+      const sessionDetails = await db.query(
+        `SELECT s.*, mentor_user.first_name as mentor_first_name, mentor_user.last_name as mentor_last_name,
+               u.first_name as mentee_first_name, u.last_name as mentee_last_name, u.email as mentee_email,
+               mt.user_id as mentor_user_id, mentor_user.email as mentor_email
+         FROM sessions s
+         JOIN mentors m ON s.mentor_id = m.id
+         JOIN users u ON s.mentee_id = u.id
+         JOIN mentors mt ON s.mentor_id = mt.id
+         JOIN users mentor_user ON mt.user_id = mentor_user.id
+         WHERE s.id = $1`,
+        [sessionId]
+      );
+
+      const session = sessionDetails.rows[0];
+
+      // Send payment success email to mentee
+      try {
+        const paymentEmailData = {
+          transactionId: merchantTransactionId,
+          amount: session.price,
+          sessionTitle: session.title,
+          mentorName: `${session.mentor_first_name} ${session.mentor_last_name}`,
+          scheduledAt: session.scheduled_at
+        };
+        await sendPaymentSuccessEmail(session.mentee_email, paymentEmailData);
+        console.log('✅ Payment success email sent to mentee');
+      } catch (emailError) {
+        console.warn('⚠️ Failed to send payment success email:', emailError.message);
+      }
+
       // Update session status to confirmed and create meeting
       const result = await db.transaction(async (client) => {
         // Update session status to confirmed
@@ -459,6 +491,24 @@ router.post('/callback', async (req, res) => {
                 ]
               );
             }
+
+            // Send meeting ready emails to both mentor and mentee
+            try {
+              const meetingEmailData = {
+                title: session.title,
+                scheduledAt: session.scheduled_at,
+                durationMinutes: session.duration_minutes,
+                mentorName: `${session.mentor_first_name} ${session.mentor_last_name}`,
+                menteeName: `${session.mentee_first_name} ${session.mentee_last_name}`,
+                meetingUrl: meetingUrl
+              };
+
+              await sendMeetingReadyEmail(session.mentee_email, meetingEmailData, 'mentee');
+              await sendMeetingReadyEmail(session.mentor_email, meetingEmailData, 'mentor');
+              console.log('✅ Meeting ready emails sent to both parties');
+            } catch (emailError) {
+              console.warn('⚠️ Failed to send meeting ready emails:', emailError.message);
+            }
           }
         } else {
           console.log(`Meeting already exists for session ${sessionId}, skipping creation`);
@@ -473,11 +523,11 @@ router.post('/callback', async (req, res) => {
     // Get session details for redirect
     const sessionQuery = await db.query(
       `SELECT s.id, s.title, s.scheduled_at, s.duration_minutes, s.price, s.currency,
-              m.first_name as mentor_first_name, m.last_name as mentor_last_name,
-              u.first_name as mentee_first_name, u.last_name as mentee_last_name
+             mentor_user.first_name as mentor_first_name, mentor_user.last_name as mentor_last_name,
+             u.first_name as mentee_first_name, u.last_name as mentee_last_name
        FROM sessions s
        JOIN mentors mt ON s.mentor_id = mt.id
-       JOIN users m ON mt.user_id = m.id
+       JOIN users mentor_user ON mt.user_id = mentor_user.id
        JOIN users u ON s.mentee_id = u.id
        WHERE s.id = $1`,
       [paymentUpdate.rows[0]?.session_id]

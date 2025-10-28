@@ -21,7 +21,7 @@ const MentorProfileForm = () => {
     specializations: [],
     industries: [],
     skills: [],
-    languages: ['en'],
+    languages: ['en'], // Default to English
     hourlyRate: 75,
     profileImage: '',
     videoIntroUrl: '',
@@ -71,6 +71,15 @@ const MentorProfileForm = () => {
 
     setLoading(true);
     try {
+      // Load categories first
+      const categoriesResponse = await fetch('/api/mentors/meta/categories');
+      let categories = [];
+      if (categoriesResponse.ok) {
+        const categoriesData = await categoriesResponse.json();
+        categories = categoriesData.data.categories || [];
+        setAvailableCategories(categories);
+      }
+
       // Load mentor profile
       const profileResponse = await fetch('/api/mentors/profile', {
         headers: {
@@ -84,13 +93,20 @@ const MentorProfileForm = () => {
         const mentor = profileData.data.mentor;
         setMentorProfile(mentor);
 
-        // Convert category names to IDs for form compatibility
+        // Convert category names/strings to IDs for form compatibility
         const categoryIds = [];
-        if (mentor.categories && availableCategories.length > 0) {
-          mentor.categories.forEach(catName => {
-            const category = availableCategories.find(cat => cat.name === catName);
-            if (category) {
-              categoryIds.push(category.id);
+        if (mentor.categories && Array.isArray(mentor.categories)) {
+          mentor.categories.forEach((cat) => {
+            // Handle both string names and objects with id/name
+            if (typeof cat === 'string') {
+              // Find category by name in availableCategories
+              const foundCategory = categories.find(ac => ac.name === cat);
+              if (foundCategory) {
+                categoryIds.push(foundCategory.id);
+              }
+            } else if (cat && cat.id) {
+              // Handle object format
+              categoryIds.push(cat.id);
             }
           });
         }
@@ -116,13 +132,6 @@ const MentorProfileForm = () => {
           categories: categoryIds,
           publicProfile: mentor.publicProfile !== undefined ? mentor.publicProfile : true
         });
-      }
-
-      // Load categories
-      const categoriesResponse = await fetch('/api/mentors/meta/categories');
-      if (categoriesResponse.ok) {
-        const categoriesData = await categoriesResponse.json();
-        setAvailableCategories(categoriesData.data.categories || []);
       }
 
     } catch (error) {
@@ -548,15 +557,24 @@ const MentorProfileForm = () => {
                   Languages <span className="text-red-500">*</span>
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {['English', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Portuguese', 'Hindi'].map((lang) => (
-                    <label key={lang} className="flex items-center space-x-2 cursor-pointer">
+                  {[
+                    { code: 'en', name: 'English' },
+                    { code: 'hi', name: 'Hindi' },
+                    { code: 'bn', name: 'Bengali' },
+                    { code: 'te', name: 'Telugu' },
+                    { code: 'mr', name: 'Marathi' },
+                    { code: 'ta', name: 'Tamil' },
+                    { code: 'ur', name: 'Urdu' },
+                    { code: 'gu', name: 'Gujarati' }
+                  ].map((lang) => (
+                    <label key={lang.code} className="flex items-center space-x-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={formData.languages.includes(lang.toLowerCase())}
-                        onChange={() => handleArrayChange('languages', lang.toLowerCase())}
+                        checked={formData.languages.includes(lang.code)}
+                        onChange={() => handleArrayChange('languages', lang.code)}
                         className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                       />
-                      <span className="text-sm text-gray-700">{lang}</span>
+                      <span className="text-sm text-gray-700">{lang.name}</span>
                     </label>
                   ))}
                 </div>

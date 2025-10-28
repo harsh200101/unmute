@@ -1115,8 +1115,9 @@ router.get('/mentor/all',
 
       const mentorId = mentorResult.rows[0].id;
 
+      // Fixed query to prevent duplicates by using subqueries for related data
       let query = `
-        SELECT
+        SELECT DISTINCT
           s.*,
           u.first_name as mentee_first_name,
           u.last_name as mentee_last_name,
@@ -1132,7 +1133,7 @@ router.get('/mentor/all',
         FROM sessions s
         INNER JOIN users u ON s.mentee_id = u.id
         LEFT JOIN payments p ON s.id = p.session_id
-        LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false
+        LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false AND r.reviewer_type = 'mentee'
         LEFT JOIN session_reschedule_requests rr ON s.id = rr.session_id AND rr.status = 'pending'
         WHERE s.mentor_id = $1
       `;
@@ -1187,9 +1188,9 @@ router.get('/mentor/all',
 
       const result = await db.query(query, params);
 
-      // Get total count
+      // Get total count (without duplicates)
       let countQuery = `
-        SELECT COUNT(*) as total
+        SELECT COUNT(DISTINCT s.id) as total
         FROM sessions s
         WHERE s.mentor_id = $1
           AND s.scheduled_at IS NOT NULL
@@ -1292,11 +1293,11 @@ router.get('/mentor/all',
 
         // Action permissions for mentors
         canReschedule: ['confirmed', 'in_progress'].includes(session.status) &&
-                        new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours notice for mentors
+                         new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours notice for mentors
         canCancel: ['confirmed', 'in_progress'].includes(session.status) &&
-                    new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000),
+                     new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000),
         canStart: session.status === 'confirmed' &&
-                  Math.abs(new Date(session.scheduled_at) - new Date()) < 15 * 60 * 1000,
+                   Math.abs(new Date(session.scheduled_at) - new Date()) < 15 * 60 * 1000,
         canComplete: session.status === 'in_progress',
         canReview: false, // Mentors don't review, they receive reviews
 
@@ -1335,6 +1336,97 @@ router.get('/mentor/all',
       res.status(500).json({
         success: false,
         message: 'Failed to fetch mentor sessions',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
+
+// GET /api/sessions/mentee/recent - Get recent sessions for mentee dashboard
+router.get('/mentee/recent',
+  auth,
+  rateLimit(30, 15 * 60 * 1000),
+  [
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 20 })
+      .withMessage('Limit must be between 1 and 20')
+  ],
+  async (req, res) => {
+    try {
+      const userId = req.user.userId;
+      const { limit = 3 } = req.query;
+
+      console.log('🔍 Fetching recent sessions for mentee:', userId);
+
+      // Get recent sessions for this mentee
+      const query = `
+        SELECT
+          s.id,
+          s.uuid,
+          s.title,
+          s.scheduled_at,
+          s.actual_end_time as completed_at,
+          s.status,
+          s.price,
+          s.actual_duration_minutes,
+          m.hourly_rate,
+          mentor_user.first_name as mentor_first_name,
+          mentor_user.last_name as mentor_last_name,
+          mentor_user.avatar_url as mentor_avatar,
+          r.overall_rating,
+          r.comment as review_comment
+        FROM sessions s
+        INNER JOIN mentors m ON s.mentor_id = m.id
+        INNER JOIN users mentor_user ON m.user_id = mentor_user.id
+        LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false AND r.reviewer_type = 'mentee'
+        WHERE s.mentee_id = $1
+          AND s.scheduled_at IS NOT NULL
+          AND s.status IN ('completed', 'cancelled_by_mentee', 'cancelled_by_mentor')
+        ORDER BY s.scheduled_at DESC
+        LIMIT $2
+      `;
+
+      const result = await db.query(query, [userId, parseInt(limit)]);
+
+      const sessions = result.rows.map(session => ({
+        id: session.id,
+        uuid: session.uuid,
+        title: session.title,
+        scheduledAt: session.scheduled_at,
+        completedAt: session.completed_at,
+        status: session.status,
+        price: parseFloat(session.price || 0),
+        actualDurationMinutes: session.actual_duration_minutes,
+        mentor: {
+          firstName: session.mentor_first_name,
+          lastName: session.mentor_last_name,
+          fullName: `${session.mentor_first_name} ${session.mentor_last_name}`.trim(),
+          avatar: session.mentor_avatar,
+          hourlyRate: parseFloat(session.hourly_rate || 0)
+        },
+        review: session.overall_rating ? {
+          overallRating: session.overall_rating,
+          comment: session.review_comment,
+          reviewerType: 'mentee'
+        } : null
+      }));
+
+      console.log('✅ Recent sessions retrieved for mentee:', userId, 'Count:', sessions.length);
+
+      res.json({
+        success: true,
+        data: {
+          sessions,
+          count: sessions.length
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching mentee recent sessions:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch recent sessions',
         error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }

@@ -44,7 +44,7 @@ const PaymentButton = ({ sessionId, amount, onSuccess, onError }) => {
         disabled={loading || !sessionId}
         className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
       >
-        {loading ? 'Processing...' : `Pay ₹${amount} for Session`}
+        {loading ? 'Processing...' : `Pay ₹${amount}`}
       </button>
       {error && <p className="text-red-500 mt-2">{error}</p>}
       {!sessionId && <p className="text-orange-500 mt-2">Session ID is required.</p>}

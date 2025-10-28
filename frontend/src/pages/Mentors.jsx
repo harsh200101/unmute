@@ -28,8 +28,17 @@ const Mentors = () => {
   const [totalItems, setTotalItems] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Available options
-  const languages = ['English', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Portuguese', 'Hindi'];
+  // Available options - Indian languages list
+  const languages = [
+    { code: 'en', name: 'English' },
+    { code: 'hi', name: 'Hindi' },
+    { code: 'bn', name: 'Bengali' },
+    { code: 'te', name: 'Telugu' },
+    { code: 'mr', name: 'Marathi' },
+    { code: 'ta', name: 'Tamil' },
+    { code: 'ur', name: 'Urdu' },
+    { code: 'gu', name: 'Gujarati' }
+  ];
   const badgeLevels = [
     { value: 'bronze', label: 'Bronze', color: 'text-orange-600' },
     { value: 'silver', label: 'Silver', color: 'text-gray-600' },
@@ -88,14 +97,14 @@ const Mentors = () => {
   useEffect(() => {
     const loadCategories = async () => {
       try {
-        const response = await fetch('/api/categories'); // Updated endpoint
+        const response = await fetch('/api/mentors/meta/categories'); // Correct endpoint
         if (response.ok) {
           const data = await response.json();
           console.log('Categories response:', data);
-          
+
           // Fix: Handle different response structures
-          if (data.success && Array.isArray(data.data)) {
-            setCategories(data.data);
+          if (data.success && Array.isArray(data.data?.categories)) {
+            setCategories(data.data.categories);
           } else if (Array.isArray(data)) {
             setCategories(data);
           } else {
@@ -111,6 +120,7 @@ const Mentors = () => {
         setCategories([]);
       }
     };
+
     loadCategories();
   }, []); // Empty dependency array - runs once
 
@@ -355,9 +365,9 @@ const Mentors = () => {
                     className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">All Languages</option>
-                    {languages.map((lang) => (
-                      <option key={lang} value={lang.toLowerCase()}>
-                        {lang}
+                    {Array.isArray(languages) && languages.map((lang) => (
+                      <option key={lang.code || lang} value={lang.code || lang.toLowerCase()}>
+                        {lang.name || lang}
                       </option>
                     ))}
                   </select>

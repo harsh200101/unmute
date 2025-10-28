@@ -1188,7 +1188,7 @@ router.get('/meta/categories',
   }
 );
 
-// GET /api/mentors/meta/languages - Get all available languages
+// GET /api/mentors/meta/languages - Get all available languages (simplified)
 router.get('/meta/languages',
   rateLimit(20, 60 * 60 * 1000), // 20 requests per hour
   async (req, res) => {
@@ -1196,40 +1196,42 @@ router.get('/meta/languages',
       console.log('🔍 Fetching mentor languages');
 
       const query = `
-        SELECT 
+        SELECT
           UNNEST(languages) as language_code,
           COUNT(*) as mentor_count
         FROM mentors m
         JOIN users u ON m.user_id = u.id
-        WHERE m.status = 'active' 
+        WHERE m.status = 'active'
           AND m.verification_status = 'verified'
           AND u.is_verified = true
+          AND languages IS NOT NULL
         GROUP BY language_code
         ORDER BY mentor_count DESC, language_code
       `;
 
       const result = await db.query(query);
 
-      // Language mapping (you might want to store this in database)
+      // Indian languages mapping
       const languageMap = {
         'en': { name: 'English', flag: '🇺🇸' },
-        'es': { name: 'Spanish', flag: '🇪🇸' },
-        'fr': { name: 'French', flag: '🇫🇷' },
         'hi': { name: 'Hindi', flag: '🇮🇳' },
-        'zh': { name: 'Chinese', flag: '🇨🇳' },
-        'de': { name: 'German', flag: '🇩🇪' },
-        'ja': { name: 'Japanese', flag: '🇯🇵' },
-        'ko': { name: 'Korean', flag: '🇰🇷' },
-        'pt': { name: 'Portuguese', flag: '🇵🇹' },
-        'ar': { name: 'Arabic', flag: '🇸🇦' },
+        'bn': { name: 'Bengali', flag: '🇮🇳' },
+        'te': { name: 'Telugu', flag: '🇮🇳' },
+        'mr': { name: 'Marathi', flag: '🇮🇳' },
+        'ta': { name: 'Tamil', flag: '🇮🇳' },
+        'ur': { name: 'Urdu', flag: '🇵🇰' },
+        'gu': { name: 'Gujarati', flag: '🇮🇳' }
       };
 
-      const languages = result.rows.map(row => ({
-        code: row.language_code,
-        name: languageMap[row.language_code]?.name || row.language_code,
-        flag: languageMap[row.language_code]?.flag || '🌐',
-        mentorCount: parseInt(row.mentor_count)
-      }));
+      // Filter to only include English and Hindi
+      const languages = result.rows
+        .filter(row => languageMap[row.language_code])
+        .map(row => ({
+          code: row.language_code,
+          name: languageMap[row.language_code].name,
+          flag: languageMap[row.language_code].flag,
+          mentorCount: parseInt(row.mentor_count)
+        }));
 
       res.json({
         success: true,

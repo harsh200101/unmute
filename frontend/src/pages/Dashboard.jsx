@@ -15,6 +15,7 @@ const Dashboard = () => {
   // Simple state management
   const [loading, setLoading] = useState(false);
   const [upcomingSessions, setUpcomingSessions] = useState([]);
+  const [recentSessions, setRecentSessions] = useState([]);
   const [sessionStats, setSessionStats] = useState({});
   const [dataLoaded, setDataLoaded] = useState(false);
 
@@ -73,6 +74,33 @@ const Dashboard = () => {
     }
   }, []);
 
+  // Load recent sessions for mentees
+  const loadRecentSessions = useCallback(async () => {
+    if (!isMentee()) return;
+
+    console.log('🔄 API CALL: loadRecentSessions at', new Date().toISOString());
+    try {
+      const response = await fetch('/api/sessions/mentee/recent?limit=3', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Recent sessions API success:', data);
+        setRecentSessions(data.data?.sessions || []);
+      } else {
+        console.error('❌ Recent sessions API failed:', response.status, response.statusText);
+        setRecentSessions([]);
+      }
+    } catch (error) {
+      console.error('❌ Recent sessions API error:', error.message);
+      setRecentSessions([]);
+    }
+  }, [isMentee]);
+
   // Load all dashboard data
   const loadDashboardData = useCallback(async () => {
     // Prevent loading if not authenticated, already loaded, or if user is mentor (should be redirected)
@@ -99,7 +127,8 @@ const Dashboard = () => {
     try {
       await Promise.all([
         loadUpcomingSessions(),
-        loadSessionStats()
+        loadSessionStats(),
+        loadRecentSessions()
       ]);
       setDataLoaded(true);
       console.log('✅ Dashboard data loaded successfully');
@@ -111,7 +140,7 @@ const Dashboard = () => {
       setLoading(false);
       dataLoadRef.current = false;
     }
-  }, [isAuthenticated, dataLoaded, loading, loadUpcomingSessions, loadSessionStats, isMentor]);
+  }, [isAuthenticated, dataLoaded, loading, loadUpcomingSessions, loadSessionStats, loadRecentSessions, isMentor]);
 
   // Load data on mount and handle redirects
   useEffect(() => {
@@ -426,19 +455,51 @@ const Dashboard = () => {
                 </h2>
               </div>
               <div className="p-6">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
-                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                      <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">Welcome to your dashboard!</p>
-                      <p className="text-sm text-gray-500">Start exploring mentoring opportunities</p>
+                {loading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <LoadingSpinner size="md" />
+                    <span className="ml-3 text-gray-600">Loading recent activity...</span>
+                  </div>
+                ) : recentSessions.length > 0 ? (
+                  <div className="space-y-4">
+                    {recentSessions.map((session) => (
+                      <div key={session.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">{session.title}</p>
+                          <p className="text-sm text-gray-500">
+                            With {session.mentor?.firstName} {session.mentor?.lastName} • {session.status.replace('_', ' ')}
+                            {session.completedAt && ` • ${new Date(session.completedAt).toLocaleDateString()}`}
+                          </p>
+                          {session.review && (
+                            <div className="flex items-center gap-1 mt-1">
+                              <span className="text-yellow-500">★</span>
+                              <span className="text-sm text-gray-600">{session.review.overallRating}/5</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
+                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                        <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">Welcome to your dashboard!</p>
+                        <p className="text-sm text-gray-500">Start exploring mentoring opportunities</p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>

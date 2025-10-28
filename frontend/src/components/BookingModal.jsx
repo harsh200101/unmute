@@ -90,13 +90,12 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
 
   const calculateFees = () => {
     const subtotal = calculatePrice();
-    const platformFee = subtotal * 0.1; // 10% platform fee
-    const total = subtotal + platformFee;
-    
+    const platformFee = subtotal * 0.1; // 10% platform fee (deducted internally)
+
     return {
       subtotal,
       platformFee,
-      total
+      total: subtotal // Mentee pays only the displayed price
     };
   };
 
@@ -420,11 +419,11 @@ const DateTimeStep = ({
           </div>
           <div className="flex justify-between text-sm text-gray-600">
             <span>Platform fee (10%):</span>
-            <span>£{fees.platformFee.toFixed(2)}</span>
+            <span>£{fees.platformFee.toFixed(2)} (deducted internally)</span>
           </div>
           <hr />
           <div className="flex justify-between items-center font-bold text-lg">
-            <span>Total:</span>
+            <span>You Pay:</span>
             <span className="text-green-600">£{fees.total.toFixed(2)}</span>
           </div>
         </div>
@@ -457,7 +456,7 @@ const CreateSessionStep = ({ bookingData, mentor, calculateFees, onBack, onSubmi
           <div>Duration: {bookingData.durationMinutes} minutes</div>
           <div>Type: {bookingData.sessionType}</div>
           <div className="font-medium pt-2 border-t border-blue-200">
-            Total: £{fees.total.toFixed(2)}
+            You Pay: £{fees.total.toFixed(2)}
           </div>
         </div>
       </div>
@@ -508,7 +507,7 @@ const PaymentStep = ({ bookingData, mentor, calculateFees, onBack, loading, sess
           <div>Duration: {bookingData.durationMinutes} minutes</div>
           <div>Type: {bookingData.sessionType}</div>
           <div className="font-medium pt-2 border-t border-blue-200">
-            Total: ₹{fees.total.toFixed(2)}
+            You Pay: ₹{fees.total.toFixed(2)}
           </div>
         </div>
       </div>
@@ -523,7 +522,7 @@ const PaymentStep = ({ bookingData, mentor, calculateFees, onBack, loading, sess
         </div>
         <PaymentButton
           sessionId={sessionId}
-          amount={fees.total}
+          amount={fees.subtotal} // Send the actual session price, not total with platform fee
           onSuccess={() => {
             // Payment successful, redirect will happen automatically
           }}

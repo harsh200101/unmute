@@ -336,6 +336,8 @@ export const endpoints = {
     notes: (id) => `/sessions/details/${id}/notes`,
     review: (id) => `/sessions/${id}/review`,
     mentorReview: (id) => `/sessions/${id}/mentor-review`,
+    mentorRecent: '/sessions/mentor/recent',
+    menteeRecent: '/sessions/mentee/recent',
   },
 
   // Mentor endpoints

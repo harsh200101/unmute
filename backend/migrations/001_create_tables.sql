@@ -271,7 +271,7 @@ CREATE TABLE sessions (
     cancelled_at TIMESTAMP,
     
     -- Constraints
-    CONSTRAINT session_valid_earnings CHECK (mentor_earnings + platform_fee = price),
+    CONSTRAINT session_valid_earnings CHECK (mentor_earnings = price),
     CONSTRAINT session_valid_times CHECK (
         actual_end_time IS NULL OR 
         actual_start_time IS NULL OR 

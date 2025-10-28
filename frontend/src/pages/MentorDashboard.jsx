@@ -238,11 +238,13 @@ const MentorDashboard = () => {
     if (!isAuthenticated && !navigationRef.current) {
       console.log('🔍 MentorDashboard: Redirecting to /login - not authenticated');
       navigationRef.current = true;
-      navigate('/login');
+      // Use replace to avoid adding to history stack
+      navigate('/login', { replace: true });
     } else if (!isMentor() && !navigationRef.current) {
       console.log('🔍 MentorDashboard: Redirecting to /dashboard - not a mentor, user role:', user?.role, 'isMentor():', isMentor());
       navigationRef.current = true;
-      navigate('/dashboard');
+      // Use replace to avoid adding to history stack
+      navigate('/dashboard', { replace: true });
     }
   }, [isAuthenticated, isMentor, user?.role, navigate, mentorProfile]);
 

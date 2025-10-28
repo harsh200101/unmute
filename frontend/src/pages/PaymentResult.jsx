@@ -24,49 +24,69 @@ const PaymentResult = () => {
     const processPaymentResult = async () => {
       try {
         setLoading(true);
-        
-        // Get payment parameters from URL
-        const paymentIntentId = searchParams.get('payment_intent');
-        const paymentIntentClientSecret = searchParams.get('payment_intent_client_secret');
-        const redirectStatus = searchParams.get('redirect_status');
-        const sessionId = searchParams.get('session_id');
-        
-        if (!paymentIntentId) {
-          throw new Error('Missing payment information');
+
+        // Get PhonePe parameters from URL
+        const transactionId = searchParams.get('transactionId');
+        const status = searchParams.get('status');
+        const sessionId = searchParams.get('sessionId');
+
+        if (!transactionId) {
+          throw new Error('Missing transaction information');
         }
 
-        // Verify payment with backend
-        const response = await fetch('/api/payments/verify', {
-          method: 'POST',
+        // Check payment status with backend
+        const statusResponse = await fetch(`/api/payments/status/${transactionId}`, {
+          method: 'GET',
           headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-          },
-          body: JSON.stringify({
-            payment_intent_id: paymentIntentId,
-            session_id: sessionId
-          })
+          }
         });
 
-        if (!response.ok) {
-          throw new Error('Payment verification failed');
+        if (!statusResponse.ok) {
+          throw new Error('Payment status check failed');
         }
 
-        const result = await response.json();
-        
-        // Support both Stripe status ('succeeded') and internal status ('completed')
-        const stripeStatus = result.data.stripe_status || result.data.payment_status;
-        const normalizedStatus = ['completed', 'succeeded'].includes(stripeStatus)
-          ? 'succeeded'
-          : stripeStatus;
-        
+        const statusResult = await statusResponse.json();
+
+        // Normalize status for frontend
+        const normalizedStatus = statusResult.status === 'completed' ? 'succeeded' : statusResult.status;
         setPaymentStatus(normalizedStatus);
-        setSessionData(result.data.session);
+
+        // If payment succeeded, fetch session details
+        if (normalizedStatus === 'succeeded' && sessionId) {
+          const sessionResponse = await fetch(`/api/sessions/${sessionId}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+            }
+          });
+
+          if (sessionResponse.ok) {
+            const sessionResult = await sessionResponse.json();
+            if (sessionResult.success) {
+              // Transform session data to match expected format
+              const session = sessionResult.data.session;
+              console.log('Session details loaded:', session);
+              const transformedSession = {
+                mentor_name: session.mentor?.fullName || `${session.mentor?.firstName || 'Mentor'} ${session.mentor?.lastName || 'Profile'}`,
+                mentor_specialization: session.mentorBadgeLevel || 'Mentor',
+                session_type: session.sessionType,
+                scheduled_at: session.scheduledAt,
+                duration_minutes: session.durationMinutes,
+                price: session.price,
+                currency: session.currency || session.payment?.currency || 'USD',
+                description: session.description
+              };
+              console.log('Transformed session data:', transformedSession);
+              setSessionData(transformedSession);
+            }
+          }
+        }
 
         // Show appropriate toast message
-        if (['succeeded', 'completed'].includes(stripeStatus)) {
+        if (normalizedStatus === 'succeeded') {
           toast.success('Payment successful! Your session has been booked.');
-        } else if (stripeStatus === 'requires_payment_method' || stripeStatus === 'failed') {
+        } else if (normalizedStatus === 'failed' || normalizedStatus === 'pending') {
           toast.error('Payment failed. Please try again with a different payment method.');
         }
 
@@ -156,7 +176,7 @@ const PaymentResult = () => {
                       {sessionData.mentor_name?.charAt(0) || 'M'}
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">{sessionData.mentor_name}</p>
+                      <p className="font-medium text-gray-900">{sessionData.mentor_name || 'Mentor'}</p>
                       <p className="text-sm text-gray-600">{sessionData.mentor_specialization}</p>
                     </div>
                   </div>
@@ -179,30 +199,43 @@ const PaymentResult = () => {
                   <h3 className="font-semibold text-gray-900 mb-2">Date & Time</h3>
                   <div className="space-y-1">
                     <p className="font-medium text-gray-900">
-                      {new Date(sessionData.scheduled_at).toLocaleDateString('en-US', {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        timeZone: 'Asia/Kolkata'
-                      })}
+                      {sessionData.scheduled_at && !isNaN(new Date(sessionData.scheduled_at).getTime())
+                        ? new Date(sessionData.scheduled_at).toLocaleDateString('en-US', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            timeZone: 'Asia/Kolkata'
+                          })
+                        : 'Date not available'
+                      }
                     </p>
                     <p className="text-sm text-gray-600">
-                      {new Date(sessionData.scheduled_at).toLocaleTimeString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true,
-                        timeZone: 'Asia/Kolkata'
-                      })}
+                      {sessionData.scheduled_at && !isNaN(new Date(sessionData.scheduled_at).getTime())
+                        ? new Date(sessionData.scheduled_at).toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZone: 'Asia/Kolkata'
+                          })
+                        : 'Time not available'
+                      }
                     </p>
+                    {console.log('Scheduled at value:', sessionData.scheduled_at)}
+                    {console.log('Parsed date:', sessionData.scheduled_at ? new Date(sessionData.scheduled_at) : 'null')}
                   </div>
                 </div>
 
                 <div>
                   <h3 className="font-semibold text-gray-900 mb-2">Duration & Cost</h3>
                   <div className="space-y-1">
-                    <p className="font-medium text-gray-900">{sessionData.duration_minutes} minutes</p>
-                    <p className="text-lg font-bold text-green-600">${sessionData.price}</p>
+                    <p className="font-medium text-gray-900">{sessionData.duration_minutes || 'N/A'} minutes</p>
+                    <p className="text-lg font-bold text-green-600">
+                      {sessionData.currency === 'INR' ? '₹' : '$'}{sessionData.price || 'N/A'}
+                    </p>
+                    {console.log('Duration:', sessionData.duration_minutes)}
+                    {console.log('Price:', sessionData.price)}
+                    {console.log('Currency:', sessionData.currency)}
                   </div>
                 </div>
               </div>

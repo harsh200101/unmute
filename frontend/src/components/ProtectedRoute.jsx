@@ -18,6 +18,8 @@ const ProtectedRoute = ({
   const [validationError, setValidationError] = useState(null);
   const [lastValidationTime, setLastValidationTime] = useState(0);
   const [validationCache, setValidationCache] = useState(null);
+  const [hasRedirected, setHasRedirected] = useState(false);
+  const [redirectTimeout, setRedirectTimeout] = useState(null);
 
   // Real-time JWT validation with caching
   useEffect(() => {
@@ -92,9 +94,14 @@ const ProtectedRoute = ({
       }
     };
 
-    if (!isLoading) {
-      validateAccess();
-    }
+    // Add a small delay before validation to prevent rapid re-validation during logout
+    const validationTimer = setTimeout(() => {
+      if (!isLoading) {
+        validateAccess();
+      }
+    }, 50);
+
+    return () => clearTimeout(validationTimer);
   }, [
     user,
     isLoading,
@@ -112,16 +119,22 @@ const ProtectedRoute = ({
   useEffect(() => {
     setValidationCache(null);
     setLastValidationTime(0);
+    setHasRedirected(false);
+    // Clear any pending redirect timeout
+    if (redirectTimeout) {
+      clearTimeout(redirectTimeout);
+      setRedirectTimeout(null);
+    }
   }, [location.pathname]);
 
   // Show loading spinner during initial auth check or validation
-  if (isLoading || (isValidating && !validationCache)) {
+  if (isLoading || (isValidating && !validationCache) || redirectTimeout) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="text-center">
           <LoadingSpinner size="lg" variant="gradient" />
           <p className="text-gray-600 mt-4 font-medium">
-            {isLoading ? 'Loading...' : 'Verifying access...'}
+            {isLoading ? 'Loading...' : redirectTimeout ? 'Redirecting...' : 'Verifying access...'}
           </p>
         </div>
       </div>
@@ -129,16 +142,23 @@ const ProtectedRoute = ({
   }
 
   // Handle authentication requirement
-  if (requireAuth && !isAuthenticated) {
+  if (requireAuth && !isAuthenticated && !hasRedirected) {
     // Smart redirect: save current location for post-login redirect
+    setHasRedirected(true);
+    // Add a small delay to prevent rapid redirects
+    const timeout = setTimeout(() => {
+      setRedirectTimeout(null);
+    }, 100);
+    setRedirectTimeout(timeout);
+
     return (
-      <Navigate 
-        to={redirectTo} 
-        state={{ 
+      <Navigate
+        to={redirectTo}
+        state={{
           from: location.pathname + location.search,
           message: 'Please log in to access this page'
-        }} 
-        replace 
+        }}
+        replace
       />
     );
   }
@@ -149,7 +169,7 @@ const ProtectedRoute = ({
   }
 
   // Handle validation errors with simple redirect
-  if (validationError && !showAccessDenied) {
+  if (validationError && !showAccessDenied && !hasRedirected) {
     const getRedirectPath = () => {
       switch (validationError) {
         case 'EMAIL_NOT_VERIFIED':
@@ -162,6 +182,13 @@ const ProtectedRoute = ({
           return redirectTo;
       }
     };
+
+    setHasRedirected(true);
+    // Add a small delay to prevent rapid redirects
+    const timeout = setTimeout(() => {
+      setRedirectTimeout(null);
+    }, 100);
+    setRedirectTimeout(timeout);
 
     return <Navigate to={getRedirectPath()} replace />;
   }
