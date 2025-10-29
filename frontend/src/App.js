@@ -39,6 +39,9 @@ const RescheduleSession = lazy(() => import('./pages/RescheduleSession'));
 const MeetingRoom = lazy(() => import('./pages/MeetingRoom'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
+// Session Notes History Page
+const SessionNotesHistory = lazy(() => import('./pages/SessionNotesHistory'));
+
 // Loading fallback component
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -338,6 +341,18 @@ function App() {
                     <AuthLayout>
                       <MeetingRoom />
                     </AuthLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Session Notes History */}
+              <Route
+                path="/sessions/:sessionId/notes"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <SessionNotesHistory />
+                    </AppLayout>
                   </ProtectedRoute>
                 }
               />

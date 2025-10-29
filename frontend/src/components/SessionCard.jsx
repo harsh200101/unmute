@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from './LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const SessionCard = ({
   session,
@@ -23,11 +24,16 @@ const SessionCard = ({
   const [timeRemaining, setTimeRemaining] = useState('');
   const [sessionStatus, setSessionStatus] = useState(session.status);
   const [isActionLoading, setIsActionLoading] = useState(false);
-  const [showNotes, setShowNotes] = useState(false);
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [showNotesForm, setShowNotesForm] = useState(false);
   const [reviewData, setReviewData] = useState({
     overallRating: 5,
     comment: ''
+  });
+  const [notesData, setNotesData] = useState({
+    discussionSummary: '',
+    keyTakeaways: '',
+    additionalNotes: ''
   });
 
   // Calculate time remaining for upcoming and active sessions
@@ -257,6 +263,42 @@ const SessionCard = ({
       [field]: value
     }));
   };
+
+  // Handle notes change
+  const handleNotesChange = (field, value) => {
+    setNotesData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  // Handle notes submission
+  const handleNotesSubmit = async (e) => {
+    e.preventDefault();
+    setIsActionLoading(true);
+
+    try {
+      const response = await api.post(`/sessions/${session.id}/notes`, notesData);
+
+      if (response.data.success) {
+        toast.success('Session notes added successfully!');
+        setShowNotesForm(false);
+        setNotesData({
+          discussionSummary: '',
+          keyTakeaways: '',
+          additionalNotes: ''
+        });
+        // Refresh the page to show the new notes
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Notes submission failed:', error);
+      toast.error('Failed to add notes. Please try again.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
 
   const statusStyle = getStatusStyle(sessionStatus);
   const typeStyle = getSessionTypeStyle(session.sessionType);
@@ -576,34 +618,76 @@ const SessionCard = ({
           </div>
         )}
 
-        {/* Notes Section */}
-        {(session.mentorNotes || session.menteeNotes) && (
-          <div className="mb-4">
-            <button
-              onClick={() => setShowNotes(!showNotes)}
-              className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
-            >
-              <svg className={`w-4 h-4 transition-transform ${showNotes ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-              </svg>
-              Session Notes
-            </button>
-            {showNotes && (
-              <div className="mt-2 space-y-2">
-                {session.mentorNotes && (
-                  <div className="p-3 bg-blue-50 rounded-lg">
-                    <p className="text-xs font-medium text-blue-900 mb-1">Mentor Notes:</p>
-                    <p className="text-sm text-blue-800">{session.mentorNotes}</p>
-                  </div>
-                )}
-                {session.menteeNotes && (
-                  <div className="p-3 bg-purple-50 rounded-lg">
-                    <p className="text-xs font-medium text-purple-900 mb-1">Your Notes:</p>
-                    <p className="text-sm text-purple-800">{session.menteeNotes}</p>
-                  </div>
-                )}
+
+
+        {/* Add Notes Form (for mentors on completed sessions) */}
+        {showNotesForm && userRole === 'mentor' && sessionStatus === 'completed' && (
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+            <form onSubmit={handleNotesSubmit}>
+              <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                Add Session Notes
+              </h4>
+
+              {/* Discussion Summary */}
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Discussion Summary
+                </label>
+                <textarea
+                  value={notesData.discussionSummary}
+                  onChange={(e) => handleNotesChange('discussionSummary', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  rows="3"
+                  placeholder="What was discussed in this session?"
+                />
               </div>
-            )}
+
+              {/* Key Takeaways */}
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Key Takeaways
+                </label>
+                <textarea
+                  value={notesData.keyTakeaways}
+                  onChange={(e) => handleNotesChange('keyTakeaways', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  rows="3"
+                  placeholder="What were the main insights or learnings?"
+                />
+              </div>
+
+              {/* Additional Notes */}
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Additional Notes (Optional)
+                </label>
+                <textarea
+                  value={notesData.additionalNotes}
+                  onChange={(e) => handleNotesChange('additionalNotes', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  rows="2"
+                  placeholder="Any other relevant details..."
+                />
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={isActionLoading}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  {isActionLoading ? <LoadingSpinner size="sm" /> : '💾'} Save Notes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowNotesForm(false)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         )}
 
@@ -665,14 +749,25 @@ const SessionCard = ({
               </button>
             )}
 
-            {/* Add Notes */}
-            {sessionStatus === 'completed' && (
+            {/* Add Notes (Mentor only) */}
+            {userRole === 'mentor' && sessionStatus === 'completed' && (
               <button
-                onClick={() => handleAction(onAddNotes, session.id)}
+                onClick={() => setShowNotesForm(true)}
                 disabled={isActionLoading}
                 className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-medium rounded-lg transition-colors flex items-center gap-2"
               >
                 {isActionLoading ? <LoadingSpinner size="sm" /> : '📝'} Add Notes
+              </button>
+            )}
+
+            {/* History Button (Mentor only for confirmed sessions) */}
+            {userRole === 'mentor' && (sessionStatus === 'confirmed' || sessionStatus === 'completed') && (
+              <button
+                onClick={() => navigate(`/sessions/${session.id}/notes`)}
+                disabled={isActionLoading}
+                className="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-700 font-medium rounded-lg transition-colors flex items-center gap-2"
+              >
+                {isActionLoading ? <LoadingSpinner size="sm" /> : '📚'} History
               </button>
             )}
 

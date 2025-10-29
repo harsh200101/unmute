@@ -2431,6 +2431,253 @@ exports.submitMentorReview = async (req, res) => {
   }
 };
 
+// Add session notes for mentors (only after session is completed)
+exports.addSessionNotes = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { discussionSummary, keyTakeaways, additionalDetails } = req.body;
+    const userId = req.user.userId;
+
+    console.log('🔄 Adding session notes:', { sessionId, userId });
+
+    const result = await db.transaction(async (client) => {
+      // Verify session exists and user is the mentor
+      const sessionQuery = `
+        SELECT s.*, m.user_id as mentor_user_id, m.id as mentor_id, u.id as mentee_id
+        FROM sessions s
+        JOIN mentors m ON s.mentor_id = m.id
+        JOIN users u ON s.mentee_id = u.id
+        WHERE s.id = $1 AND s.status = 'completed'
+      `;
+
+      const sessionResult = await client.query(sessionQuery, [sessionId]);
+
+      if (sessionResult.rows.length === 0) {
+        throw new Error('SESSION_NOT_FOUND');
+      }
+
+      const session = sessionResult.rows[0];
+
+      // Check if user is the mentor
+      if (session.mentor_user_id !== userId) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      // Check if notes already exist for this session
+      const existingNotesQuery = `
+        SELECT id FROM session_notes
+        WHERE session_id = $1 AND mentor_id = $2
+      `;
+
+      const existingNotes = await client.query(existingNotesQuery, [sessionId, session.mentor_id]);
+
+      if (existingNotes.rows.length > 0) {
+        // Update existing notes
+        const updateQuery = `
+          UPDATE session_notes
+          SET discussion_summary = $3, key_takeaways = $4, additional_notes = $5, updated_at = CURRENT_TIMESTAMP
+          WHERE session_id = $1 AND mentor_id = $2
+          RETURNING *
+        `;
+
+        const updateResult = await client.query(updateQuery, [
+          sessionId,
+          session.mentor_id,
+          discussionSummary || '',
+          keyTakeaways || '',
+          additionalDetails || ''
+        ]);
+
+        return updateResult.rows[0];
+      } else {
+        // Insert new notes
+        const insertQuery = `
+          INSERT INTO session_notes (
+            session_id, mentor_id, mentee_id,
+            discussion_summary, key_takeaways, additional_notes
+          )
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING *
+        `;
+
+        const insertResult = await client.query(insertQuery, [
+          sessionId,
+          session.mentor_id,
+          session.mentee_id,
+          discussionSummary || '',
+          keyTakeaways || '',
+          additionalDetails || ''
+        ]);
+
+        return insertResult.rows[0];
+      }
+    });
+
+    console.log('✅ Session notes added successfully:', sessionId);
+
+    res.json({
+      success: true,
+      message: 'Session notes added successfully',
+      data: {
+        sessionId: parseInt(sessionId),
+        notes: {
+          id: result.id,
+          discussionSummary: result.discussion_summary,
+          keyTakeaways: result.key_takeaways,
+          additionalNotes: result.additional_notes,
+          createdAt: result.created_at,
+          updatedAt: result.updated_at
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error adding session notes:', error);
+
+    if (error.message === 'SESSION_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found or not completed',
+        code: 'SESSION_NOT_FOUND'
+      });
+    }
+
+    if (error.message === 'UNAUTHORIZED') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only mentors can add session notes',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add session notes',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Get mentee notes history for mentors
+exports.getMenteeNotesHistory = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user.userId;
+
+    console.log('🔍 Fetching mentee notes history:', { sessionId, userId });
+
+    const result = await db.transaction(async (client) => {
+      // Verify session exists and user is the mentor
+      const sessionQuery = `
+        SELECT s.*, m.user_id as mentor_user_id, u.id as mentee_id, u.first_name as mentee_first_name, u.last_name as mentee_last_name
+        FROM sessions s
+        JOIN mentors m ON s.mentor_id = m.id
+        JOIN users u ON s.mentee_id = u.id
+        WHERE s.id = $1
+      `;
+
+      const sessionResult = await client.query(sessionQuery, [sessionId]);
+
+      if (sessionResult.rows.length === 0) {
+        throw new Error('SESSION_NOT_FOUND');
+      }
+
+      const session = sessionResult.rows[0];
+
+      // Check if user is the mentor
+      if (session.mentor_user_id !== userId) {
+        throw new Error('UNAUTHORIZED');
+      }
+
+      // Get all notes for this mentee with this mentor, including session details
+      const historyQuery = `
+        SELECT
+          sn.id as note_id,
+          sn.discussion_summary,
+          sn.key_takeaways,
+          sn.additional_notes,
+          sn.created_at as note_created_at,
+          sn.updated_at as note_updated_at,
+          s.id as session_id,
+          s.title,
+          s.scheduled_at,
+          s.actual_end_time,
+          s.duration_minutes,
+          s.status
+        FROM session_notes sn
+        JOIN sessions s ON sn.session_id = s.id
+        WHERE sn.mentee_id = $1
+          AND sn.mentor_id = $2
+          AND s.status = 'completed'
+        ORDER BY s.scheduled_at DESC
+      `;
+
+      const historyResult = await client.query(historyQuery, [session.mentee_id, session.mentor_id]);
+
+      // Format the notes history
+      const notesHistory = historyResult.rows.map(row => ({
+        sessionId: row.session_id,
+        noteId: row.note_id,
+        title: row.title,
+        scheduledAt: row.scheduled_at,
+        completedAt: row.actual_end_time,
+        durationMinutes: row.duration_minutes,
+        notes: {
+          discussionSummary: row.discussion_summary,
+          keyTakeaways: row.key_takeaways,
+          additionalNotes: row.additional_notes,
+          createdAt: row.note_created_at,
+          updatedAt: row.note_updated_at
+        },
+        status: row.status
+      }));
+
+      return {
+        mentee: {
+          id: session.mentee_id,
+          firstName: session.mentee_first_name,
+          lastName: session.mentee_last_name,
+          fullName: `${session.mentee_first_name} ${session.mentee_last_name}`.trim()
+        },
+        totalSessions: notesHistory.length,
+        notesHistory
+      };
+    });
+
+    console.log('✅ Mentee notes history retrieved successfully:', result.notesHistory.length, 'sessions');
+
+    res.json({
+      success: true,
+      data: result
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching mentee notes history:', error);
+
+    if (error.message === 'SESSION_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found',
+        code: 'SESSION_NOT_FOUND'
+      });
+    }
+
+    if (error.message === 'UNAUTHORIZED') {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to view this mentee\'s notes history',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch mentee notes history',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
 module.exports = {
   createSession: exports.createSession,
   getUserSessions: exports.getUserSessions,
@@ -2442,5 +2689,7 @@ module.exports = {
   updateSessionStatus: exports.updateSessionStatus,
   submitSessionReview: exports.submitSessionReview,
   submitMentorReview: exports.submitMentorReview,
+  addSessionNotes: exports.addSessionNotes,
+  getMenteeNotesHistory: exports.getMenteeNotesHistory,
   formatSessionResponse
 };

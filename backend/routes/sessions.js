@@ -763,6 +763,45 @@ router.post('/:sessionId/mentor-review',
   ],
   sessionController.submitMentorReview
 );
+
+// POST /api/sessions/:sessionId/notes - Add notes for a completed session (mentor only)
+router.post('/:sessionId/notes',
+  auth,
+  rateLimit(20, 60 * 60 * 1000), // 20 notes per hour
+  [
+    param('sessionId')
+      .isInt({ min: 1 })
+      .withMessage('Valid session ID is required'),
+
+    body('discussionSummary')
+      .optional()
+      .isLength({ max: 2000 })
+      .withMessage('Discussion summary must be less than 2000 characters'),
+
+    body('keyTakeaways')
+      .optional()
+      .isLength({ max: 2000 })
+      .withMessage('Key takeaways must be less than 2000 characters'),
+
+    body('additionalNotes')
+      .optional()
+      .isLength({ max: 2000 })
+      .withMessage('Additional notes must be less than 2000 characters')
+  ],
+  sessionController.addSessionNotes
+);
+
+// GET /api/sessions/:sessionId/notes - Get mentee notes history (mentor access)
+router.get('/:sessionId/notes',
+  auth,
+  rateLimit(50, 15 * 60 * 1000), // 50 requests per 15 minutes
+  [
+    param('sessionId')
+      .isInt({ min: 1 })
+      .withMessage('Valid session ID is required')
+  ],
+  sessionController.getMenteeNotesHistory
+);
 // GET /api/sessions/my-sessions/stats - Get session statistics for user
 router.get('/my-sessions/stats',
   auth,
