@@ -340,8 +340,8 @@ export const validatePasswordStrength = (password) => {
  * @param {string} locale - Locale code
  * @returns {string} Formatted currency string
  */
-export const formatCurrency = (amount, currency = 'USD', locale = 'en-US') => {
-  if (typeof amount !== 'number') return '$0.00';
+export const formatCurrency = (amount, currency = 'INR', locale = 'en-IN') => {
+  if (typeof amount !== 'number') return '₹0';
   
   try {
     return new Intl.NumberFormat(locale, {
@@ -350,7 +350,7 @@ export const formatCurrency = (amount, currency = 'USD', locale = 'en-US') => {
     }).format(amount);
   } catch (error) {
     console.error('Currency formatting error:', error);
-    return `$${amount.toFixed(2)}`;
+    return `₹${amount.toFixed(2)}`;
   }
 };
 

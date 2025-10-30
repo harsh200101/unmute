@@ -67,7 +67,7 @@ const formatSessionResponse = (session) => {
     durationMinutes: session.duration_minutes,
     timezone: session.timezone,
     price: parseFloat(session.price || 0),
-    currency: session.currency,
+    currency: session.currency || 'INR',
     platformFee: parseFloat(session.platform_fee || 0),
     mentorEarnings: parseFloat(session.mentor_earnings || 0),
     status: session.status,
@@ -172,12 +172,12 @@ exports.createSession = async (req, res) => {
         throw new Error(`BOOKING_TOO_FAR: Cannot book more than ${mentor.advance_booking_days} days in advance`);
       }
 
-      // Calculate pricing - mentee pays exact displayed price, platform fee deducted internally
+      // Calculate pricing - mentee pays exact displayed price, platform fee deducted from mentor earnings
       const hourlyRate = parseFloat(mentor.hourly_rate);
       const sessionPrice = (hourlyRate * durationMinutes) / 60;
       const platformFeeRate = parseFloat(process.env.PLATFORM_FEE_RATE || '0.1'); // 10% default
       const platformFee = sessionPrice * platformFeeRate;
-      const mentorEarnings = sessionPrice - platformFee;
+      const mentorEarnings = sessionPrice - platformFee; // Net earnings after platform fee deduction
 
       // Create meeting if video session
       let meetingDetails = {};

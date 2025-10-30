@@ -22,7 +22,7 @@ const MentorProfileForm = () => {
     industries: [],
     skills: [],
     languages: ['en'], // Default to English
-    hourlyRate: 75,
+    hourlyRate: 5000,
     profileImage: '',
     videoIntroUrl: '',
     portfolioUrls: [],
@@ -212,8 +212,8 @@ const MentorProfileForm = () => {
       errors.categories = 'Select at least one category';
     }
 
-    if (!formData.hourlyRate || formData.hourlyRate < 10) {
-      errors.hourlyRate = 'Hourly rate must be at least $10';
+    if (!formData.hourlyRate || formData.hourlyRate < 500) {
+      errors.hourlyRate = 'Hourly rate must be at least ₹500';
     }
 
     if (formData.languages.length === 0) {
@@ -590,22 +590,22 @@ const MentorProfileForm = () => {
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Hourly Rate (USD) <span className="text-red-500">*</span>
+                  Hourly Rate (INR) <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                  <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500">₹</span>
                   <input
                     type="number"
                     value={formData.hourlyRate}
                     onChange={(e) => handleChange('hourlyRate', parseInt(e.target.value))}
-                    min="10"
-                    max="500"
+                    min="500"
+                    max="25000"
                     className={`w-full pl-8 pr-4 py-3 rounded-xl border ${formErrors.hourlyRate ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500`}
-                    placeholder="75"
+                    placeholder="5000"
                   />
                 </div>
                 {formErrors.hourlyRate && <p className="mt-1 text-sm text-red-600">{formErrors.hourlyRate}</p>}
-                <p className="mt-1 text-sm text-gray-600">Typical life coaching session rate</p>
+                <p className="mt-1 text-sm text-gray-600">Typical life coaching session rate in Indian Rupees</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

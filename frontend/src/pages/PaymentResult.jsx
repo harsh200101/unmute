@@ -231,7 +231,7 @@ const PaymentResult = () => {
                   <div className="space-y-1">
                     <p className="font-medium text-gray-900">{sessionData.duration_minutes || 'N/A'} minutes</p>
                     <p className="text-lg font-bold text-green-600">
-                      {sessionData.currency === 'INR' ? '₹' : '$'}{sessionData.price || 'N/A'}
+                      ₹{sessionData.price || 'N/A'}
                     </p>
                     {console.log('Duration:', sessionData.duration_minutes)}
                     {console.log('Price:', sessionData.price)}

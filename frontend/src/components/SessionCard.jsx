@@ -320,7 +320,7 @@ const SessionCard = ({
         {/* Price */}
         {session.price && (
           <span className="text-lg font-bold text-gray-900">
-            ${session.price}
+            ₹{session.price}
           </span>
         )}
       </div>

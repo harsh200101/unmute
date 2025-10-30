@@ -17,9 +17,9 @@ class StripePayments {
 
     // Platform configuration
     this.config = {
-      defaultCurrency: process.env.DEFAULT_CURRENCY || 'USD',
+      defaultCurrency: process.env.DEFAULT_CURRENCY || 'INR',
       platformFeeRate: parseFloat(process.env.PLATFORM_FEE_RATE) || 0.10, // 10%
-      processingFeeFixed: parseFloat(process.env.PROCESSING_FEE_FIXED) || 0.30, // $0.30
+      processingFeeFixed: parseFloat(process.env.PROCESSING_FEE_FIXED) || 25, // ₹25 (converted from $0.30)
       processingFeeRate: parseFloat(process.env.PROCESSING_FEE_RATE) || 0.029, // 2.9%
       webhookSecret: process.env.STRIPE_WEBHOOK_SECRET
     };
@@ -55,8 +55,8 @@ class StripePayments {
   }) {
     try {
       // Validate amount
-      if (!amount || amount < 50) { // Minimum $0.50
-        throw new Error('Amount must be at least $0.50 USD or equivalent');
+      if (!amount || amount < 4150) { // Minimum ₹50 (converted from $0.50 USD)
+        throw new Error('Amount must be at least ₹50 INR');
       }
 
       // Enhanced metadata with platform info
@@ -140,11 +140,11 @@ class StripePayments {
         return {
           id: paymentIntentId,
           status: 'succeeded',
-          amount: 24000, // $240 in cents
-          currency: 'usd',
+          amount: 200000, // ₹2000 in paisa (converted from $240)
+          currency: 'inr',
           charges: [{
             id: `ch_mock_${Date.now()}`,
-            amount: 24000,
+            amount: 200000,
             status: 'succeeded',
             created: Math.floor(Date.now() / 1000),
             payment_method_details: {
@@ -638,36 +638,36 @@ class StripePayments {
   // ==========================================
 
   /**
-   * Format amount for Stripe (convert to cents)
-   * @param {number} amount - Amount in dollars
+   * Format amount for Stripe (convert to paisa for INR)
+   * @param {number} amount - Amount in rupees
    * @param {string} currency - Currency code
    * @returns {number} Amount in smallest currency unit
    */
-  formatAmountForStripe(amount, currency = 'USD') {
+  formatAmountForStripe(amount, currency = 'INR') {
     // Zero-decimal currencies (e.g., JPY, KRW)
     const zeroDecimalCurrencies = ['JPY', 'KRW', 'VND', 'CLP'];
-    
+
     if (zeroDecimalCurrencies.includes(currency.toUpperCase())) {
       return Math.round(amount);
     }
-    
-    return Math.round(amount * 100);
+
+    return Math.round(amount * 100); // Convert rupees to paisa
   }
 
   /**
-   * Format amount from Stripe (convert from cents)
+   * Format amount from Stripe (convert from paisa to rupees)
    * @param {number} amount - Amount in smallest currency unit
    * @param {string} currency - Currency code
    * @returns {number} Amount in major currency unit
    */
-  formatAmountFromStripe(amount, currency = 'USD') {
+  formatAmountFromStripe(amount, currency = 'INR') {
     const zeroDecimalCurrencies = ['JPY', 'KRW', 'VND', 'CLP'];
-    
+
     if (zeroDecimalCurrencies.includes(currency.toUpperCase())) {
       return amount;
     }
-    
-    return amount / 100;
+
+    return amount / 100; // Convert paisa to rupees
   }
 
   /**
@@ -676,16 +676,16 @@ class StripePayments {
    * @param {string} currency - Currency code
    * @returns {Array} Supported payment methods
    */
-  getSupportedPaymentMethods(country = 'US', currency = 'USD') {
+  getSupportedPaymentMethods(country = 'IN', currency = 'INR') {
     // This would typically be fetched from Stripe's API or a configuration
     const defaultMethods = ['card'];
-    
+
     // Add region-specific payment methods
     const regionMethods = {
       'US': ['card', 'us_bank_account'],
       'GB': ['card', 'bacs_debit'],
       'DE': ['card', 'sepa_debit', 'sofort'],
-      'IN': ['card', 'upi'],
+      'IN': ['card', 'upi', 'net_banking'],
     };
 
     return regionMethods[country] || defaultMethods;

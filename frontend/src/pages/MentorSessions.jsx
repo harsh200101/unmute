@@ -455,7 +455,7 @@ const MentorSessions = () => {
 
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 text-center">
               <div className="text-2xl font-bold text-purple-600 mb-1">
-                ${Math.round(sessions.filter(s => s.status === 'completed').reduce((acc, s) => acc + (s.mentorEarnings || 0), 0))}
+                ₹{Math.round(sessions.filter(s => s.status === 'completed').reduce((acc, s) => acc + (s.mentorEarnings || 0), 0))}
               </div>
               <div className="text-sm text-gray-600">Total Earnings</div>
             </div>

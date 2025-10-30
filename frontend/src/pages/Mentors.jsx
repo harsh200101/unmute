@@ -18,7 +18,7 @@ const Mentors = () => {
   const [languageFilter, setLanguageFilter] = useState(searchParams.get('languages') || '');
   const [priceRange, setPriceRange] = useState([
     parseInt(searchParams.get('minPrice')) || 0,
-    parseInt(searchParams.get('maxPrice')) || 500
+    parseInt(searchParams.get('maxPrice')) || 25000
   ]);
   const [ratingFilter, setRatingFilter] = useState(parseFloat(searchParams.get('minRating')) || 0);
   const [badgeLevelFilter, setBadgeLevelFilter] = useState(searchParams.get('badgeLevel') || '');
@@ -186,7 +186,7 @@ const Mentors = () => {
     setSearchTerm('');
     setCategoryFilter('');
     setLanguageFilter('');
-    setPriceRange([0, 500]);
+    setPriceRange([0, 25000]);
     setRatingFilter(0);
     setBadgeLevelFilter('');
     setSortOrder('rating');
@@ -376,13 +376,13 @@ const Mentors = () => {
                 {/* Price Range */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Price Range (${priceRange[0]} - ${priceRange[1]}/hour)
+                    Price Range (₹{priceRange[0]} - ₹{priceRange[1]}/hour)
                   </label>
                   <div className="space-y-3">
                     <input
                       type="range"
                       min="0"
-                      max="500"
+                      max="25000"
                       value={priceRange[1]}
                       onChange={(e) => handlePriceRangeChange(priceRange[0], parseInt(e.target.value))}
                       className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
@@ -399,7 +399,7 @@ const Mentors = () => {
                         type="number"
                         placeholder="Max"
                         value={priceRange[1]}
-                        onChange={(e) => handlePriceRangeChange(priceRange[0], parseInt(e.target.value) || 500)}
+                        onChange={(e) => handlePriceRangeChange(priceRange[0], parseInt(e.target.value) || 25000)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -585,7 +585,7 @@ const Mentors = () => {
                       {/* Price and CTA */}
                       <div className="flex items-center justify-between">
                         <div className="text-2xl font-bold text-gray-900">
-                          ${mentor.hourlyRate || 25}
+                          ₹{mentor.hourlyRate || 5000}
                           <span className="text-sm font-normal text-gray-600">/hour</span>
                         </div>
                         

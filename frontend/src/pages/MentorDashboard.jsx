@@ -384,7 +384,7 @@ const MentorDashboard = () => {
               <div>
                 <p className="text-sm font-medium text-gray-600">Monthly Earnings</p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">
-                  ${earnings.thisMonth || 0}
+                  ₹{earnings.thisMonth || 0}
                 </p>
                 <p className={`text-sm mt-1 ${earnings.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {earnings.growth >= 0 ? '+' : ''}{earnings.growth || 0}% from last month
@@ -517,7 +517,7 @@ const MentorDashboard = () => {
                                 👨‍🎓 {session.mentee?.firstName} {session.mentee?.lastName}
                               </span>
                               <span className="text-sm font-medium text-green-600">
-                                ${session.price}
+                                ₹{session.price}
                               </span>
                             </div>
                           </div>
@@ -586,7 +586,7 @@ const MentorDashboard = () => {
                             Session completed with {session.mentee?.firstName} {session.mentee?.lastName}
                           </p>
                           <p className="text-sm text-gray-500">
-                            {new Date(session.completedAt).toLocaleDateString()} • Earned ${session.mentorEarnings}
+                            {new Date(session.completedAt).toLocaleDateString()} • Earned ₹{session.mentorEarnings}
                           </p>
                         </div>
                         {session.review && (

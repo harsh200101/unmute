@@ -415,16 +415,16 @@ const DateTimeStep = ({
         <div className="space-y-2">
           <div className="flex justify-between">
             <span>Session ({bookingData.durationMinutes} min):</span>
-            <span>£{fees.subtotal.toFixed(2)}</span>
+            <span>₹{fees.subtotal.toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
             <span>Platform fee (10%):</span>
-            <span>£{fees.platformFee.toFixed(2)} (deducted internally)</span>
+            <span>₹{fees.platformFee.toFixed(2)} (deducted internally)</span>
           </div>
           <hr />
           <div className="flex justify-between items-center font-bold text-lg">
             <span>You Pay:</span>
-            <span className="text-green-600">£{fees.total.toFixed(2)}</span>
+            <span className="text-green-600">₹{fees.total.toFixed(2)}</span>
           </div>
         </div>
       </div>
@@ -456,7 +456,7 @@ const CreateSessionStep = ({ bookingData, mentor, calculateFees, onBack, onSubmi
           <div>Duration: {bookingData.durationMinutes} minutes</div>
           <div>Type: {bookingData.sessionType}</div>
           <div className="font-medium pt-2 border-t border-blue-200">
-            You Pay: £{fees.total.toFixed(2)}
+            You Pay: ₹{fees.total.toFixed(2)}
           </div>
         </div>
       </div>

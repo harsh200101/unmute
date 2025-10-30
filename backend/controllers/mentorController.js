@@ -25,7 +25,7 @@ const formatMentorResponse = (mentor) => {
     
     // Pricing & Experience
     hourlyRate: parseFloat(mentor.hourly_rate || 0),
-    currency: mentor.currency || 'USD',
+    currency: mentor.currency || 'INR',
     yearsExperience: mentor.years_experience || 0,
     
     // Media
@@ -580,7 +580,7 @@ exports.registerMentor = async (req, res) => {
       skills = [],
       languages = ['en'],
       hourly_rate,
-      currency = 'USD',
+      currency = 'INR',
       years_experience = 0,
       profile_image = null,
       video_intro_url = null,

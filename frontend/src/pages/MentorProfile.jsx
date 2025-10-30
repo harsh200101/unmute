@@ -272,7 +272,7 @@ const MentorProfile = () => {
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 sticky top-4">
                 <div className="text-center mb-6">
                   <div className="text-3xl font-bold text-gray-900 mb-1">
-                    ${mentor.hourlyRate || 75}/hour
+                    ₹{mentor.hourlyRate || 5000}/hour
                   </div>
                   <p className="text-sm text-gray-600">Video session</p>
                 </div>
@@ -500,7 +500,7 @@ const MentorProfile = () => {
           id: mentor?.id,
           firstName: mentor?.firstName || 'Mentor',
           lastName: mentor?.lastName || '',
-          hourlyRate: mentor?.hourlyRate || 75
+          hourlyRate: mentor?.hourlyRate || 5000
         }}
         isOpen={showBookingModal}
         onClose={() => setShowBookingModal(false)}

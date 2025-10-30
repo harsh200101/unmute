@@ -119,7 +119,7 @@ const MentorEarnings = () => {
                   <div>
                     <p className="text-sm font-medium text-gray-600">Total Earnings</p>
                     <p className="text-3xl font-bold text-gray-900 mt-1">
-                      ${summary.totalEarnings?.toFixed(2) || '0.00'}
+                      ₹{summary.totalEarnings?.toFixed(2) || '0.00'}
                     </p>
                   </div>
                   <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
@@ -151,7 +151,7 @@ const MentorEarnings = () => {
                   <div>
                     <p className="text-sm font-medium text-gray-600">Average per Session</p>
                     <p className="text-3xl font-bold text-gray-900 mt-1">
-                      ${summary.averageEarnings?.toFixed(2) || '0.00'}
+                      ₹{summary.averageEarnings?.toFixed(2) || '0.00'}
                     </p>
                   </div>
                   <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
@@ -258,7 +258,7 @@ const MentorEarnings = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm font-medium text-green-600">
-                              ${earning.earnings.toFixed(2)}
+                              ₹{earning.earnings.toFixed(2)}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
