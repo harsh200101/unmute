@@ -1,6 +1,7 @@
 const db = require('../config/database');
 const { validationResult } = require('express-validator');
 const crypto = require('crypto');
+const { fromZonedTime } = require('date-fns-tz');
 const agoraService = require('../utils/agora');
 const { sendSessionRescheduledEmail, sendRescheduleRequestEmail, sendSessionCancelledEmail, sendMeetingInviteEmail } = require('../utils/emailService');
 
@@ -120,13 +121,16 @@ exports.createSession = async (req, res) => {
       sessionType = 'video',
       scheduledAt,
       durationMinutes = 60,
-      timezone = 'UTC',
+      timezone = 'Asia/Calcutta',
       meetingPlatform = 'zoom'
     } = req.body;
 
     const menteeId = req.user.userId;
 
-    console.log('🔄 Creating session:', { mentorId, menteeId, scheduledAt, durationMinutes });
+    // Convert scheduledAt from local timezone to UTC for database storage
+    const scheduledAtUTC = fromZonedTime(scheduledAt, timezone);
+
+    console.log('🔄 Creating session:', { mentorId, menteeId, scheduledAt, timezone, scheduledAtUTC, durationMinutes });
 
     // Use transaction for data consistency
     const result = await db.transaction(async (client) => {
@@ -164,7 +168,7 @@ exports.createSession = async (req, res) => {
       }
 
       // Check advance booking limits
-      const scheduledDate = new Date(scheduledAt);
+      const scheduledDate = new Date(scheduledAtUTC);
       const maxAdvanceDate = new Date();
       maxAdvanceDate.setDate(maxAdvanceDate.getDate() + mentor.advance_booking_days);
 
@@ -209,7 +213,7 @@ exports.createSession = async (req, res) => {
         title || `Mentoring Session with ${mentor.first_name} ${mentor.last_name}`,
         description,
         sessionType,
-        scheduledAt,
+        scheduledAtUTC,
         durationMinutes,
         timezone,
         sessionPrice,
@@ -251,7 +255,7 @@ exports.createSession = async (req, res) => {
       notifications.push({
         user_id: mentor.user_id,
         title: 'New Session Request',
-        message: `You have a new session request for ${new Date(scheduledAt).toLocaleDateString()}. Awaiting payment confirmation.`,
+        message: `You have a new session request for ${new Date(scheduledAtUTC).toLocaleDateString()}. Awaiting payment confirmation.`,
         type: 'booking_pending',
         related_entity_type: 'session',
         related_entity_id: session.id
@@ -676,7 +680,10 @@ exports.rescheduleSession = async (req, res) => {
     const { newScheduledAt, newDurationMinutes, timezone, reason } = req.body;
     const userId = req.user.userId;
 
-    console.log('🔄 Rescheduling session:', { sessionId, userId, newScheduledAt, newDurationMinutes });
+    // Convert newScheduledAt from local timezone to UTC for database storage
+    const newScheduledAtUTC = fromZonedTime(newScheduledAt, timezone);
+
+    console.log('🔄 Rescheduling session:', { sessionId, userId, newScheduledAt, timezone, newScheduledAtUTC, newDurationMinutes });
 
     const result = await db.transaction(async (client) => {
       // Get session details with mentor info
@@ -746,7 +753,7 @@ exports.rescheduleSession = async (req, res) => {
             requestedBy: 'mentor',
             reason: reason || 'No reason provided',
             originalScheduledAt: session.scheduled_at,
-            newScheduledAt: newScheduledAt,
+            newScheduledAt: newScheduledAtUTC,
             newDurationMinutes: newDurationMinutes,
             timezone: timezone
           })
@@ -786,7 +793,7 @@ exports.rescheduleSession = async (req, res) => {
       `, [sessionId]);
 
       // Validate new time is in the future and at least 12 hours from now
-      const newScheduledDate = new Date(newScheduledAt);
+      const newScheduledDate = new Date(newScheduledAtUTC);
       const hoursUntilNewSession = (newScheduledDate - now) / (1000 * 60 * 60);
 
       if (newScheduledDate <= now) {
@@ -798,7 +805,7 @@ exports.rescheduleSession = async (req, res) => {
       }
 
       // Check mentor availability for the new time
-      const newDate = new Date(newScheduledAt);
+      const newDate = new Date(newScheduledAtUTC);
       const dayOfWeek = newDate.getDay();
       const timeString = newDate.toTimeString().substring(0, 5); // HH:MM format
 
@@ -817,7 +824,7 @@ exports.rescheduleSession = async (req, res) => {
       const availabilityResult = await client.query(availabilityQuery, [
         session.mentor_id,
         dayOfWeek,
-        newScheduledAt.split('T')[0], // date part for specific date overrides
+        newScheduledAtUTC.toISOString().split('T')[0], // date part for specific date overrides
         timeString
       ]);
 
@@ -841,8 +848,8 @@ exports.rescheduleSession = async (req, res) => {
       const conflictResult = await client.query(conflictQuery, [
         session.mentor_id,
         sessionId,
-        newScheduledAt.split('T')[0], // date part
-        newScheduledAt,
+        newScheduledAtUTC.toISOString().split('T')[0], // date part
+        newScheduledAtUTC,
         newDurationMinutes
       ]);
 
@@ -856,7 +863,7 @@ exports.rescheduleSession = async (req, res) => {
         try {
           const updateData = {
             topic: session.title || `Mentoring Session`,
-            start_time: newScheduledAt,
+            start_time: newScheduledAtUTC,
             duration: newDurationMinutes || session.duration_minutes
           };
 
@@ -877,7 +884,7 @@ exports.rescheduleSession = async (req, res) => {
 
       const updateValues = [
         sessionId,
-        newScheduledAt,
+        newScheduledAtUTC,
         newDurationMinutes,
         timezone,
         `Rescheduled by ${isMentee ? 'mentee' : 'mentor'}: ${reason || 'No reason provided'}`
@@ -903,7 +910,7 @@ exports.rescheduleSession = async (req, res) => {
         {
           user_id: isMentee ? session.mentor_user_id : session.mentee_id,
           title: 'Session Rescheduled',
-          message: `Your session has been rescheduled to ${new Date(newScheduledAt).toLocaleString()}`,
+          message: `Your session has been rescheduled to ${new Date(newScheduledAtUTC).toLocaleString()}`,
           type: 'session_rescheduled',
           related_entity_type: 'session',
           related_entity_id: sessionId
@@ -939,7 +946,11 @@ exports.rescheduleSession = async (req, res) => {
         const recipientResult = await client.query(recipientQuery, [isMentee ? session.mentor_user_id : session.mentee_id]);
 
         if (recipientResult.rows.length > 0) {
-          await sendSessionRescheduledEmail(recipientResult.rows[0].email, sessionData);
+          const emailSessionData = {
+            ...sessionData,
+            scheduledAt: newScheduledAtUTC
+          };
+          await sendSessionRescheduledEmail(recipientResult.rows[0].email, emailSessionData);
         }
       } catch (emailError) {
         console.warn('⚠️ Failed to send reschedule email:', emailError.message);
@@ -1053,7 +1064,10 @@ exports.respondToRescheduleRequest = async (req, res) => {
     const { action, newScheduledAt, newDuration, timezone, reason } = req.body;
     const userId = req.user.userId;
 
-    console.log('🔄 Responding to reschedule request:', { requestId, action, userId });
+    // Convert newScheduledAt from local timezone to UTC for database storage
+    const newScheduledAtUTC = newScheduledAt ? zonedTimeToUtc(newScheduledAt, timezone) : null;
+
+    console.log('🔄 Responding to reschedule request:', { requestId, action, newScheduledAt, timezone, newScheduledAtUTC, userId });
 
     const result = await db.transaction(async (client) => {
       // Get reschedule request details
@@ -1087,23 +1101,23 @@ exports.respondToRescheduleRequest = async (req, res) => {
           throw new Error('NEW_SCHEDULED_AT_REQUIRED');
         }
 
-        const newScheduledDateTime = new Date(newScheduledAt);
+        const newScheduledDateTime = new Date(newScheduledAtUTC);
 
         // Validate the new time is not in the past and at least 24 hours from now
         const now = new Date();
         const hoursUntilNewSession = (newScheduledDateTime - now) / (1000 * 60 * 60);
- 
+
         if (newScheduledDateTime <= now) {
           throw new Error('NEW_TIME_IN_PAST');
         }
- 
+
         if (hoursUntilNewSession < 24) {
           throw new Error('NEW_TIME_TOO_SOON');
         }
 
         // Update session
         const updateFields = ['scheduled_at = $2'];
-        const updateValues = [request.session_id, newScheduledDateTime];
+        const updateValues = [request.session_id, newScheduledAtUTC];
         let paramCount = 2;
 
         if (newDuration) {
@@ -1437,7 +1451,10 @@ exports.respondToRescheduleRequest = async (req, res) => {
     const { action, newScheduledAt, reason } = req.body; // action: 'reschedule' or 'cancel'
     const userId = req.user.userId;
 
-    console.log('🔄 Responding to reschedule request:', { requestId, action, userId });
+    // Convert newScheduledAt from local timezone to UTC for database storage
+    const newScheduledAtUTC = newScheduledAt ? fromZonedTime(newScheduledAt, timezone) : null;
+
+    console.log('🔄 Responding to reschedule request:', { requestId, action, newScheduledAt, newScheduledAtUTC, userId });
 
     const result = await db.transaction(async (client) => {
       // Get request details and verify ownership
@@ -1482,7 +1499,7 @@ exports.respondToRescheduleRequest = async (req, res) => {
         }
 
         // Check 24-hour rule for new time
-        const newDateTime = new Date(newScheduledAt);
+        const newDateTime = new Date(newScheduledAtUTC);
         const now = new Date();
         const hoursUntilNewSession = (newDateTime - now) / (1000 * 60 * 60);
 
@@ -1493,14 +1510,14 @@ exports.respondToRescheduleRequest = async (req, res) => {
         // Update session time
         await client.query(
           'UPDATE sessions SET scheduled_at = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-          [new Date(newScheduledAt), request.session_id]
+          [newScheduledAtUTC, request.session_id]
         );
 
         // Update meeting if exists
         if (request.meeting_id) {
           try {
             await mockZoomAPI.updateMeeting(request.meeting_id, {
-              start_time: newScheduledAt
+              start_time: newScheduledAtUTC.toISOString()
             });
           } catch (error) {
             console.warn('⚠️ Failed to update meeting:', error.message);
@@ -1514,7 +1531,7 @@ exports.respondToRescheduleRequest = async (req, res) => {
         `, [
           request.mentor_user_id,
           'Reschedule Request Approved',
-          `${request.mentee_first_name} ${request.mentee_last_name} has approved your reschedule request. The session has been moved to ${new Date(newScheduledAt).toLocaleString()}.`,
+          `${request.mentee_first_name} ${request.mentee_last_name} has approved your reschedule request. The session has been moved to ${new Date(newScheduledAtUTC).toLocaleString('en-IN', { timeZone: 'Asia/Calcutta' })}.`,
           'reschedule_approved',
           'session',
           request.session_id
@@ -1631,6 +1648,9 @@ exports.submitRescheduleRequest = async (req, res) => {
     const { sessionId } = req.params;
     const { reason } = req.body;
     const userId = req.user.userId;
+
+    // Note: This function doesn't handle timezone conversion as it just creates a request
+    // The actual reschedule happens in respondToRescheduleRequest
 
     console.log('🔄 Submitting reschedule request:', { sessionId, userId, reason });
 
@@ -1884,7 +1904,7 @@ exports.respondToRescheduleRequest = async (req, res) => {
           throw new Error('NEW_SCHEDULED_AT_REQUIRED');
         }
 
-        const newScheduledDateTime = new Date(newScheduledAt);
+        const newScheduledDateTime = new Date(newScheduledAtUTC);
 
         // Validate the new time is not in the past and at least 24 hours from now
         const now = new Date();
@@ -1900,7 +1920,7 @@ exports.respondToRescheduleRequest = async (req, res) => {
 
         // Update session
         const updateFields = ['scheduled_at = $2'];
-        const updateValues = [request.session_id, newScheduledDateTime];
+        const updateValues = [request.session_id, newScheduledAtUTC];
         let paramCount = 2;
 
         if (newDuration) {

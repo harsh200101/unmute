@@ -46,7 +46,7 @@ const formatMentorResponse = (mentor) => {
     totalEarnings: parseFloat(mentor.calculated_earnings || mentor.total_earnings || 0),
     
     // Availability & Settings
-    timezone: mentor.timezone || 'UTC',
+    timezone: mentor.timezone || 'Asia/Calcutta',
     instantBooking: mentor.instant_booking || false,
     autoAcceptBookings: mentor.auto_accept_bookings || false,
     advanceBookingDays: mentor.advance_booking_days || 30,
@@ -585,7 +585,7 @@ exports.registerMentor = async (req, res) => {
       profile_image = null,
       video_intro_url = null,
       portfolio_urls = [],
-      timezone = 'UTC',
+      timezone = 'Asia/Calcutta',
       instant_booking = false,
       auto_accept_bookings = false,
       advance_booking_days = 30,

@@ -50,7 +50,7 @@ class SessionController {
         sessionType: sessionData.sessionType || 'video',
         scheduledAt: sessionData.scheduledAt,
         durationMinutes: sessionData.durationMinutes,
-        timezone: sessionData.timezone || 'UTC',
+        timezone: sessionData.timezone || 'Asia/Calcutta',
         menteeNotes: sessionData.notes
       });
 
@@ -630,7 +630,7 @@ class SessionController {
    * @param {string} timezone - Timezone
    * @returns {Promise<Object>} Available time slots
    */
-  async checkMentorAvailability(mentorId, date, timezone = 'UTC') {
+  async checkMentorAvailability(mentorId, date, timezone = 'Asia/Calcutta') {
     try {
       const response = await apiClient.get(
         `/mentors/${mentorId}/availability?date=${date}&timezone=${timezone}`
