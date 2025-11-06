@@ -125,14 +125,14 @@ exports.getActiveMentors = async (req, res) => {
       LEFT JOIN sessions s ON m.id = s.mentor_id
       LEFT JOIN mentor_expertise me ON m.id = me.mentor_id
       LEFT JOIN expertise_tags et ON me.tag_id = et.id
-      WHERE m.status = 'active' 
+      WHERE m.status = 'active'
         AND m.verification_status = 'verified'
         AND u.is_active = true
         AND u.is_verified = true
     `;
 
-    const params = [];
-    let paramCount = 0;
+    const params = [parseFloat(minRating || 0)];
+    let paramCount = 1;
 
     // Language filter
     if (languages) {
@@ -180,12 +180,7 @@ exports.getActiveMentors = async (req, res) => {
       params.push(parseFloat(maxPrice));
     }
 
-    // Rating filter
-    if (minRating) {
-      paramCount++;
-      query += ` AND COALESCE(AVG(r.overall_rating) FILTER (WHERE r.reviewer_type = 'mentee'), 0) >= $${paramCount}`;
-      params.push(parseFloat(minRating));
-    }
+    // Rating filter (moved to HAVING clause)
 
     // Badge level filter
     if (badgeLevel) {
@@ -205,6 +200,9 @@ exports.getActiveMentors = async (req, res) => {
     }
 
     query += ` GROUP BY m.id, u.id`;
+
+    // HAVING clause for minimum rating filter
+    query += ` HAVING COALESCE(AVG(r.overall_rating) FILTER (WHERE r.reviewer_type = 'mentee'), 0) >= $1`;
 
     // Sorting
     switch (sort) {
@@ -235,7 +233,7 @@ exports.getActiveMentors = async (req, res) => {
     paramCount++;
     query += ` LIMIT $${paramCount}`;
     params.push(parseInt(limit));
-    
+
     paramCount++;
     query += ` OFFSET $${paramCount}`;
     params.push(offset);
@@ -283,14 +281,15 @@ exports.getActiveMentors = async (req, res) => {
       SELECT COUNT(DISTINCT m.id) as total
       FROM mentors m
       INNER JOIN users u ON m.user_id = u.id
-      WHERE m.status = 'active' 
+      LEFT JOIN reviews r ON m.id = r.mentor_id AND r.is_hidden = false AND r.reviewer_type = 'mentee'
+      WHERE m.status = 'active'
         AND m.verification_status = 'verified'
         AND u.is_active = true
         AND u.is_verified = true
     `;
 
-    const countParams = [];
-    let countParamCount = 0;
+    const countParams = [parseFloat(minRating || 0)];
+    let countParamCount = 1;
 
     // Apply same filters for count
     if (languages) {
@@ -305,8 +304,8 @@ exports.getActiveMentors = async (req, res) => {
     if (category) {
       countParamCount++;
       countQuery += ` AND EXISTS (
-        SELECT 1 FROM mentor_categories mc2 
-        JOIN categories c2 ON mc2.category_id = c2.id 
+        SELECT 1 FROM mentor_categories mc2
+        JOIN categories c2 ON mc2.category_id = c2.id
         WHERE mc2.mentor_id = m.id AND (c2.name ILIKE $${countParamCount} OR c2.slug ILIKE $${countParamCount})
       )`;
       countParams.push(`%${category}%`);
@@ -335,16 +334,7 @@ exports.getActiveMentors = async (req, res) => {
       countParams.push(parseFloat(maxPrice));
     }
 
-    if (minRating) {
-      countParamCount++;
-      countQuery += ` AND EXISTS (
-        SELECT 1 FROM reviews r2
-        WHERE r2.mentor_id = m.id AND r2.is_hidden = false AND r2.reviewer_type = 'mentee'
-        GROUP BY r2.mentor_id
-        HAVING AVG(r2.overall_rating) >= $${countParamCount}
-      )`;
-      countParams.push(parseFloat(minRating));
-    }
+    countQuery += ` GROUP BY m.id HAVING COALESCE(AVG(r.overall_rating) FILTER (WHERE r.reviewer_type = 'mentee'), 0) >= $1`;
 
     if (badgeLevel) {
       countParamCount++;
@@ -463,8 +453,9 @@ exports.getMentorProfile = async (req, res) => {
       LEFT JOIN sessions s ON m.id = s.mentor_id
       LEFT JOIN mentor_expertise me ON m.id = me.mentor_id
       LEFT JOIN expertise_tags et ON me.tag_id = et.id
-      WHERE m.id = $1 
+      WHERE m.id = $1
         AND m.status = 'active'
+        AND m.verification_status = 'verified'
         AND u.is_active = true
       GROUP BY m.id, u.id
     `;
@@ -611,7 +602,7 @@ exports.registerMentor = async (req, res) => {
       if (existingMentor.rows.length > 0) {
         // Update existing mentor
         const mentorId = existingMentor.rows[0].id;
-        
+
         const updateQuery = `
           UPDATE mentors SET
             specializations = $2,
@@ -659,7 +650,7 @@ exports.registerMentor = async (req, res) => {
 
         const updateResult = await client.query(updateQuery, updateValues);
         mentor = updateResult.rows[0];
-        
+
         console.log('✅ Updated existing mentor:', mentorId);
 
       } else {
@@ -698,7 +689,7 @@ exports.registerMentor = async (req, res) => {
 
         const insertResult = await client.query(insertQuery, insertValues);
         mentor = insertResult.rows[0];
-        
+
         console.log('✅ Created new mentor:', mentor.id);
       }
 
@@ -706,7 +697,7 @@ exports.registerMentor = async (req, res) => {
       if (categories.length > 0) {
         // Delete existing categories
         await client.query('DELETE FROM mentor_categories WHERE mentor_id = $1', [mentor.id]);
-        
+
         // Insert new categories
         for (const categoryId of categories) {
           await client.query(
@@ -720,7 +711,7 @@ exports.registerMentor = async (req, res) => {
       if (expertise_tags.length > 0) {
         // Delete existing expertise
         await client.query('DELETE FROM mentor_expertise WHERE mentor_id = $1', [mentor.id]);
-        
+
         // Insert new expertise
         for (const expertiseTag of expertise_tags) {
           const { tag_id, proficiency_level = 3 } = expertiseTag;
@@ -765,6 +756,162 @@ exports.registerMentor = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to register mentor',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Request mentor verification (send email to admin)
+exports.requestMentorVerification = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    console.log('🔍 Requesting mentor verification for user:', userId);
+
+    // Get mentor and user data
+    const mentorQuery = `
+      SELECT
+        m.id,
+        m.verification_status,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.bio,
+        m.specializations,
+        m.languages,
+        m.hourly_rate,
+        m.years_experience
+      FROM mentors m
+      JOIN users u ON m.user_id = u.id
+      WHERE m.user_id = $1 AND m.status = 'active'
+    `;
+
+    const mentorResult = await db.query(mentorQuery, [userId]);
+
+    if (mentorResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mentor profile not found',
+        code: 'MENTOR_NOT_FOUND'
+      });
+    }
+
+    const mentor = mentorResult.rows[0];
+
+    // Check if already approved
+    if (mentor.verification_status === 'approved') {
+      return res.status(400).json({
+        success: false,
+        message: 'Mentor is already verified',
+        code: 'ALREADY_VERIFIED'
+      });
+    }
+
+    // Send verification request email to admin
+    const { sendMentorVerificationRequestEmail } = require('../utils/emailService');
+
+    await sendMentorVerificationRequestEmail({
+      id: mentor.id,
+      firstName: mentor.first_name,
+      lastName: mentor.last_name,
+      email: mentor.email,
+      bio: mentor.bio,
+      specializations: mentor.specializations,
+      languages: mentor.languages,
+      hourlyRate: mentor.hourly_rate,
+      yearsExperience: mentor.years_experience
+    });
+
+    console.log('✅ Mentor verification request sent for user:', userId);
+
+    res.json({
+      success: true,
+      message: 'Verification request sent to admin. You will be notified once reviewed.',
+      data: {
+        verificationStatus: mentor.verification_status
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error requesting mentor verification:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send verification request',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Admin approve/reject mentor verification
+exports.updateMentorVerificationStatus = async (req, res) => {
+  try {
+    const { mentorId } = req.params;
+    const { action } = req.query; // 'approve' or 'reject'
+
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid action. Must be "approve" or "reject"',
+        code: 'INVALID_ACTION'
+      });
+    }
+
+    const newStatus = action === 'approve' ? 'verified' : 'rejected';
+
+    console.log(`🔄 ${action === 'approve' ? 'Approving' : 'Rejecting'} mentor verification for mentor:`, mentorId);
+
+    // Update mentor verification status
+    const updateQuery = `
+      UPDATE mentors
+      SET verification_status = $2, verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING *
+    `;
+
+    const updateResult = await db.query(updateQuery, [mentorId, newStatus]);
+
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mentor not found',
+        code: 'MENTOR_NOT_FOUND'
+      });
+    }
+
+    const mentor = updateResult.rows[0];
+
+    // Get user data for email
+    const userQuery = 'SELECT first_name, last_name, email FROM users WHERE id = $1';
+    const userResult = await db.query(userQuery, [mentor.user_id]);
+    const user = userResult.rows[0];
+
+    // Send result email to mentor
+    const { sendMentorVerificationResultEmail } = require('../utils/emailService');
+
+    await sendMentorVerificationResultEmail({
+      id: mentor.id,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      email: user.email
+    }, action === 'approve');
+
+    console.log(`✅ Mentor verification ${newStatus} for mentor:`, mentorId);
+
+    res.json({
+      success: true,
+      message: `Mentor verification ${newStatus} successfully`,
+      data: {
+        mentor: formatMentorResponse(mentor),
+        action: action,
+        newStatus: newStatus
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating mentor verification status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update verification status',
       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
@@ -890,5 +1037,7 @@ module.exports = {
   registerMentor: exports.registerMentor,
   updateMentorStatus: exports.updateMentorStatus,
   getMentorSessionStats: exports.getMentorSessionStats,
+  requestMentorVerification: exports.requestMentorVerification,
+  updateMentorVerificationStatus: exports.updateMentorVerificationStatus,
   formatMentorResponse
 };

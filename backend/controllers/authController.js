@@ -105,6 +105,15 @@ exports.register = async (req, res) => {
       preferences = {}
     } = req.body;
 
+    // Validate role
+    if (!['mentee', 'mentor'].includes(role)) {
+      return res.status(422).json({
+        success: false,
+        message: 'Invalid role. Must be either "mentee" or "mentor"',
+        code: 'INVALID_ROLE'
+      });
+    }
+
     console.log('🔄 Registering new user:', email);
 
     // Check if user already exists
@@ -123,7 +132,7 @@ exports.register = async (req, res) => {
     const saltRounds = parseInt(process.env.BCRYPT_ROUNDS) || 12;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // Use transaction for user creation
+    // Use transaction for user creation and potential mentor record
     const result = await db.transaction(async (client) => {
       const insertQuery = `
         INSERT INTO users (
@@ -173,7 +182,50 @@ exports.register = async (req, res) => {
       ];
 
       const { rows } = await client.query(insertQuery, values);
-      return rows[0];
+      const user = rows[0];
+
+      // If user selected mentor role, create mentor record automatically
+      if (role === 'mentor') {
+        console.log('🔄 Creating mentor record for new user:', user.id);
+
+        const mentorInsertQuery = `
+          INSERT INTO mentors (
+            user_id, specializations, industries, skills, languages, hourly_rate, currency,
+            years_experience, profile_image, video_intro_url, portfolio_urls, timezone,
+            instant_booking, auto_accept_bookings, advance_booking_days, min_session_duration,
+            max_session_duration, session_buffer_minutes, status, verification_status
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        `;
+
+        const mentorValues = [
+          user.id, // user_id
+          [], // specializations
+          [], // industries
+          [], // skills
+          ['en'], // languages
+          75, // hourly_rate
+          'INR', // currency
+          0, // years_experience
+          null, // profile_image
+          null, // video_intro_url
+          [], // portfolio_urls
+          'Asia/Calcutta', // timezone
+          false, // instant_booking
+          false, // auto_accept_bookings
+          30, // advance_booking_days
+          30, // min_session_duration
+          120, // max_session_duration
+          15, // session_buffer_minutes
+          'active', // status
+          'pending' // verification_status
+        ];
+
+        await client.query(mentorInsertQuery, mentorValues);
+        console.log('✅ Mentor record created for user:', user.id);
+      }
+
+      return user;
     });
 
     const user = result;

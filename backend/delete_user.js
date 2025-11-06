@@ -49,7 +49,7 @@ async function deleteUserByEmail(email) {
 
 // Run the deletion
 async function main() {
-  const emailToDelete = 'harshgajbhiye722@gmail.com';
+  const emailToDelete = process.argv[2] || 'harshgajbhiye722@gmail.com';
 
   try {
     await deleteUserByEmail(emailToDelete);

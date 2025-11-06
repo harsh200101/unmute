@@ -92,19 +92,81 @@ exports.createVideoMeeting = async (req, res) => {
   }
 };
 
-// Get video meeting credentials for joining
+// ENHANCED: Get video meeting credentials for joining with comprehensive debugging
 exports.getMeetingCredentials = async (req, res) => {
+  const debugLog = (message, data = null, level = 'info') => {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      component: 'CREDENTIALS_API',
+      message,
+      data,
+      level,
+      sessionId: req.params.sessionId,
+      userId: req.user?.userId,
+      requestId: req.headers['x-request-id'] || 'unknown'
+    };
+
+    if (level === 'error') {
+      console.error(`🔑 [${timestamp}] CREDENTIALS_API ERROR:`, message, data);
+    } else if (level === 'warn') {
+      console.warn(`🔑 [${timestamp}] CREDENTIALS_API WARN:`, message, data);
+    } else {
+      console.log(`🔑 [${timestamp}] CREDENTIALS_API:`, message, data);
+    }
+
+    // Store debug logs for potential export
+    if (!global.credentialsDebugLogs) global.credentialsDebugLogs = [];
+    global.credentialsDebugLogs.push(logEntry);
+  };
+
   try {
     const { sessionId } = req.params;
     const userId = req.user.userId;
 
-    console.log('🔄 [DEBUG] Getting meeting credentials for session:', sessionId, 'user:', userId);
-    console.log('🔄 [DEBUG] Request headers:', req.headers);
-    console.log('🔄 [DEBUG] User from auth:', req.user);
-    console.log('🔄 [DEBUG] User role check - isTestingUser:', userId === 49 || userId === 51, 'userId:', userId);
-    console.log('🔄 [DEBUG] Agora env vars - APP_ID:', process.env.AGORA_APP_ID ? 'SET' : 'NOT SET', 'CERT:', process.env.AGORA_APP_CERTIFICATE ? 'SET' : 'NOT SET');
+    debugLog('Credentials request started', {
+      sessionId,
+      userId,
+      headers: {
+        userAgent: req.get('User-Agent'),
+        contentType: req.get('Content-Type'),
+        authorization: req.get('Authorization') ? 'PRESENT' : 'MISSING'
+      },
+      ip: req.ip,
+      method: req.method,
+      url: req.url
+    });
+
+    // Define test mentors who can join any video call without restrictions
+    const testMentorIds = [68, 71]; // harshgajbhiye34@gmail.com (68), harshgajbhiye722@gmail.com (71)
+    const isTestMentor = testMentorIds.includes(userId);
+
+    debugLog('User role check completed', {
+      isTestMentor,
+      userId,
+      testMentorIds
+    });
+
+    // Environment variable validation
+    const envStatus = {
+      agoraAppId: !!process.env.AGORA_APP_ID,
+      agoraCertificate: !!process.env.AGORA_APP_CERTIFICATE,
+      nodeEnv: process.env.NODE_ENV
+    };
+
+    debugLog('Environment validation', envStatus);
+
+    if (!envStatus.agoraAppId || !envStatus.agoraCertificate) {
+      debugLog('Missing Agora environment variables', envStatus, 'error');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error',
+        code: 'CONFIG_ERROR'
+      });
+    }
 
     // Verify user has access to this session and meeting is active
+    debugLog('Executing session access query');
     const sessionQuery = `
       SELECT
         s.*,
@@ -119,14 +181,22 @@ exports.getMeetingCredentials = async (req, res) => {
       JOIN users mentor_user ON m.user_id = mentor_user.id
       JOIN users u ON s.mentee_id = u.id
       LEFT JOIN video_meetings vm ON s.id = vm.session_id
-      WHERE s.id = $1 AND (s.mentee_id = $2 OR m.user_id = $2)
+      WHERE s.id = $1 AND (s.mentee_id = $2 OR m.user_id = $2 OR $3 = true)
     `;
 
-    const sessionResult = await db.query(sessionQuery, [sessionId, userId]);
-    console.log('🔄 [DEBUG] Session query result:', sessionResult.rows.length, 'rows');
+    const sessionResult = await db.query(sessionQuery, [sessionId, userId, isTestMentor]);
+    debugLog('Session query completed', {
+      rowsReturned: sessionResult.rows.length,
+      queryParams: [sessionId, userId, isTestMentor]
+    });
 
     if (sessionResult.rows.length === 0) {
-      console.log('🔄 [DEBUG] No session found for user:', userId, 'session:', sessionId);
+      debugLog('Access denied - no session found', {
+        sessionId,
+        userId,
+        isTestMentor
+      }, 'error');
+
       return res.status(403).json({
         success: false,
         message: 'You do not have access to this session',
@@ -135,23 +205,37 @@ exports.getMeetingCredentials = async (req, res) => {
     }
 
     const session = sessionResult.rows[0];
-    console.log('🔄 [DEBUG] Session data:', {
-      id: session.id,
+    debugLog('Session data retrieved', {
+      sessionId: session.id,
       status: session.status,
-      channel_name: session.channel_name,
-      agora_app_id: session.agora_app_id,
-      meeting_status: session.meeting_status
+      channelName: session.channel_name,
+      appId: session.agora_app_id ? '***' + session.agora_app_id.slice(-4) : 'MISSING',
+      meetingStatus: session.meeting_status,
+      scheduledAt: session.scheduled_at,
+      mentorId: session.mentor_user_id,
+      menteeId: session.mentee_id
     });
 
-    // Check if session is scheduled to start
+    // Time-based access control
     const now = new Date();
     const sessionStart = new Date(session.scheduled_at);
     const timeUntilStart = (sessionStart - now) / (1000 * 60); // minutes
+    const sessionEnd = new Date(sessionStart.getTime() + 75 * 60 * 1000); // 75 minutes
 
-    // Allow testing users (Harsh Gajbhiye - ID 49, manswi sahare - ID 51) to join anytime
-    const isTestingUser = userId === 49 || userId === 51;
+    debugLog('Time-based access control check', {
+      now: now.toISOString(),
+      sessionStart: sessionStart.toISOString(),
+      sessionEnd: sessionEnd.toISOString(),
+      timeUntilStart,
+      timeRemaining: Math.max(0, Math.floor((sessionEnd - now) / (1000 * 60))),
+      isAfterEnd: now > sessionEnd
+    });
 
-    if (!isTestingUser && timeUntilStart > 15) {
+    // Allow testing users to join anytime
+    const isTestingUser = userId === 49 || userId === 51 || userId === 55 || userId === 68 || userId === 71;
+
+    if (!isTestingUser && !isTestMentor && timeUntilStart > 15) {
+      debugLog('Meeting not yet available', { timeUntilStart }, 'warn');
       return res.status(403).json({
         success: false,
         message: 'Meeting has not started yet. You can join 15 minutes before the scheduled time.',
@@ -159,9 +243,12 @@ exports.getMeetingCredentials = async (req, res) => {
       });
     }
 
-    // Check if session time has passed (1h 15min limit)
-    const sessionEnd = new Date(sessionStart.getTime() + 75 * 60 * 1000); // 75 minutes
     if (now > sessionEnd) {
+      debugLog('Meeting expired', {
+        sessionEnd: sessionEnd.toISOString(),
+        now: now.toISOString()
+      }, 'warn');
+
       return res.status(403).json({
         success: false,
         message: 'Meeting time has expired.',
@@ -169,15 +256,18 @@ exports.getMeetingCredentials = async (req, res) => {
       });
     }
 
-    // Check if video meeting exists
-    console.log('🔄 [DEBUG] Checking video meeting existence:', {
-      channel_name: session.channel_name,
-      agora_app_id: session.agora_app_id,
-      meeting_status: session.meeting_status
-    });
+    // Video meeting validation
+    const meetingValidation = {
+      hasChannelName: !!session.channel_name,
+      hasAppId: !!session.agora_app_id,
+      channelName: session.channel_name,
+      appIdPresent: !!session.agora_app_id
+    };
 
-    if (!session.channel_name || !session.agora_app_id) {
-      console.log('🔄 [DEBUG] Video meeting not found - missing channel_name or agora_app_id');
+    debugLog('Video meeting validation', meetingValidation);
+
+    if (!meetingValidation.hasChannelName || !meetingValidation.hasAppId) {
+      debugLog('Video meeting not properly configured', meetingValidation, 'error');
       return res.status(404).json({
         success: false,
         message: 'Video meeting not found for this session',
@@ -185,31 +275,63 @@ exports.getMeetingCredentials = async (req, res) => {
       });
     }
 
-    // Generate fresh token for this user (tokens are user-specific)
-    console.log('🔄 [DEBUG] Generating fresh token for user:', userId, 'session:', sessionId);
-    console.log('🔄 [DEBUG] Channel name from DB:', session.channel_name, 'App ID from DB:', session.agora_app_id);
+    // Generate fresh tokens
+    debugLog('Starting token generation', {
+      sessionId,
+      userId,
+      channelName: session.channel_name,
+      appId: session.agora_app_id ? '***' + session.agora_app_id.slice(-4) : 'MISSING'
+    });
 
     const credentials = agoraService.generateMeetingCredentials(sessionId, userId);
-    let token = credentials.token;
-    let tokenExpiresAt = credentials.tokenExpiresAt;
+    const rtcToken = credentials.rtcToken;
+    const rtmToken = credentials.rtmToken;
+    const tokenExpiresAt = credentials.tokenExpiresAt;
 
-    console.log('🔄 [DEBUG] Generated credentials - channel:', credentials.channelName, 'token length:', token ? token.length : 0, 'uid:', credentials.uid);
+    debugLog('Token generation completed', {
+      hasRtcToken: !!rtcToken,
+      hasRtmToken: !!rtmToken,
+      rtcTokenLength: rtcToken ? rtcToken.length : 0,
+      rtmTokenLength: rtmToken ? rtmToken.length : 0,
+      uid: credentials.uid,
+      channelName: credentials.channelName,
+      tokenExpiresAt
+    });
 
-    // Update token in database (will be user-specific now)
+    // Validate generated tokens
+    if (!rtcToken || !rtmToken) {
+      debugLog('Token generation failed', {
+        rtcTokenGenerated: !!rtcToken,
+        rtmTokenGenerated: !!rtmToken
+      }, 'error');
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to generate meeting tokens',
+        code: 'TOKEN_GENERATION_FAILED'
+      });
+    }
+
+    // Update database with new tokens
+    debugLog('Updating database with new tokens');
     await db.query(
       'UPDATE video_meetings SET agora_token = $1, token_expires_at = $2 WHERE session_id = $3',
-      [token, tokenExpiresAt, sessionId]
+      [rtcToken, tokenExpiresAt, sessionId]
     );
+    debugLog('Database updated successfully');
 
-    console.log('🔄 [DEBUG] Token updated in database for session:', sessionId);
-
-    // Log user join attempt
+    // Log join attempt
     const joinLog = {
       userId,
       action: 'join_attempt',
       timestamp: new Date(),
       userAgent: req.get('User-Agent'),
-      ip: req.ip
+      ip: req.ip,
+      credentialsGenerated: true,
+      tokensGenerated: {
+        rtc: !!rtcToken,
+        rtm: !!rtmToken
+      }
     };
 
     await db.query(`
@@ -218,16 +340,9 @@ exports.getMeetingCredentials = async (req, res) => {
       WHERE session_id = $2
     `, [JSON.stringify([joinLog]), sessionId]);
 
-    console.log('✅ Meeting credentials provided for session:', sessionId, 'user:', userId);
-    console.log('✅ [DEBUG] Returning credentials:', {
-      appId: session.agora_app_id ? '***' + session.agora_app_id.slice(-4) : null,
-      channelName: session.channel_name,
-      token: token ? '***' + token.slice(-10) : null,
-      uid: userId,
-      tokenGeneratedForUser: userId,
-      tokenLength: token ? token.length : 0
-    });
+    debugLog('Join attempt logged');
 
+    // Prepare response
     const responseData = {
       success: true,
       message: 'Meeting credentials retrieved successfully',
@@ -235,7 +350,8 @@ exports.getMeetingCredentials = async (req, res) => {
         credentials: {
           appId: session.agora_app_id,
           channelName: session.channel_name,
-          token: token,
+          token: rtcToken,
+          rtmToken: rtmToken,
           uid: userId
         },
         session: {
@@ -251,20 +367,60 @@ exports.getMeetingCredentials = async (req, res) => {
           status: session.meeting_status,
           maxDurationMinutes: session.max_duration_minutes,
           participantsJoined: session.participants_joined || [],
-          timeRemaining: Math.max(0, Math.floor((sessionEnd - now) / (1000 * 60))) // minutes remaining
+          timeRemaining: Math.max(0, Math.floor((sessionEnd - now) / (1000 * 60)))
         }
       }
     };
 
-    console.log('✅ [DEBUG] Full response structure:', JSON.stringify(responseData, null, 2));
+    debugLog('Credentials response prepared', {
+      responseSize: JSON.stringify(responseData).length,
+      hasCredentials: !!responseData.data.credentials,
+      credentialsKeys: responseData.data.credentials ? Object.keys(responseData.data.credentials) : []
+    });
+
+    debugLog('Credentials API completed successfully', {
+      sessionId,
+      userId,
+      tokensProvided: {
+        rtc: !!rtcToken,
+        rtm: !!rtmToken
+      }
+    });
+
     res.json(responseData);
 
   } catch (error) {
-    console.error('❌ Error getting meeting credentials:', error);
-    res.status(500).json({
+    debugLog('Credentials API failed', {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      sqlState: error.sqlState
+    }, 'error');
+
+    // Enhanced error categorization
+    let statusCode = 500;
+    let errorCode = 'INTERNAL_ERROR';
+    let userMessage = 'Failed to get meeting credentials';
+
+    if (error.message.includes('permission') || error.message.includes('access')) {
+      statusCode = 403;
+      errorCode = 'ACCESS_DENIED';
+      userMessage = 'Access denied to this meeting';
+    } else if (error.message.includes('not found') || error.code === '23503') {
+      statusCode = 404;
+      errorCode = 'NOT_FOUND';
+      userMessage = 'Meeting not found';
+    } else if (error.message.includes('token') || error.message.includes('auth')) {
+      statusCode = 401;
+      errorCode = 'AUTH_ERROR';
+      userMessage = 'Authentication failed';
+    }
+
+    res.status(statusCode).json({
       success: false,
-      message: 'Failed to get meeting credentials',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      message: userMessage,
+      code: errorCode,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

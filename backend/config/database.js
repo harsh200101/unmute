@@ -3,9 +3,9 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
+  ssl: process.env.DB_SSL === 'true' ? {
     rejectUnauthorized: false  // Required for Render.com PostgreSQL
-  },
+  } : false,
   max: parseInt(process.env.DB_POOL_MAX, 10) || 20,
   min: parseInt(process.env.DB_POOL_MIN, 10) || 5,
   idleTimeoutMillis: 30000,

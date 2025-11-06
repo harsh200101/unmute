@@ -1155,6 +1155,7 @@ router.get('/mentor/all',
       const mentorId = mentorResult.rows[0].id;
 
       // Fixed query to prevent duplicates by using subqueries for related data
+      // Default to showing only confirmed and active sessions for mentors (not pending)
       let query = `
         SELECT DISTINCT
           s.*,
@@ -1175,6 +1176,7 @@ router.get('/mentor/all',
         LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false AND r.reviewer_type = 'mentee'
         LEFT JOIN session_reschedule_requests rr ON s.id = rr.session_id AND rr.status = 'pending'
         WHERE s.mentor_id = $1
+          AND s.status IN ('confirmed', 'in_progress', 'completed', 'cancelled_by_mentee', 'cancelled_by_mentor')
       `;
 
       const params = [mentorId];
@@ -1233,6 +1235,7 @@ router.get('/mentor/all',
         FROM sessions s
         WHERE s.mentor_id = $1
           AND s.scheduled_at IS NOT NULL
+          AND s.status IN ('confirmed', 'in_progress', 'completed', 'cancelled_by_mentee', 'cancelled_by_mentor')
       `;
 
       const countParams = [mentorId];

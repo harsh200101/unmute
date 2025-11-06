@@ -9,8 +9,9 @@ passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
   callbackURL: process.env.GOOGLE_CALLBACK_URL,
-  scope: ['profile', 'email']
-}, async (accessToken, refreshToken, profile, done) => {
+  scope: ['profile', 'email'],
+  passReqToCallback: true
+}, async (req, accessToken, refreshToken, profile, done) => {
   try {
     console.log('🔄 Google OAuth Profile received:', profile.id);
     
@@ -19,6 +20,32 @@ passport.use(new GoogleStrategy({
     const lastName = profile.name?.familyName || '';
     const avatarUrl = profile.photos?.[0]?.value || null;
     const googleId = profile.id;
+
+    // Get role from session (stored during OAuth initiation)
+    let role = 'mentee'; // Default role
+    let roleSource = 'default';
+
+    console.log('🔍 OAuth: Processing role extraction from session...');
+    console.log('🔍 OAuth: req.session exists:', !!req.session);
+
+    if (req.session) {
+      const sessionRole = req.session.oauthRole;
+      console.log('🔍 OAuth: Session oauthRole:', sessionRole);
+
+      if (sessionRole && ['mentee', 'mentor'].includes(sessionRole)) {
+        role = sessionRole;
+        roleSource = 'session_storage';
+        console.log('✅ OAuth: Role set from session:', role);
+      } else if (sessionRole) {
+        console.log('⚠️ OAuth: Invalid role in session:', sessionRole, '- using default mentee');
+      } else {
+        console.log('⚠️ OAuth: No role found in session, using default mentee');
+      }
+    } else {
+      console.log('⚠️ OAuth: No session available for role extraction');
+    }
+
+    console.log('🎯 OAuth: Final role determination - role:', role, 'source:', roleSource);
     
     if (!email) {
       return done(new Error('No email found in Google profile'), null);
@@ -57,7 +84,7 @@ passport.use(new GoogleStrategy({
           firstName,
           lastName,
           avatarUrl,
-          'mentee', // Default role - will be updated if mentor profile exists
+          role, // Use selected role from session
           true, // Google accounts are verified
           true, // Active by default
           new Date(), // Email verified now
@@ -74,24 +101,47 @@ passport.use(new GoogleStrategy({
         ]);
 
         user = insertResult.rows[0];
-        console.log('✅ Created new user via Google OAuth:', user.id);
+        console.log('✅ Created new user via Google OAuth:', user.id, 'with role:', role);
 
-        // Check if user has a mentor profile and update role accordingly
-        const mentorCheck = await client.query(
-          'SELECT id FROM mentors WHERE user_id = $1',
-          [user.id]
-        );
+        // If user selected mentor role, create mentor record automatically
+        if (role === 'mentor') {
+          console.log('🔄 Creating mentor record for new Google OAuth user:', user.id);
 
-        if (mentorCheck.rows.length > 0) {
-          // Update user role to mentor if they have a mentor profile
-          const roleUpdate = await client.query(
-            'UPDATE users SET role = $1 WHERE id = $2 RETURNING role',
-            ['mentor', user.id]
-          );
-          user.role = roleUpdate.rows[0].role;
-          console.log('✅ Updated new user role to mentor based on existing profile, user id:', user.id);
-        } else {
-          console.log('ℹ️ New user has no mentor profile, keeping role as mentee, user id:', user.id);
+          const mentorInsertQuery = `
+            INSERT INTO mentors (
+              user_id, specializations, industries, skills, languages, hourly_rate, currency,
+              years_experience, profile_image, video_intro_url, portfolio_urls, timezone,
+              instant_booking, auto_accept_bookings, advance_booking_days, min_session_duration,
+              max_session_duration, session_buffer_minutes, status, verification_status
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+          `;
+
+          const mentorValues = [
+            user.id, // user_id
+            [], // specializations
+            [], // industries
+            [], // skills
+            ['en'], // languages
+            75, // hourly_rate
+            'INR', // currency
+            0, // years_experience
+            avatarUrl, // profile_image (use Google avatar)
+            null, // video_intro_url
+            [], // portfolio_urls
+            'Asia/Calcutta', // timezone
+            false, // instant_booking
+            false, // auto_accept_bookings
+            30, // advance_booking_days
+            30, // min_session_duration
+            120, // max_session_duration
+            15, // session_buffer_minutes
+            'active', // status
+            'pending' // verification_status
+          ];
+
+          await client.query(mentorInsertQuery, mentorValues);
+          console.log('✅ Mentor record created for Google OAuth user:', user.id);
         }
 
         // Log successful user creation

@@ -6,7 +6,7 @@ const { rateLimit } = require('../middleware/auth');
 const axios = require('axios');
 const crypto = require('crypto');
 const dns = require('dns').promises;
-const { sendPaymentSuccessEmail, sendMeetingReadyEmail } = require('../utils/emailService');
+const { sendPaymentSuccessEmail, sendSessionBookedEmail, sendMeetingReadyEmail } = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -368,19 +368,27 @@ router.post('/callback', async (req, res) => {
 
       const session = sessionDetails.rows[0];
 
-      // Send payment success email to mentee
+      // Send session successfully booked emails to both mentee and mentor
       try {
-        const paymentEmailData = {
-          transactionId: merchantTransactionId,
-          amount: session.price,
-          sessionTitle: session.title,
+        const sessionBookedData = {
+          title: session.title,
+          scheduledAt: session.scheduled_at,
+          durationMinutes: session.duration_minutes,
           mentorName: `${session.mentor_first_name} ${session.mentor_last_name}`,
-          scheduledAt: session.scheduled_at
+          menteeName: `${session.mentee_first_name} ${session.mentee_last_name}`,
+          sessionType: session.session_type,
+          amount: session.price
         };
-        await sendPaymentSuccessEmail(session.mentee_email, paymentEmailData);
-        console.log('✅ Payment success email sent to mentee');
+
+        // Send to mentee
+        await sendSessionBookedEmail(session.mentee_email, sessionBookedData, 'mentee');
+        console.log('✅ Session booked email sent to mentee');
+
+        // Send to mentor
+        await sendSessionBookedEmail(session.mentor_email, sessionBookedData, 'mentor');
+        console.log('✅ Session booked email sent to mentor');
       } catch (emailError) {
-        console.warn('⚠️ Failed to send payment success email:', emailError.message);
+        console.warn('⚠️ Failed to send session booked emails:', emailError.message);
       }
 
       // Update session status to confirmed and create meeting

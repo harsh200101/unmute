@@ -166,9 +166,11 @@ const SessionCard = ({
     // For in_progress sessions, always allow joining
     if (sessionStatus === 'in_progress') return true;
 
-    // Check if user is one of the two specific test users (bypass time logic)
-    const testUserIds = [49, 51]; // harshgajbhiye34@gmail.com and saharemanswi1479@gmail.com
+    // Check if user is one of the test users (bypass time logic)
+    const testUserIds = [49, 51, 55, 68, 71]; // Test user IDs for bypassing time restrictions
     const isTestUser = testUserIds.includes(user?.id);
+
+    console.log('🔄 [DEBUG] Frontend canJoinSession check - userId:', user?.id, 'isTestUser:', isTestUser, 'sessionStatus:', sessionStatus);
 
     if (isTestUser) return true; // Test users can always join confirmed sessions
 
@@ -339,31 +341,44 @@ const SessionCard = ({
         </div>
 
         {/* Participant Info */}
-        <div className="flex items-center gap-4 mb-4">
+        <div className="mb-4">
           {userRole === 'mentee' ? (
-            /* Show Mentor Info */
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                {session.mentor?.firstName?.charAt(0).toUpperCase() || 'M'}
+            /* Show Both Mentor and Mentee Info for Mentees */
+            <div className="flex items-center gap-4">
+              {/* Mentor Info */}
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                  {session.mentorName?.charAt(0).toUpperCase() || 'M'}
+                </div>
+                <div>
+                  <h4 className="font-semibold text-gray-900">
+                    {session.mentorName || 'Your Mentor'}
+                  </h4>
+                  <p className="text-sm text-gray-500">Mentor</p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-semibold text-gray-900">
-                  {session.mentor?.fullName || 'Your Mentor'}
-                </h4>
-                <p className="text-sm text-gray-500">
-                  Mentor
-                </p>
+              {/* Mentee Info */}
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold">
+                  {session.menteeName?.charAt(0).toUpperCase() || 'S'}
+                </div>
+                <div>
+                  <h4 className="font-semibold text-gray-900">
+                    {session.menteeName || 'You'}
+                  </h4>
+                  <p className="text-sm text-gray-500">Mentee</p>
+                </div>
               </div>
             </div>
           ) : (
-            /* Show Mentee Info */
+            /* Show Mentee Info for Mentors */
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold">
-                {session.mentee?.firstName?.charAt(0).toUpperCase() || 'S'}
+                {session.menteeName?.charAt(0).toUpperCase() || 'S'}
               </div>
               <div>
                 <h4 className="font-semibold text-gray-900">
-                  {session.mentee?.fullName || 'Student'}
+                  {session.menteeName || 'Student'}
                 </h4>
                 <p className="text-sm text-gray-500">Mentee</p>
               </div>

@@ -167,10 +167,14 @@ const Register = () => {
   const handleGoogleRegister = () => {
     try {
       // Store intended role for post-OAuth processing
-      if (formData.role === 'mentor') {
-        localStorage.setItem('intended_role', 'mentor');
-      }
-      loginWithGoogle();
+      const role = formData.role === 'mentor' ? 'mentor' : 'mentee';
+      sessionStorage.setItem('oauth_role', role);
+
+      console.log('🔄 REGISTER: Initiating Google OAuth with role:', role);
+      console.log('🔄 REGISTER: Form data role:', formData.role);
+
+      // Use AuthContext's loginWithGoogle with role parameter
+      loginWithGoogle(role);
     } catch (error) {
       console.error('Google registration error:', error);
       toast.error('Failed to initiate Google registration');

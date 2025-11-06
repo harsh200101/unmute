@@ -177,9 +177,27 @@ router.post('/refresh-token',
 
 // Google OAuth Routes
 router.get('/google',
-  passport.authenticate('google', { 
+  (req, res, next) => {
+    // Store role in session for OAuth callback to use
+    const { role } = req.query;
+    if (role && ['mentee', 'mentor'].includes(role)) {
+      req.session.oauthRole = role;
+      console.log('✅ AUTH: Stored role in session for OAuth:', role);
+    } else {
+      console.log('⚠️ AUTH: No valid role provided in OAuth request, defaulting to mentee');
+      req.session.oauthRole = 'mentee';
+    }
+
+    // Generate CSRF state for Google (separate from role)
+    const state = Math.random().toString(36).substring(2, 15);
+    req.session.oauthState = state;
+
+    next();
+  },
+  passport.authenticate('google', {
     scope: ['profile', 'email'],
-    prompt: 'select_account'
+    prompt: 'select_account',
+    state: true // Tell passport to use session state
   })
 );
 
@@ -192,7 +210,17 @@ router.get('/google/callback',
   (req, res) => {
     try {
       const { user, tokens } = req.user;
-      const { state } = req.query; // Get state from Google's callback
+
+      console.log('🔄 AUTH: OAuth callback processing started');
+      console.log('🔄 AUTH: User from passport:', { id: user.id, email: user.email, role: user.role });
+      console.log('🔄 AUTH: Tokens generated:', { hasAccess: !!tokens.accessToken, hasRefresh: !!tokens.refreshToken });
+
+      // Clean up session after successful authentication
+      if (req.session) {
+        delete req.session.oauthRole;
+        delete req.session.oauthState;
+        console.log('🧹 AUTH: Cleaned up OAuth session data');
+      }
 
       // Set secure HTTP-only cookies for tokens (optional)
       if (process.env.NODE_ENV === 'production') {
@@ -215,9 +243,6 @@ router.get('/google/callback',
       const redirectUrl = new URL(`${process.env.CLIENT_URL}/oauth/callback`);
       redirectUrl.searchParams.set('accessToken', tokens.accessToken);
       redirectUrl.searchParams.set('refreshToken', tokens.refreshToken);
-      if (state) {
-        redirectUrl.searchParams.set('state', state); // Pass state for CSRF validation
-      }
       redirectUrl.searchParams.set('user', encodeURIComponent(JSON.stringify({
         id: user.id,
         email: user.email,
@@ -226,7 +251,11 @@ router.get('/google/callback',
         role: user.role
       })));
 
-      res.redirect(redirectUrl.toString());
+      const finalRedirectUrl = redirectUrl.toString();
+      console.log('🔄 AUTH: Final redirect URL:', finalRedirectUrl);
+      console.log('🔄 AUTH: Redirecting user with role:', user.role);
+
+      res.redirect(finalRedirectUrl);
 
     } catch (error) {
        console.error('❌ OAuth callback error:', error);

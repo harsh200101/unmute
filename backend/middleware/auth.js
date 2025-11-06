@@ -263,7 +263,7 @@ const requireMentorProfile = async (req, res, next) => {
       });
     }
 
-    if (mentor.verification_status !== 'verified') {
+    if (mentor.verification_status !== 'approved') {
       return res.status(403).json({
         success: false,
         message: 'Mentor profile verification required.',

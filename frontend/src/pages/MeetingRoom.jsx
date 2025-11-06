@@ -106,9 +106,11 @@ const MeetingRoom = () => {
   }
 
   const { meeting, session } = meetingStatus || {};
-  // Allow testing users (Harsh Gajbhiye - ID 49, manswi sahare - ID 51) to join anytime
-  const isTestingUser = user?.id === 49 || user?.id === 51;
+  // Allow testing users (Harsh Gajbhiye - ID 49, manswi sahare - ID 51, new user - ID 55, test mentors - ID 68, 71) to join anytime
+  const isTestingUser = user?.id === 49 || user?.id === 51 || user?.id === 55 || user?.id === 68 || user?.id === 71;
   const canJoin = meeting?.canJoin || isTestingUser;
+
+  console.log('🏠 [DEBUG] MeetingRoom canJoin check - userId:', user?.id, 'isTestingUser:', isTestingUser, 'meeting.canJoin:', meeting?.canJoin, 'canJoin:', canJoin);
   const timeUntilStart = session?.scheduledAt ? new Date(session.scheduledAt) - new Date() : 0;
   const minutesUntilStart = Math.ceil(timeUntilStart / (1000 * 60));
 

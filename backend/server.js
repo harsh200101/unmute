@@ -404,6 +404,7 @@ app.get('/api/test/agora-config', async (req, res) => {
 // API routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/auth', require('./routes/googleAuth'));
+app.use('/api/admin', require('./routes/admin'));
 app.use('/api/mentors', require('./routes/mentors'));
 app.use('/api/sessions', require('./routes/sessions'));
 app.use('/api/payments', require('./routes/payments'));
@@ -427,7 +428,7 @@ app.get('/api/categories', async (req, res) => {
         COUNT(mc.mentor_id) as mentor_count
       FROM categories c
       LEFT JOIN mentor_categories mc ON c.id = mc.category_id
-      LEFT JOIN mentors m ON mc.mentor_id = m.id AND m.status = 'active' AND m.verification_status = 'verified'
+      LEFT JOIN mentors m ON mc.mentor_id = m.id AND m.status = 'active' AND m.verification_status = 'approved'
       WHERE c.is_active = true
       GROUP BY c.id
       ORDER BY c.sort_order, c.name

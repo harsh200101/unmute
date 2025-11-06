@@ -449,31 +449,50 @@ export const AuthProvider = ({ children }) => {
   }, [setTokens]);
 
   // Google OAuth Login
-  const loginWithGoogle = useCallback(() => {
-    // Generate state for CSRF protection
+  const loginWithGoogle = useCallback((role = 'mentee') => {
+    // Generate CSRF state for protection
     const state = Math.random().toString(36).substring(2, 15);
     localStorage.setItem('oauth_state', state);
 
-    // Redirect to Google OAuth (use full backend URL since proxy doesn't work for window.location)
-    window.location.href = `${API_BASE_URL || 'http://localhost:5000'}/api/auth/google?state=${state}`;
+    console.log('🔄 AUTH: Initiating Google OAuth with role:', role);
+    console.log('🔄 AUTH: Generated CSRF state:', state);
+    console.log('🔄 AUTH: Full OAuth URL:', `${API_BASE_URL || 'http://localhost:5000'}/api/auth/google?role=${role}&state=${state}`);
+
+    // Redirect to Google OAuth with role as query parameter (use full backend URL since proxy doesn't work for window.location)
+    window.location.href = `${API_BASE_URL || 'http://localhost:5000'}/api/auth/google?role=${role}&state=${state}`;
   }, []);
 
   // Handle OAuth Callback
-  const handleOAuthCallback = useCallback(async (searchParams) => {
-    dispatch({ type: ActionTypes.LOGIN_START });
+const handleOAuthCallback = useCallback(async (searchParams) => {
+dispatch({ type: ActionTypes.LOGIN_START });
 
-    try {
-      const accessToken = searchParams.get('accessToken');
-      const refreshToken = searchParams.get('refreshToken');
-      const error = searchParams.get('error');
-      const state = searchParams.get('state');
-      const storedState = localStorage.getItem('oauth_state');
+try {
+  const accessToken = searchParams.get('accessToken');
+  const refreshToken = searchParams.get('refreshToken');
+  const error = searchParams.get('error');
+  const state = searchParams.get('state');
+  const storedState = localStorage.getItem('oauth_state');
 
-      // Verify state for CSRF protection (optional - skip if no stored state)
-      if (storedState && state !== storedState) {
-        console.warn('State parameter mismatch - continuing anyway for OAuth compatibility');
-        // Don't throw error, just log warning for debugging
-      }
+  console.log('🔄 AUTH: OAuth callback received');
+  console.log('🔄 AUTH: URL state parameter:', state);
+  console.log('🔄 AUTH: Stored state:', storedState);
+
+  // Verify CSRF state (role is now handled server-side)
+  if (storedState && state) {
+    if (state !== storedState) {
+      console.warn('State parameter mismatch - continuing anyway for OAuth compatibility');
+      console.log('⚠️ AUTH: CSRF state mismatch - stored:', storedState, 'received:', state);
+    } else {
+      console.log('✅ AUTH: CSRF state parameter matches stored state');
+    }
+  } else {
+    console.log('⚠️ AUTH: Missing state parameters - stored:', !!storedState, 'received:', !!state);
+  }
+
+  // Clean up stored state
+  if (storedState) {
+    localStorage.removeItem('oauth_state');
+  }
 
       // Clean up stored state
       if (storedState) {

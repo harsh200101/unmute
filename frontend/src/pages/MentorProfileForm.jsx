@@ -9,36 +9,33 @@ const MentorProfileForm = () => {
   const navigate = useNavigate();
 
   // Form state
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [mentorProfile, setMentorProfile] = useState(null);
-  const [formData, setFormData] = useState({
-    // Professional Information (from users table)
-    bio: '',
+ const [loading, setLoading] = useState(false);
+ const [saving, setSaving] = useState(false);
+ const [mentorProfile, setMentorProfile] = useState(null);
+ const [formData, setFormData] = useState({
+   // Professional Information (from users table)
+   bio: '',
 
-    // Mentor Profile (from mentors table)
-    yearsExperience: 1,
-    specializations: [],
-    industries: [],
-    skills: [],
-    languages: ['en'], // Default to English
-    hourlyRate: 5000,
-    profileImage: '',
-    videoIntroUrl: '',
-    portfolioUrls: [],
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    instantBooking: false,
-    advanceBookingDays: 30,
-    minSessionDuration: 30,
-    maxSessionDuration: 120,
-    sessionBufferMinutes: 15,
+   // Mentor Profile (from mentors table)
+   yearsExperience: 1,
+   specializations: [],
+   industries: [],
+   skills: [],
+   languages: ['en'], // Default to English
+   hourlyRate: 5000,
+   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+   instantBooking: false,
+   advanceBookingDays: 30,
+   minSessionDuration: 30,
+   maxSessionDuration: 120,
+   sessionBufferMinutes: 15,
 
-    // Categories (relationship table)
-    categories: [],
+   // Categories (relationship table)
+   categories: [],
 
-    // Additional Settings
-    publicProfile: true
-  });
+   // Additional Settings
+   publicProfile: true
+ });
 
   const [formErrors, setFormErrors] = useState({});
   const [availableCategories, setAvailableCategories] = useState([]);
@@ -120,9 +117,6 @@ const MentorProfileForm = () => {
           skills: mentor.skills || [],
           languages: mentor.languages || ['en'],
           hourlyRate: mentor.hourlyRate || 75,
-          profileImage: mentor.profileImage || '',
-          videoIntroUrl: mentor.videoIntroUrl || '',
-          portfolioUrls: mentor.portfolioUrls || [],
           timezone: mentor.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
           instantBooking: mentor.instantBooking || false,
           advanceBookingDays: mentor.advanceBookingDays || 30,
@@ -232,17 +226,6 @@ const MentorProfileForm = () => {
       errors.maxSessionDuration = 'Maximum duration must be greater than minimum';
     }
 
-    if (formData.profileImage && !formData.profileImage.match(/^https?:\/\/.+/)) {
-      errors.profileImage = 'Profile image must be a valid URL';
-    }
-
-    if (formData.videoIntroUrl && !formData.videoIntroUrl.match(/^https?:\/\/.+/)) {
-      errors.videoIntroUrl = 'Video intro URL must be a valid URL';
-    }
-
-    if (formData.portfolioUrls.some(url => url && !url.match(/^https?:\/\/.+/))) {
-      errors.portfolioUrls = 'All portfolio URLs must be valid';
-    }
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -267,9 +250,6 @@ const MentorProfileForm = () => {
         skills: formData.skills,
         languages: formData.languages,
         hourly_rate: parseFloat(formData.hourlyRate),
-        profile_image: formData.profileImage,
-        video_intro_url: formData.videoIntroUrl,
-        portfolio_urls: formData.portfolioUrls,
         timezone: formData.timezone,
         instant_booking: formData.instantBooking,
         advance_booking_days: parseInt(formData.advanceBookingDays),
@@ -291,7 +271,13 @@ const MentorProfileForm = () => {
 
       if (response.ok) {
         toast.success('Profile updated successfully!');
-        navigate('/mentor/dashboard');
+        // Check if profile is complete for verification request
+        const isProfileComplete = validateForm() === true;
+        if (isProfileComplete) {
+          navigate('/mentor/dashboard');
+        } else {
+          navigate('/mentor/dashboard');
+        }
       } else {
         const error = await response.json();
         throw new Error(error.message || 'Failed to update profile');
@@ -387,84 +373,6 @@ const MentorProfileForm = () => {
             </div>
           </div>
 
-          {/* Media & Portfolio */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">Media & Portfolio</h2>
-
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Profile Image URL <span className="text-gray-500">(optional)</span>
-                </label>
-                <input
-                  type="url"
-                  value={formData.profileImage}
-                  onChange={(e) => handleChange('profileImage', e.target.value)}
-                  className={`w-full px-4 py-3 rounded-xl border ${formErrors.profileImage ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500`}
-                  placeholder="https://example.com/profile-image.jpg"
-                />
-                {formErrors.profileImage && <p className="mt-1 text-sm text-red-600">{formErrors.profileImage}</p>}
-                <p className="mt-1 text-sm text-gray-600">URL to your professional profile image</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Video Introduction URL <span className="text-gray-500">(optional)</span>
-                </label>
-                <input
-                  type="url"
-                  value={formData.videoIntroUrl}
-                  onChange={(e) => handleChange('videoIntroUrl', e.target.value)}
-                  className={`w-full px-4 py-3 rounded-xl border ${formErrors.videoIntroUrl ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500`}
-                  placeholder="https://example.com/intro-video.mp4"
-                />
-                {formErrors.videoIntroUrl && <p className="mt-1 text-sm text-red-600">{formErrors.videoIntroUrl}</p>}
-                <p className="mt-1 text-sm text-gray-600">URL to your introduction video</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Portfolio URLs <span className="text-gray-500">(optional)</span>
-                </label>
-                <div className="space-y-2">
-                  {formData.portfolioUrls.map((url, index) => (
-                    <div key={index} className="flex gap-2">
-                      <input
-                        type="url"
-                        value={url}
-                        onChange={(e) => {
-                          const newUrls = [...formData.portfolioUrls];
-                          newUrls[index] = e.target.value;
-                          handleChange('portfolioUrls', newUrls);
-                        }}
-                        className="flex-1 px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        placeholder="https://github.com/yourusername"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newUrls = formData.portfolioUrls.filter((_, i) => i !== index);
-                          handleChange('portfolioUrls', newUrls);
-                        }}
-                        className="px-3 py-3 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => handleChange('portfolioUrls', [...formData.portfolioUrls, ''])}
-                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm"
-                  >
-                    + Add Portfolio URL
-                  </button>
-                </div>
-                {formErrors.portfolioUrls && <p className="mt-1 text-sm text-red-600">{formErrors.portfolioUrls}</p>}
-                <p className="mt-1 text-sm text-gray-600">Links to your website, blog, LinkedIn, or other professional profiles</p>
-              </div>
-            </div>
-          </div>
 
           {/* Areas of Guidance */}
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">

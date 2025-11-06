@@ -266,7 +266,7 @@ router.get('/profile',
         // Status
         status: mentor.status,
         verificationStatus: mentor.verification_status,
-        isVerified: mentor.verification_status === 'verified',
+        isVerified: mentor.verification_status === 'approved',
         isFeatured: mentor.is_featured || false,
         badgeLevel: mentor.badge_level || 'bronze',
 
@@ -468,10 +468,8 @@ router.get('/earnings',
       let paramCount = 1;
 
       if (period === 'month') {
-        paramCount++;
         dateFilter = ` AND DATE_TRUNC('month', s.scheduled_at) = DATE_TRUNC('month', CURRENT_DATE)`;
       } else if (period === 'year') {
-        paramCount++;
         dateFilter = ` AND DATE_TRUNC('year', s.scheduled_at) = DATE_TRUNC('year', CURRENT_DATE)`;
       }
 
@@ -514,9 +512,9 @@ router.get('/earnings',
           COUNT(*) as total_sessions,
           SUM(mentor_earnings) as total_earnings,
           AVG(mentor_earnings) as avg_earnings
-        FROM sessions
-        WHERE mentor_id = $1
-          AND status = 'completed'
+        FROM sessions s
+        WHERE s.mentor_id = $1
+          AND s.status = 'completed'
           ${dateFilter}
       `;
 
@@ -1752,6 +1750,14 @@ router.put('/availability',
       });
     }
   }
+);
+
+
+// POST /api/mentors/request-verification - Request mentor verification (send email to admin)
+router.post('/request-verification',
+  auth,
+  rateLimit(5, 60 * 60 * 1000), // 5 requests per hour
+  mentorController.requestMentorVerification
 );
 
 

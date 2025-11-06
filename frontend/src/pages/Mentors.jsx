@@ -16,10 +16,6 @@ const Mentors = () => {
   const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
   const [categoryFilter, setCategoryFilter] = useState(searchParams.get('category') || '');
   const [languageFilter, setLanguageFilter] = useState(searchParams.get('languages') || '');
-  const [priceRange, setPriceRange] = useState([
-    parseInt(searchParams.get('minPrice')) || 0,
-    parseInt(searchParams.get('maxPrice')) || 25000
-  ]);
   const [ratingFilter, setRatingFilter] = useState(parseFloat(searchParams.get('minRating')) || 0);
   const [badgeLevelFilter, setBadgeLevelFilter] = useState(searchParams.get('badgeLevel') || '');
   const [sortOrder, setSortOrder] = useState(searchParams.get('sort') || 'rating');
@@ -56,8 +52,6 @@ const Mentors = () => {
       if (searchTerm) params.append('search', searchTerm);
       if (categoryFilter) params.append('category', categoryFilter);
       if (languageFilter) params.append('languages', languageFilter);
-      if (priceRange[0] > 0) params.append('minPrice', priceRange[0]);
-      if (priceRange[1] < 500) params.append('maxPrice', priceRange[1]);
       if (ratingFilter > 0) params.append('minRating', ratingFilter);
       if (badgeLevelFilter) params.append('badgeLevel', badgeLevelFilter);
       params.append('sort', sortOrder);
@@ -91,7 +85,7 @@ const Mentors = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, categoryFilter, languageFilter, priceRange, ratingFilter, badgeLevelFilter, sortOrder, page]);
+  }, [searchTerm, categoryFilter, languageFilter, ratingFilter, badgeLevelFilter, sortOrder, page]);
 
   // Load categories once on mount
   useEffect(() => {
@@ -131,15 +125,13 @@ const Mentors = () => {
     if (searchTerm) params.set('search', searchTerm);
     if (categoryFilter) params.set('category', categoryFilter);
     if (languageFilter) params.set('languages', languageFilter);
-    if (priceRange[0] > 0) params.set('minPrice', priceRange[0]);
-    if (priceRange[1] < 500) params.set('maxPrice', priceRange[1]);
     if (ratingFilter > 0) params.set('minRating', ratingFilter);
     if (badgeLevelFilter) params.set('badgeLevel', badgeLevelFilter);
     if (sortOrder !== 'rating') params.set('sort', sortOrder);
     if (page > 1) params.set('page', page);
 
     setSearchParams(params);
-  }, [searchTerm, categoryFilter, languageFilter, priceRange, ratingFilter, badgeLevelFilter, sortOrder, page, setSearchParams]);
+  }, [searchTerm, categoryFilter, languageFilter, ratingFilter, badgeLevelFilter, sortOrder, page, setSearchParams]);
 
   // Fetch mentors when dependencies change
   useEffect(() => {
@@ -162,10 +154,6 @@ const Mentors = () => {
     setPage(1);
   };
 
-  const handlePriceRangeChange = (min, max) => {
-    setPriceRange([min, max]);
-    setPage(1);
-  };
 
   const handleRatingChange = (rating) => {
     setRatingFilter(rating);
@@ -186,7 +174,6 @@ const Mentors = () => {
     setSearchTerm('');
     setCategoryFilter('');
     setLanguageFilter('');
-    setPriceRange([0, 25000]);
     setRatingFilter(0);
     setBadgeLevelFilter('');
     setSortOrder('rating');
@@ -373,38 +360,6 @@ const Mentors = () => {
                   </select>
                 </div>
 
-                {/* Price Range */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Price Range (₹{priceRange[0]} - ₹{priceRange[1]}/hour)
-                  </label>
-                  <div className="space-y-3">
-                    <input
-                      type="range"
-                      min="0"
-                      max="25000"
-                      value={priceRange[1]}
-                      onChange={(e) => handlePriceRangeChange(priceRange[0], parseInt(e.target.value))}
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        placeholder="Min"
-                        value={priceRange[0]}
-                        onChange={(e) => handlePriceRangeChange(parseInt(e.target.value) || 0, priceRange[1])}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Max"
-                        value={priceRange[1]}
-                        onChange={(e) => handlePriceRangeChange(priceRange[0], parseInt(e.target.value) || 25000)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-                </div>
 
                 {/* Rating */}
                 <div>

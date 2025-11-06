@@ -348,6 +348,7 @@ exports.getUserSessions = async (req, res) => {
       limit = 20
     } = req.query;
 
+    console.log('🔍 Fetching user sessions:', { userId, status, type, upcoming, past, page, limit });
     console.log('🔍 Fetching user sessions:', { userId, status, type, upcoming, past });
 
     let query = `
@@ -371,7 +372,8 @@ exports.getUserSessions = async (req, res) => {
       INNER JOIN users mentee_user ON s.mentee_id = mentee_user.id
       LEFT JOIN payments p ON s.id = p.session_id
       LEFT JOIN reviews r ON s.id = r.session_id AND r.reviewer_type = 'mentee'
-      WHERE ((s.mentee_id = $1 AND s.status != 'pending') OR mentor_user.id = $1)
+      WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
+        AND s.status != 'pending'
     `;
 
     const params = [userId];
@@ -412,6 +414,8 @@ exports.getUserSessions = async (req, res) => {
     paramCount++;
     query += ` OFFSET $${paramCount}`;
     params.push(offset);
+    console.log('🔍 Executing query:', query.substring(0, 200) + (query.length > 200 ? '...' : ''));
+    console.log('🔍 Query params:', params);
 
     const result = await db.query(query, params);
 
@@ -421,7 +425,8 @@ exports.getUserSessions = async (req, res) => {
       FROM sessions s
       INNER JOIN mentors m ON s.mentor_id = m.id
       INNER JOIN users mentor_user ON m.user_id = mentor_user.id
-      WHERE ((s.mentee_id = $1 AND s.status != 'pending') OR mentor_user.id = $1)
+      WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
+        AND s.status != 'pending'
     `;
 
     const countParams = [userId];
@@ -468,6 +473,7 @@ exports.getUserSessions = async (req, res) => {
       canReschedule: ['pending', 'confirmed'].includes(session.status) &&
                     new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours notice for mentees
     }));
+    console.log(`✅ Found ${sessions.length} sessions for user ${userId}`);
 
     console.log(`✅ Found ${sessions.length} sessions for user ${userId}`);
 
@@ -931,29 +937,35 @@ exports.rescheduleSession = async (req, res) => {
         ]);
       }
 
-      // Send email notifications
+      // Send email notifications to both parties
       try {
         const sessionData = {
           title: updateResult.rows[0].title,
-          scheduledAt: newScheduledAt,
+          scheduledAt: newScheduledAtUTC,
           durationMinutes: newDurationMinutes || updateResult.rows[0].duration_minutes,
           sessionType: updateResult.rows[0].session_type,
           meetingUrl: updateResult.rows[0].meeting_url
         };
 
-        // Get recipient email
-        const recipientQuery = `SELECT email FROM users WHERE id = $1`;
-        const recipientResult = await client.query(recipientQuery, [isMentee ? session.mentor_user_id : session.mentee_id]);
+        // Send to mentee
+        const menteeQuery = `SELECT email FROM users WHERE id = $1`;
+        const menteeResult = await client.query(menteeQuery, [session.mentee_id]);
 
-        if (recipientResult.rows.length > 0) {
-          const emailSessionData = {
-            ...sessionData,
-            scheduledAt: newScheduledAtUTC
-          };
-          await sendSessionRescheduledEmail(recipientResult.rows[0].email, emailSessionData);
+        if (menteeResult.rows.length > 0) {
+          await sendSessionRescheduledEmail(menteeResult.rows[0].email, sessionData);
+          console.log('✅ Session rescheduled email sent to mentee');
+        }
+
+        // Send to mentor
+        const mentorQuery = `SELECT email FROM users WHERE id = $1`;
+        const mentorResult = await client.query(mentorQuery, [session.mentor_user_id]);
+
+        if (mentorResult.rows.length > 0) {
+          await sendSessionRescheduledEmail(mentorResult.rows[0].email, sessionData);
+          console.log('✅ Session rescheduled email sent to mentor');
         }
       } catch (emailError) {
-        console.warn('⚠️ Failed to send reschedule email:', emailError.message);
+        console.warn('⚠️ Failed to send reschedule emails:', emailError.message);
       }
 
       return {
@@ -2609,7 +2621,7 @@ exports.getMenteeNotesHistory = async (req, res) => {
         throw new Error('UNAUTHORIZED');
       }
 
-      // Get all notes for this mentee with this mentor, including session details
+      // Get all notes for this mentee from all mentors, including session details
       const historyQuery = `
         SELECT
           sn.id as note_id,
@@ -2623,16 +2635,20 @@ exports.getMenteeNotesHistory = async (req, res) => {
           s.scheduled_at,
           s.actual_end_time,
           s.duration_minutes,
-          s.status
+          s.status,
+          m.id as mentor_id,
+          mentor_user.first_name as mentor_first_name,
+          mentor_user.last_name as mentor_last_name
         FROM session_notes sn
         JOIN sessions s ON sn.session_id = s.id
+        JOIN mentors m ON sn.mentor_id = m.id
+        JOIN users mentor_user ON m.user_id = mentor_user.id
         WHERE sn.mentee_id = $1
-          AND sn.mentor_id = $2
           AND s.status = 'completed'
         ORDER BY s.scheduled_at DESC
       `;
 
-      const historyResult = await client.query(historyQuery, [session.mentee_id, session.mentor_id]);
+      const historyResult = await client.query(historyQuery, [session.mentee_id]);
 
       // Format the notes history
       const notesHistory = historyResult.rows.map(row => ({
@@ -2642,6 +2658,12 @@ exports.getMenteeNotesHistory = async (req, res) => {
         scheduledAt: row.scheduled_at,
         completedAt: row.actual_end_time,
         durationMinutes: row.duration_minutes,
+        mentor: {
+          id: row.mentor_id,
+          firstName: row.mentor_first_name,
+          lastName: row.mentor_last_name,
+          fullName: `${row.mentor_first_name} ${row.mentor_last_name}`.trim()
+        },
         notes: {
           discussionSummary: row.discussion_summary,
           keyTakeaways: row.key_takeaways,

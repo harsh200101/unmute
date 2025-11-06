@@ -27,13 +27,8 @@ const UserProfile = () => {
     lastName: '',
     email: '',
     phone: '',
-    bio: '',
     location: '',
-    timezone: '',
-    languages: [],
-    website: '',
-    linkedinUrl: '',
-    githubUrl: ''
+    timezone: ''
   });
 
   // Password change state
@@ -65,11 +60,6 @@ const UserProfile = () => {
     return String(value);
   };
 
-  // Available options
-  const languageOptions = [
-    'English', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 
-    'Portuguese', 'Hindi', 'Arabic', 'Russian', 'Italian', 'Korean'
-  ];
 
   const timezoneOptions = [
     'UTC', 'America/New_York', 'America/Los_Angeles', 'Europe/London',
@@ -85,13 +75,8 @@ const UserProfile = () => {
       console.log('lastName:', typeof user.lastName, user.lastName);
       console.log('email:', typeof user.email, user.email);
       console.log('phone:', typeof user.phone, user.phone);
-      console.log('bio:', typeof user.bio, user.bio);
       console.log('location:', typeof user.location, user.location);
       console.log('timezone:', typeof user.timezone, user.timezone);
-      console.log('languages:', typeof user.languages, user.languages);
-      console.log('website:', typeof user.website, user.website);
-      console.log('linkedinUrl:', typeof user.linkedinUrl, user.linkedinUrl);
-      console.log('githubUrl:', typeof user.githubUrl, user.githubUrl);
       console.log('avatarUrl:', typeof user.avatarUrl, user.avatarUrl);
 
       setProfileData({
@@ -99,13 +84,8 @@ const UserProfile = () => {
         lastName: user.lastName || '',
         email: user.email || '',
         phone: user.phone || '',
-        bio: user.bio || '',
         location: user.location || '',
-        timezone: user.timezone || 'UTC',
-        languages: user.languages || [],
-        website: user.website || '',
-        linkedinUrl: user.linkedinUrl || '',
-        githubUrl: user.githubUrl || ''
+        timezone: user.timezone || 'UTC'
       });
 
       setSettings({
@@ -150,15 +130,6 @@ const UserProfile = () => {
     }
   };
 
-  // Handle language selection
-  const handleLanguageChange = (language) => {
-    setProfileData(prev => ({
-      ...prev,
-      languages: prev.languages.includes(language)
-        ? prev.languages.filter(lang => lang !== language)
-        : [...prev.languages, language]
-    }));
-  };
 
   // Handle avatar upload
   const handleAvatarChange = (e) => {
@@ -263,13 +234,8 @@ const UserProfile = () => {
         last_name: profileData.lastName,
         email: profileData.email,
         phone: profileData.phone,
-        bio: profileData.bio,
         location: profileData.location,
         timezone: profileData.timezone,
-        languages: profileData.languages,
-        website: profileData.website,
-        linkedin_url: profileData.linkedinUrl,
-        github_url: profileData.githubUrl,
         avatar_url: avatarUrl,
         ...settings
       });
@@ -333,6 +299,35 @@ const UserProfile = () => {
     }
   };
 
+  // Handle mentor verification request
+  const handleRequestMentorVerification = async () => {
+    try {
+      const response = await fetch('/api/mentors/request-verification', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success('Verification request sent to admin!');
+        // Update user data to reflect pending status
+        await updateProfile({
+          ...user,
+          verification_status: 'pending'
+        });
+      } else {
+        toast.error(data.message || 'Failed to send verification request');
+      }
+    } catch (error) {
+      console.error('Mentor verification request error:', error);
+      toast.error('Failed to send verification request');
+    }
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -391,6 +386,28 @@ const UserProfile = () => {
                   </button>
                 </div>
               )}
+              {isMentor() && user.verification_status !== 'approved' && (
+                <div className="mt-2">
+                  <button
+                    onClick={handleRequestMentorVerification}
+                    disabled={user.verification_status === 'pending'}
+                    className={`text-sm font-medium ${
+                      user.verification_status === 'pending'
+                        ? 'text-gray-500 cursor-not-allowed'
+                        : 'text-blue-600 hover:text-blue-700'
+                    }`}
+                  >
+                    {user.verification_status === 'pending'
+                      ? 'Verification Request Sent'
+                      : 'Request Mentor Verification'}
+                  </button>
+                  {user.verification_status === 'rejected' && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Your verification was rejected. Please update your profile and try again.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="flex items-center gap-2 mt-2">
                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                   isMentor() ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
@@ -400,6 +417,17 @@ const UserProfile = () => {
                 {typeof user.badge_level === 'string' && user.badge_level && (
                   <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                     {user.badge_level.toUpperCase()}
+                  </span>
+                )}
+                {isMentor() && user.verification_status && (
+                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                    user.verification_status === 'approved' ? 'bg-green-100 text-green-800' :
+                    user.verification_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {user.verification_status === 'approved' ? '✓ Verified' :
+                     user.verification_status === 'pending' ? '⏳ Pending' :
+                     '✗ Rejected'}
                   </span>
                 )}
               </div>
@@ -473,13 +501,8 @@ const UserProfile = () => {
                         lastName: user.lastName || '',
                         email: user.email || '',
                         phone: user.phone || '',
-                        bio: user.bio || '',
                         location: user.location || '',
-                        timezone: user.timezone || 'UTC',
-                        languages: user.languages || [],
-                        website: user.website || '',
-                        linkedinUrl: user.linkedinUrl || '',
-                        githubUrl: user.githubUrl || ''
+                        timezone: user.timezone || 'UTC'
                       });
                       setAvatarFile(null);
                       setAvatarPreview(user.avatarUrl || '');
@@ -674,141 +697,8 @@ const UserProfile = () => {
                 </div>
               </div>
 
-              {/* Bio */}
-              <div className="mt-6">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Bio
-                </label>
-                {editMode ? (
-                  <textarea
-                    name="bio"
-                    value={profileData.bio}
-                    onChange={handleInputChange}
-                    rows={4}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    placeholder="Tell us about yourself..."
-                  />
-                ) : (
-                  <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900 min-h-[100px]">
-                    {safeRender(user.bio, 'No bio provided')}
-                  </p>
-                )}
-              </div>
 
-              {/* Languages */}
-              <div className="mt-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Languages
-                </label>
-                {editMode ? (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {languageOptions.map(language => (
-                      <label key={language} className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={profileData.languages.includes(language)}
-                          onChange={() => handleLanguageChange(language)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <span className="text-sm text-gray-700">{language}</span>
-                      </label>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {Array.isArray(user.languages) && user.languages.length > 0 ? (
-                      user.languages.map(lang => (
-                        <span key={lang} className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
-                          {safeRender(lang)}
-                        </span>
-                      ))
-                    ) : (
-                      <p className="text-gray-500">No languages specified</p>
-                    )}
-                  </div>
-                )}
-              </div>
 
-              {/* Social Links */}
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Website
-                  </label>
-                  {editMode ? (
-                    <input
-                      type="url"
-                      name="website"
-                      value={profileData.website}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="https://yourwebsite.com"
-                    />
-                  ) : (
-                    <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {typeof user.website === 'string' && user.website ? (
-                        <a href={user.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
-                          {user.website}
-                        </a>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    LinkedIn
-                  </label>
-                  {editMode ? (
-                    <input
-                      type="url"
-                      name="linkedinUrl"
-                      value={profileData.linkedinUrl}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="https://linkedin.com/in/yourprofile"
-                    />
-                  ) : (
-                    <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {typeof user.linkedinUrl === 'string' && user.linkedinUrl ? (
-                        <a href={user.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
-                          LinkedIn Profile
-                        </a>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    GitHub
-                  </label>
-                  {editMode ? (
-                    <input
-                      type="url"
-                      name="githubUrl"
-                      value={profileData.githubUrl}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="https://github.com/yourusername"
-                    />
-                  ) : (
-                    <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
-                      {typeof user.githubUrl === 'string' && user.githubUrl ? (
-                        <a href={user.githubUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
-                          GitHub Profile
-                        </a>
-                      ) : (
-                        'Not provided'
-                      )}
-                    </p>
-                  )}
-                </div>
-              </div>
             </form>
           </div>
         )}

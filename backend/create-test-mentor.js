@@ -39,7 +39,7 @@ async function createTestMentor() {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (user_id) DO UPDATE SET
         status = 'active',
-        verification_status = 'verified',
+        verification_status = 'approved',
         updated_at = CURRENT_TIMESTAMP
       RETURNING id, user_id, status, verification_status
     `, [

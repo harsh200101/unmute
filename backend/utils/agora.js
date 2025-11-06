@@ -1,4 +1,4 @@
-const { RtcTokenBuilder, RtcRole } = require('agora-token');
+const { RtcTokenBuilder, RtcRole, RtmTokenBuilder, RtmRole } = require('agora-token');
 const crypto = require('crypto');
 
 class AgoraService {
@@ -117,20 +117,47 @@ class AgoraService {
     }
   }
 
+  // NEW: Function to generate an RTM token
+  generateRtmToken(userId, privilegeExpiredTs = null) {
+    try {
+      console.log('📨 Generating RTM token for user:', userId);
+      const expiryTime = privilegeExpiredTs || (Math.floor(Date.now() / 1000) + this.tokenExpiryTime);
+
+      // RTM user IDs must be strings
+      const rtmUid = userId.toString();
+
+      const token = RtmTokenBuilder.buildToken(
+        this.appId,
+        this.appCertificate,
+        rtmUid,
+        expiryTime
+      );
+
+      console.log(`✅ Generated Agora RTM token for uid: ${rtmUid}`);
+      return token;
+    } catch (error) {
+      console.error('❌ Error generating Agora RTM token:', error);
+      throw new Error('Failed to generate Agora RTM token');
+    }
+  }
+
   /**
    * Generate meeting credentials for a session
    * @param {number} sessionId - The session ID
    * @param {number} userId - The user ID
    * @returns {object} Meeting credentials
    */
+  // CHANGED: This function now returns both RTC and RTM tokens
   generateMeetingCredentials(sessionId, userId) {
     const channelName = this.generateChannelName(sessionId);
-    const token = this.generateToken(channelName, userId);
+    const rtcToken = this.generateToken(channelName, userId);
+    const rtmToken = this.generateRtmToken(userId); // NEW
 
     return {
       appId: this.appId,
       channelName,
-      token,
+      rtcToken: rtcToken, // CHANGED: Renamed for clarity
+      rtmToken: rtmToken, // NEW
       uid: userId,
       tokenExpiresAt: new Date(Date.now() + this.tokenExpiryTime * 1000)
     };
