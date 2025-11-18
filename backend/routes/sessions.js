@@ -4,6 +4,7 @@ const db = require('../config/database');
 const auth = require('../middleware/auth');
 const { rateLimit, requireEmailVerification } = require('../middleware/auth');
 const sessionController = require('../controllers/sessionController');
+const { endSession } = require('../services/billingEngine');
 
 const router = express.Router();
 
@@ -153,7 +154,7 @@ router.get('/details/:sessionId',
           mentee_user.last_name as mentee_last_name,
           mentee_user.avatar_url as mentee_avatar,
           mentee_user.email as mentee_email,
-          m.hourly_rate,
+          m.per_minute_rate * 60 as hourly_rate,
           m.badge_level,
           m.timezone as mentor_timezone,
           p.payment_status,
@@ -200,6 +201,7 @@ router.get('/details/:sessionId',
         currency: session.currency,
         platformFee: parseFloat(session.platform_fee || 0),
         mentorEarnings: parseFloat(session.mentor_earnings || 0),
+        actualBilledAmount: parseFloat(session.actual_billed_amount || 0),
         status: session.status,
         
         // Meeting Details
@@ -490,11 +492,10 @@ router.post('/details/:sessionId/start',
           throw new Error('NOT_TIME_YET');
         }
 
-        // Update session status to in_progress
+        // Update session status to in_progress (actual_start_time will be set when video meeting starts)
         const updateQuery = `
-          UPDATE sessions 
+          UPDATE sessions
           SET status = 'in_progress',
-              actual_start_time = CURRENT_TIMESTAMP,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
           RETURNING *
@@ -622,21 +623,37 @@ router.post('/details/:sessionId/complete',
         }
 
         // Check if session can be completed
-        if (session.status !== 'in_progress') {
+        if (!['in_progress', 'confirmed'].includes(session.status)) {
           throw new Error('INVALID_STATUS');
         }
 
-        // Calculate actual duration
-        const startTime = new Date(session.actual_start_time);
-        const endTime = new Date();
-        const actualDurationMinutes = Math.round((endTime - startTime) / (1000 * 60));
+        // If session is still in progress, end the meeting and finalize billing
+        if (session.status === 'in_progress' && session.billing_status !== 'finalized') {
+          console.log('🔄 Session still in progress, ending meeting and finalizing billing...');
+          console.log('🔍 Billing status before finalization:', session.billing_status);
+          try {
+            await endSession(sessionId, 'completed_by_mentor');
+            console.log('✅ Meeting ended and billing finalized');
+          } catch (billingError) {
+            console.error('❌ Error ending meeting:', billingError);
+            // Continue with completion even if billing fails
+          }
+        }
+
+        // Calculate actual duration (use existing value if already set)
+        let actualDurationMinutes = session.actual_duration_minutes;
+        if (!actualDurationMinutes && session.actual_start_time) {
+          const startTime = new Date(session.actual_start_time);
+          const endTime = new Date();
+          actualDurationMinutes = Math.round((endTime - startTime) / (1000 * 60));
+        }
 
         // Update session status to completed
         const updateQuery = `
           UPDATE sessions
           SET status = 'completed',
-              actual_end_time = CURRENT_TIMESTAMP,
-              actual_duration_minutes = $2,
+              actual_end_time = COALESCE(actual_end_time, CURRENT_TIMESTAMP),
+              actual_duration_minutes = COALESCE(actual_duration_minutes, $2),
               mentor_notes = COALESCE($3, mentor_notes),
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
@@ -646,6 +663,7 @@ router.post('/details/:sessionId/complete',
         const updateResult = await client.query(updateQuery, [sessionId, actualDurationMinutes, notes]);
 
         // Create notification for mentee
+        console.log(`[SessionComplete] Creating notification for mentee ${session.mentee_id}`);
         await client.query(`
           INSERT INTO notifications (user_id, title, message, type, related_entity_type, related_entity_id)
           VALUES ($1, $2, $3, $4, $5, $6)
@@ -657,6 +675,7 @@ router.post('/details/:sessionId/complete',
           'session',
           sessionId
         ]);
+        console.log(`[SessionComplete] Notification created successfully for mentee`);
 
         return updateResult.rows[0];
       });
@@ -874,8 +893,23 @@ router.get('/my-sessions/stats',
           COUNT(CASE WHEN s.status LIKE 'cancelled%' THEN 1 END) as cancelled_sessions,
           COUNT(CASE WHEN s.status = 'completed' THEN 1 END) as completed_sessions_count,
           ROUND(AVG(CASE WHEN s.status = 'completed' THEN s.duration_minutes END), 2) as avg_session_duration,
-          SUM(CASE WHEN s.status = 'completed' THEN s.price ELSE 0 END) as total_spent,
-          SUM(CASE WHEN s.status = 'completed' THEN s.mentor_earnings ELSE 0 END) as total_mentor_earnings
+          COALESCE((
+            SELECT SUM(wt.amount)
+            FROM wallet_transactions wt
+            JOIN wallets w ON wt.wallet_id = w.id
+            WHERE w.user_id = $1
+              AND wt.transaction_type = 'debit'
+              AND wt.reference_type = 'session'
+              AND wt.created_at >= $2
+          ), 0) as total_spent,
+          COALESCE((
+            SELECT SUM(me.amount)
+            FROM mentor_earnings me
+            INNER JOIN mentors m2 ON me.mentor_id = m2.id
+            WHERE m2.user_id = $1
+              AND me.status IN ('paid', 'pending')
+              AND me.created_at >= $2
+          ), 0) as total_mentor_earnings
         FROM sessions s
         INNER JOIN mentors m ON s.mentor_id = m.id
         INNER JOIN users mentor_user ON m.user_id = mentor_user.id
@@ -1018,9 +1052,8 @@ router.get('/mentor/upcoming',
           s.scheduled_at,
           s.duration_minutes,
           s.session_type,
-          s.price,
           s.currency,
-          s.mentor_earnings,
+          COALESCE(me.amount, 0) as mentor_earnings,
           s.status,
           s.meeting_url,
           s.meeting_id,
@@ -1029,6 +1062,7 @@ router.get('/mentor/upcoming',
           u.avatar_url as mentee_avatar,
           u.email as mentee_email
         FROM sessions s
+        LEFT JOIN mentor_earnings me ON s.id = me.session_id AND me.status = 'completed'
         INNER JOIN users u ON s.mentee_id = u.id
         WHERE s.mentor_id = $1
           AND s.scheduled_at IS NOT NULL
@@ -1051,6 +1085,7 @@ router.get('/mentor/upcoming',
         price: parseFloat(session.price || 0),
         currency: session.currency,
         mentorEarnings: parseFloat(session.mentor_earnings || 0),
+        actualBilledAmount: parseFloat(session.actual_billed_amount || 0),
         status: session.status,
         meetingUrl: session.meeting_url,
         meetingId: session.meeting_id,
@@ -1282,10 +1317,9 @@ router.get('/mentor/all',
         scheduledAt: session.scheduled_at,
         durationMinutes: session.duration_minutes,
         timezone: session.timezone,
-        price: parseFloat(session.price || 0),
         currency: session.currency,
-        platformFee: parseFloat(session.platform_fee || 0),
         mentorEarnings: parseFloat(session.mentor_earnings || 0),
+        actualBilledAmount: parseFloat(session.actual_billed_amount || 0),
         status: session.status,
         meetingPlatform: session.meeting_platform,
         meetingId: session.meeting_id,
@@ -1410,9 +1444,10 @@ router.get('/mentee/recent',
           s.scheduled_at,
           s.actual_end_time as completed_at,
           s.status,
-          s.price,
+          s.actual_billed_amount,
+          (m.per_minute_rate * s.duration_minutes) as price,
           s.actual_duration_minutes,
-          m.hourly_rate,
+          m.per_minute_rate * 60 as hourly_rate,
           mentor_user.first_name as mentor_first_name,
           mentor_user.last_name as mentor_last_name,
           mentor_user.avatar_url as mentor_avatar,
@@ -1439,6 +1474,7 @@ router.get('/mentee/recent',
         completedAt: session.completed_at,
         status: session.status,
         price: parseFloat(session.price || 0),
+        actualBilledAmount: parseFloat(session.actual_billed_amount || 0),
         actualDurationMinutes: session.actual_duration_minutes,
         mentor: {
           firstName: session.mentor_first_name,
@@ -1515,7 +1551,8 @@ router.get('/mentor/recent',
           s.scheduled_at,
           s.actual_end_time as completed_at,
           s.status,
-          s.mentor_earnings,
+          s.actual_billed_amount,
+          COALESCE(me.amount, 0) as mentor_earnings,
           s.actual_duration_minutes,
           u.first_name as mentee_first_name,
           u.last_name as mentee_last_name,
@@ -1523,6 +1560,7 @@ router.get('/mentor/recent',
           r.overall_rating,
           r.comment as review_comment
         FROM sessions s
+        LEFT JOIN mentor_earnings me ON s.id = me.session_id AND me.status = 'completed'
         INNER JOIN users u ON s.mentee_id = u.id
         LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false
         WHERE s.mentor_id = $1
@@ -1542,6 +1580,7 @@ router.get('/mentor/recent',
         completedAt: session.completed_at,
         status: session.status,
         mentorEarnings: parseFloat(session.mentor_earnings || 0),
+        actualBilledAmount: parseFloat(session.actual_billed_amount || 0),
         actualDurationMinutes: session.actual_duration_minutes,
         mentee: {
           firstName: session.mentee_first_name,
@@ -1738,9 +1777,7 @@ router.get('/mentor/all',
         scheduledAt: session.scheduled_at,
         durationMinutes: session.duration_minutes,
         timezone: session.timezone,
-        price: parseFloat(session.price || 0),
         currency: session.currency,
-        platformFee: parseFloat(session.platform_fee || 0),
         mentorEarnings: parseFloat(session.mentor_earnings || 0),
         status: session.status,
         meetingPlatform: session.meeting_platform,
@@ -1931,6 +1968,7 @@ router.get('/upcoming',
           s.session_type,
           s.meeting_url,
           s.status,
+          s.actual_billed_amount,
           s.created_at,
           mentor_user.id as mentor_user_id,
           mentor_user.first_name as mentor_first_name,
@@ -1989,6 +2027,7 @@ router.get('/upcoming',
         sessionType: session.session_type,
         meetingUrl: session.meeting_url,
         status: session.status,
+        actualBilledAmount: parseFloat(session.actual_billed_amount || 0),
         userRole: session.user_role,
         participant: session.user_role === 'mentor' ? {
           firstName: session.mentee_first_name,

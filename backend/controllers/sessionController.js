@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const { fromZonedTime } = require('date-fns-tz');
 const agoraService = require('../utils/agora');
 const { sendSessionRescheduledEmail, sendRescheduleRequestEmail, sendSessionCancelledEmail, sendMeetingInviteEmail } = require('../utils/emailService');
+const walletService = require('../services/walletService');
+const { endSession } = require('../services/billingEngine');
 
 // Mock APIs for development (replace with real APIs in production)
 const mockZoomAPI = {
@@ -67,10 +69,17 @@ const formatSessionResponse = (session) => {
     scheduledAt: session.scheduled_at,
     durationMinutes: session.duration_minutes,
     timezone: session.timezone,
-    price: parseFloat(session.price || 0),
+    price: session.per_minute_rate && session.duration_minutes
+      ? parseFloat(session.per_minute_rate * session.duration_minutes)
+      : parseFloat(session.price || 0),
     currency: session.currency || 'INR',
-    platformFee: parseFloat(session.platform_fee || 0),
-    mentorEarnings: parseFloat(session.mentor_earnings || 0),
+    platformFee: session.per_minute_rate && session.duration_minutes
+      ? parseFloat((session.per_minute_rate * session.duration_minutes) * 0.10)
+      : parseFloat(session.platform_fee || 0),
+    mentorEarnings: session.mentor_earnings_amount ? parseFloat(session.mentor_earnings_amount) : (session.actual_billed_amount ? parseFloat(session.actual_billed_amount * 0.9) : 0), // Use actual earnings if available, otherwise estimate
+    actualBilledAmount: parseFloat(session.actual_billed_amount || 0),
+    perMinuteRate: parseFloat(session.per_minute_rate || 0),
+    minimumCharge: parseFloat(session.minimum_charge || 0),
     status: session.status,
     meetingPlatform: session.meeting_platform,
     meetingId: session.meeting_id,
@@ -88,13 +97,13 @@ const formatSessionResponse = (session) => {
     updatedAt: session.updated_at,
     confirmedAt: session.confirmed_at,
     cancelledAt: session.cancelled_at,
-    
+
     // Additional populated fields
-    mentorName: session.mentor_first_name && session.mentor_last_name 
-      ? `${session.mentor_first_name} ${session.mentor_last_name}` 
+    mentorName: session.mentor_first_name && session.mentor_last_name
+      ? `${session.mentor_first_name} ${session.mentor_last_name}`
       : null,
-    menteeName: session.mentee_first_name && session.mentee_last_name 
-      ? `${session.mentee_first_name} ${session.mentee_last_name}` 
+    menteeName: session.mentee_first_name && session.mentee_last_name
+      ? `${session.mentee_first_name} ${session.mentee_last_name}`
       : null,
     mentorAvatar: session.mentor_avatar,
     menteeAvatar: session.mentee_avatar
@@ -134,11 +143,11 @@ exports.createSession = async (req, res) => {
 
     // Use transaction for data consistency
     const result = await db.transaction(async (client) => {
-      // Get mentor details with pricing - FIXED: Use m.timezone instead of u.timezone
+      // Get mentor details with per-minute rate - FIXED: Use m.timezone instead of u.timezone
       const mentorQuery = `
         SELECT
           m.id,
-          m.hourly_rate,
+          m.per_minute_rate,
           m.currency,
           m.instant_booking,
           m.auto_accept_bookings,
@@ -176,34 +185,28 @@ exports.createSession = async (req, res) => {
         throw new Error(`BOOKING_TOO_FAR: Cannot book more than ${mentor.advance_booking_days} days in advance`);
       }
 
-      // Calculate pricing - mentee pays exact displayed price, platform fee deducted from mentor earnings
-      const hourlyRate = parseFloat(mentor.hourly_rate);
-      const sessionPrice = (hourlyRate * durationMinutes) / 60;
-      const platformFeeRate = parseFloat(process.env.PLATFORM_FEE_RATE || '0.1'); // 10% default
-      const platformFee = sessionPrice * platformFeeRate;
-      const mentorEarnings = sessionPrice - platformFee; // Net earnings after platform fee deduction
-
-      // Create meeting if video session
-      let meetingDetails = {};
-      if (sessionType === 'video' || sessionType === 'voice') {
-        // Agora meeting will be created after session insertion
-        meetingDetails = {
-          meeting_platform: 'agora'
-        };
+      // Dynamic pricing based on mentor's per-minute rate
+      const perMinuteRate = parseFloat(mentor.per_minute_rate);
+      if (!perMinuteRate || perMinuteRate <= 0) {
+        throw new Error('INVALID_MENTOR_RATE: Mentor does not have a valid per-minute rate');
       }
 
-      // All sessions start as pending until payment is completed
-      const sessionStatus = 'pending';
+      const totalPrice = perMinuteRate * durationMinutes;
+      const platformFee = totalPrice * 0.10; // 10% platform fee
+      const mentorEarnings = totalPrice - platformFee;
+      const minimumCharge = perMinuteRate * 15; // 15-minute minimum charge
 
-      // Insert session
+      // All sessions start as confirmed with calculated pricing
+      const sessionStatus = 'confirmed';
+
+      // Insert session first without meeting details
       const sessionQuery = `
         INSERT INTO sessions (
           mentor_id, mentee_id, title, description, session_type,
-          scheduled_at, duration_minutes, timezone, price, currency,
-          platform_fee, mentor_earnings, meeting_platform,
-          meeting_id, meeting_url, meeting_password, status
+          scheduled_at, duration_minutes, timezone, currency,
+          per_minute_rate, minimum_charge, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *
       `;
 
@@ -216,36 +219,77 @@ exports.createSession = async (req, res) => {
         scheduledAtUTC,
         durationMinutes,
         timezone,
-        sessionPrice,
         mentor.currency,
-        platformFee,
-        mentorEarnings,
-        meetingDetails.meeting_platform || meetingPlatform,
-        null, // meeting_id (will be set later for Agora)
-        null, // meeting_url (will be set later for Agora)
-        null, // meeting_password (not needed for Agora)
+        perMinuteRate,
+        minimumCharge,
         sessionStatus
       ];
 
       const sessionResult = await client.query(sessionQuery, sessionValues);
       const session = sessionResult.rows[0];
 
-      // Meeting will be created after payment confirmation
-      // For now, just set placeholder values
-      await client.query(`
-        UPDATE sessions
-        SET meeting_url = NULL, meeting_id = NULL
-        WHERE id = $1
-      `, [session.id]);
+      // Create meeting if video session (now that we have the session ID)
+      let meetingDetails = {};
+      if (sessionType === 'video' || sessionType === 'voice') {
+        // Generate Agora credentials
+        const meetingCredentials = agoraService.generateMeetingCredentials(session.id, menteeId);
 
-      // Create notifications - FIXED: Consistent column names
+        // Create video_meetings entry
+        await client.query(
+          `INSERT INTO video_meetings (
+            session_id, channel_name, agora_app_id, agora_token, token_expires_at,
+            meeting_status, max_duration_minutes, auto_end_enabled,
+            video_quality, audio_enabled, video_enabled, screen_share_enabled
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            session.id,
+            meetingCredentials.channelName,
+            meetingCredentials.appId,
+            meetingCredentials.rtcToken,
+            meetingCredentials.tokenExpiresAt,
+            'scheduled',
+            75, // 1 hour 15 minutes
+            true, // auto_end_enabled
+            'high', // video_quality
+            true, // audio_enabled
+            true, // video_enabled
+            false // screen_share_enabled
+          ]
+        );
+
+        // Set meeting URL using environment variable
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const meetingUrl = `${frontendUrl}/meeting/${session.id}`;
+
+        meetingDetails = {
+          meeting_platform: 'agora',
+          meeting_id: meetingCredentials.channelName,
+          meeting_url: meetingUrl
+        };
+
+        // Update session with meeting details
+        await client.query(`
+          UPDATE sessions
+          SET meeting_platform = $1, meeting_id = $2, meeting_url = $3, meeting_password = $4
+          WHERE id = $5
+        `, [
+          meetingDetails.meeting_platform,
+          meetingDetails.meeting_id,
+          meetingDetails.meeting_url,
+          null, // meeting_password (not needed for Agora)
+          session.id
+        ]);
+      }
+
+      // Create notifications - Temporarily disabled to isolate deadlock issue
+      /*
       const notifications = [
         // Notification for mentee
         {
           user_id: menteeId,
-          title: 'Session Booking Created',
-          message: `Your session with ${mentor.first_name} ${mentor.last_name} has been created. Please complete the payment to confirm.`,
-          type: 'booking_pending',
+          title: 'Session Booking Confirmed',
+          message: `Your session with ${mentor.first_name} ${mentor.last_name} has been booked and confirmed.`,
+          type: 'booking_confirmed',
           related_entity_type: 'session',
           related_entity_id: session.id
         }
@@ -254,9 +298,9 @@ exports.createSession = async (req, res) => {
       // Notification for mentor
       notifications.push({
         user_id: mentor.user_id,
-        title: 'New Session Request',
-        message: `You have a new session request for ${new Date(scheduledAtUTC).toLocaleDateString()}. Awaiting payment confirmation.`,
-        type: 'booking_pending',
+        title: 'New Session Booked',
+        message: `You have a new session booked for ${new Date(scheduledAtUTC).toLocaleDateString()}.`,
+        type: 'booking_confirmed',
         related_entity_type: 'session',
         related_entity_id: session.id
       });
@@ -275,13 +319,14 @@ exports.createSession = async (req, res) => {
           notification.related_entity_id
         ]);
       }
+      */
 
-      return {
-        session
-      };
-    });
+        return {
+          session
+        };
+      });
 
-    console.log('✅ Session created successfully:', result.session.id);
+      console.log('✅ Session created successfully:', result.session.id);
 
     res.status(201).json({
       success: true,
@@ -335,6 +380,150 @@ exports.createSession = async (req, res) => {
   }
 };
 
+// Join a call - validate wallet balance and return session details
+exports.joinCall = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user.userId;
+
+    console.log('🔄 Joining call for session:', { sessionId, userId });
+
+    // Get session details with mentor info
+    const sessionQuery = `
+      SELECT
+        s.*,
+        m.user_id as mentor_user_id,
+        mentor_user.first_name as mentor_first_name,
+        mentor_user.last_name as mentor_last_name,
+        mentee_user.first_name as mentee_first_name,
+        mentee_user.last_name as mentee_last_name
+      FROM sessions s
+      JOIN mentors m ON s.mentor_id = m.id
+      JOIN users mentor_user ON m.user_id = mentor_user.id
+      JOIN users mentee_user ON s.mentee_id = mentee_user.id
+      WHERE s.id = $1 AND s.status = 'scheduled'
+    `;
+
+    const sessionResult = await db.query(sessionQuery, [sessionId]);
+
+    if (sessionResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found or not available for joining',
+        code: 'SESSION_NOT_FOUND'
+      });
+    }
+
+    const session = sessionResult.rows[0];
+
+    // Check if user is the mentee
+    if (session.mentee_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to join this call',
+        code: 'UNAUTHORIZED'
+      });
+    }
+
+    // Check if session is scheduled to start within reasonable time (e.g., within 1 hour before or after)
+    const now = new Date();
+    const scheduledTime = new Date(session.scheduled_at);
+    const timeDiff = Math.abs(scheduledTime - now) / (1000 * 60 * 60); // hours
+
+    if (timeDiff > 1) {
+      return res.status(422).json({
+        success: false,
+        message: 'Session can only be joined within 1 hour of scheduled time',
+        code: 'INVALID_JOIN_TIME'
+      });
+    }
+
+    // Check wallet balance for minimum debit
+    try {
+      const walletBalance = await walletService.getWalletBalance(userId);
+
+      if (walletBalance.balance < session.minimum_charge) {
+        return res.status(402).json({
+          success: false,
+          message: `Insufficient wallet balance. Required minimum: ₹${session.minimum_charge.toFixed(2)}, Available: ₹${walletBalance.balance.toFixed(2)}`,
+          code: 'INSUFFICIENT_BALANCE',
+          data: {
+            required: session.minimum_charge,
+            available: walletBalance.balance,
+            currency: walletBalance.currency
+          }
+        });
+      }
+    } catch (walletError) {
+      console.error('Wallet balance check failed:', walletError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to verify wallet balance',
+        code: 'WALLET_ERROR'
+      });
+    }
+
+    // Generate fresh Agora token for existing meeting
+    let meetingDetails = {};
+    if (session.meeting_id && (session.session_type === 'video' || session.session_type === 'voice')) {
+      try {
+        // Use stored meeting_id as channel name
+        const channelName = session.meeting_id;
+        const meetingCredentials = agoraService.generateMeetingCredentials(session.id, userId);
+
+        // Update video_meetings table with fresh token
+        await db.query(
+          'UPDATE video_meetings SET agora_token = $1, token_expires_at = $2 WHERE session_id = $3',
+          [meetingCredentials.rtcToken, meetingCredentials.tokenExpiresAt, session.id]
+        );
+
+        meetingDetails = {
+          agora_token: meetingCredentials.rtcToken,
+          channel: channelName,
+          uid: userId
+        };
+      } catch (meetingError) {
+        console.error('Failed to generate Agora token:', meetingError);
+        return res.status(503).json({
+          success: false,
+          message: 'Failed to generate meeting token. Please try again.',
+          code: 'TOKEN_GENERATION_FAILED'
+        });
+      }
+    }
+
+    // Update session status to in_progress
+    await db.query(`
+      UPDATE sessions
+      SET status = 'in_progress', updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [sessionId]);
+
+    console.log('✅ Call joined successfully for session:', sessionId);
+
+    res.json({
+      success: true,
+      message: 'Call joined successfully',
+      data: {
+        session: formatSessionResponse(session),
+        meetingDetails: meetingDetails.agora_token ? {
+          token: meetingDetails.agora_token,
+          channel: meetingDetails.channel,
+          uid: meetingDetails.uid
+        } : null
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error joining call:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to join call',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
 // Get user's sessions with comprehensive details
 exports.getUserSessions = async (req, res) => {
   try {
@@ -360,20 +549,22 @@ exports.getUserSessions = async (req, res) => {
         mentee_user.first_name as mentee_first_name,
         mentee_user.last_name as mentee_last_name,
         mentee_user.avatar_url as mentee_avatar,
-        m.hourly_rate as mentor_hourly_rate,
+        m.per_minute_rate * 60 as mentor_hourly_rate,
         m.badge_level as mentor_badge_level,
         p.payment_status,
         p.amount as payment_amount,
         r.overall_rating as session_rating,
-        r.comment as session_review
+        r.comment as session_review,
+        me.amount as mentor_earnings_amount
       FROM sessions s
       INNER JOIN mentors m ON s.mentor_id = m.id
       INNER JOIN users mentor_user ON m.user_id = mentor_user.id
       INNER JOIN users mentee_user ON s.mentee_id = mentee_user.id
       LEFT JOIN payments p ON s.id = p.session_id
       LEFT JOIN reviews r ON s.id = r.session_id AND r.reviewer_type = 'mentee'
+      LEFT JOIN mentor_earnings me ON s.id = me.session_id AND me.status = 'completed'
       WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
-        AND s.status != 'pending'
+        AND s.status NOT IN ('cancelled_by_mentee', 'cancelled_by_mentor')
     `;
 
     const params = [userId];
@@ -426,7 +617,7 @@ exports.getUserSessions = async (req, res) => {
       INNER JOIN mentors m ON s.mentor_id = m.id
       INNER JOIN users mentor_user ON m.user_id = mentor_user.id
       WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
-        AND s.status != 'pending'
+        AND s.status NOT IN ('cancelled_by_mentee', 'cancelled_by_mentor')
     `;
 
     const countParams = [userId];
@@ -470,7 +661,7 @@ exports.getUserSessions = async (req, res) => {
                 new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours notice
       canReview: session.status === 'completed' && !session.session_rating,
       canMentorReview: session.status === 'completed' && session.mentee_id === userId, // Mentor can review mentee
-      canReschedule: ['pending', 'confirmed'].includes(session.status) &&
+      canReschedule: ['scheduled', 'confirmed'].includes(session.status) &&
                     new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours notice for mentees
     }));
     console.log(`✅ Found ${sessions.length} sessions for user ${userId}`);
@@ -494,7 +685,7 @@ exports.getUserSessions = async (req, res) => {
           upcoming: sessions.filter(s => s.isUpcoming).length,
           past: sessions.filter(s => s.isPast).length,
           completed: sessions.filter(s => s.status === 'completed').length,
-          pending: sessions.filter(s => s.status === 'pending').length
+          scheduled: sessions.filter(s => s.status === 'scheduled').length
         }
       }
     });
@@ -738,9 +929,7 @@ exports.rescheduleSession = async (req, res) => {
         throw new Error('TOO_LATE_TO_RESCHEDULE');
       }
 
-      // For mentees, status should remain confirmed after reschedule
-      // Only change status if it's currently pending
-      const shouldChangeStatus = isMentee && session.status === 'pending';
+      // Sessions are already confirmed (booked) in wallet system
 
       // For mentors, create reschedule request instead of direct reschedule
       if (isMentor) {
@@ -896,10 +1085,6 @@ exports.rescheduleSession = async (req, res) => {
         `Rescheduled by ${isMentee ? 'mentee' : 'mentor'}: ${reason || 'No reason provided'}`
       ];
 
-      // Only change status to confirmed if it was pending
-      if (shouldChangeStatus) {
-        updateFields.push('status = \'confirmed\'');
-      }
 
       const updateQuery = `
         UPDATE sessions
@@ -2116,6 +2301,19 @@ exports.updateSessionStatus = async (req, res) => {
 
       const updateResult = await client.query(updateQuery, [sessionId, status, notes]);
 
+      // If session is completed, finalize billing if not already finalized
+      if (status === 'completed' && session.billing_status !== 'finalized') {
+        console.log('🔄 Session marked as completed, finalizing billing...');
+        console.log('🔍 Billing status before finalization:', session.billing_status);
+        try {
+          await endSession(sessionId, 'completed_by_mentor');
+          console.log('✅ Meeting ended and billing finalized');
+        } catch (billingError) {
+          console.error('❌ Error ending meeting:', billingError);
+          // Continue with completion even if billing fails
+        }
+      }
+
       // Create notification for mentee
       const notificationTitle = {
         'confirmed': 'Session Confirmed',
@@ -2722,6 +2920,7 @@ exports.getMenteeNotesHistory = async (req, res) => {
 
 module.exports = {
   createSession: exports.createSession,
+  joinCall: exports.joinCall,
   getUserSessions: exports.getUserSessions,
   cancelSession: exports.cancelSession,
   rescheduleSession: exports.rescheduleSession,
