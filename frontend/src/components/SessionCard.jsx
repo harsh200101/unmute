@@ -319,12 +319,19 @@ const SessionCard = ({
           </span>
         </div>
         
-        {/* Price */}
-        {session.price && (
-          <span className="text-lg font-bold text-gray-900">
-            ₹{session.price}
-          </span>
-        )}
+        {/* Billed Amount */}
+        {(() => {
+          const isCompleted = session.status === 'completed';
+          const amount = userRole === 'mentee'
+            ? (isCompleted ? session.actualBilledAmount : 0)
+            : (isCompleted ? session.mentorEarnings : 0);
+
+          return (
+            <span className="text-lg font-bold text-gray-900">
+              ₹{amount?.toFixed(2) || '0.00'}
+            </span>
+          );
+        })()}
       </div>
 
       <div className="p-4">

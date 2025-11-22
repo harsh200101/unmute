@@ -648,7 +648,13 @@ const SessionManagement = () => {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ${session.price}
+                            ₹{(() => {
+                              const isCompleted = session.status === 'completed';
+                              const amount = isMentor()
+                                ? (isCompleted ? session.mentorEarnings : session.price)
+                                : (isCompleted ? session.actualBilledAmount : session.price);
+                              return amount?.toFixed(2) || '0.00';
+                            })()}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <div className="flex gap-2">

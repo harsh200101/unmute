@@ -126,8 +126,14 @@ const PaymentResult = () => {
           <p className="text-gray-600 mb-8">{error}</p>
           <div className="space-y-3">
             <button
-              onClick={() => navigate('/sessions')}
+              onClick={() => navigate('/dashboard')}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+            >
+              Go to Dashboard
+            </button>
+            <button
+              onClick={() => navigate('/sessions')}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
             >
               View My Sessions
             </button>
@@ -221,21 +227,21 @@ const PaymentResult = () => {
                         : 'Time not available'
                       }
                     </p>
-                    {console.log('Scheduled at value:', sessionData.scheduled_at)}
-                    {console.log('Parsed date:', sessionData.scheduled_at ? new Date(sessionData.scheduled_at) : 'null')}
                   </div>
                 </div>
 
                 <div>
                   <h3 className="font-semibold text-gray-900 mb-2">Duration & Cost</h3>
                   <div className="space-y-1">
-                    <p className="font-medium text-gray-900">{sessionData.duration_minutes || 'N/A'} minutes</p>
-                    <p className="text-lg font-bold text-green-600">
-                      ₹{sessionData.price || 'N/A'}
+                    <p className="font-medium text-gray-900">
+                      {sessionData.duration_minutes
+                        ? `${sessionData.duration_minutes} minute${sessionData.duration_minutes !== 1 ? 's' : ''}`
+                        : 'Duration not available'
+                      }
                     </p>
-                    {console.log('Duration:', sessionData.duration_minutes)}
-                    {console.log('Price:', sessionData.price)}
-                    {console.log('Currency:', sessionData.currency)}
+                    <p className="text-lg font-bold text-green-600">
+                      ₹{sessionData.actualBilledAmount ? sessionData.actualBilledAmount.toLocaleString('en-IN') : (sessionData.price ? sessionData.price.toLocaleString('en-IN') : 'N/A')}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -288,14 +294,20 @@ const PaymentResult = () => {
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button
-              onClick={() => navigate('/sessions')}
+              onClick={() => navigate('/dashboard')}
               className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-[1.02] shadow-lg hover:shadow-xl"
+            >
+              Go to Dashboard
+            </button>
+            <button
+              onClick={() => navigate('/sessions')}
+              className="px-8 py-3 bg-white hover:bg-gray-50 text-gray-700 font-medium rounded-xl border border-gray-300 transition-colors"
             >
               View My Sessions
             </button>
             <button
               onClick={() => navigate('/mentors')}
-              className="px-8 py-3 bg-white hover:bg-gray-50 text-gray-700 font-medium rounded-xl border border-gray-300 transition-colors"
+              className="px-8 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl border border-gray-300 transition-colors"
             >
               Book Another Session
             </button>
@@ -305,8 +317,70 @@ const PaymentResult = () => {
     );
   }
 
+  // Payment Pending
+  if (paymentStatus === 'pending') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-orange-100">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="text-center mb-8">
+            <div className="w-24 h-24 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-12 h-12 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">Payment Pending</h1>
+            <p className="text-xl text-gray-600">Your payment is being processed</p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 mb-8">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">What's happening?</h2>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
+              <p className="text-yellow-800 text-sm">
+                Your payment is currently being processed. This usually takes a few minutes.
+                You'll receive a confirmation once it's completed.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="font-semibold text-gray-900">While you wait:</h3>
+              <ul className="space-y-2 text-gray-600">
+                <li className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                  Check your email for payment confirmation
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                  You can safely close this page and return later
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                  Contact support if the status doesn't update within 30 minutes
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-[1.02] shadow-lg hover:shadow-xl"
+            >
+              Go to Dashboard
+            </button>
+            <button
+              onClick={() => navigate('/sessions')}
+              className="px-8 py-3 bg-white hover:bg-gray-50 text-gray-700 font-medium rounded-xl border border-gray-300 transition-colors"
+            >
+              View My Sessions
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Payment Failed
-  if (paymentStatus === 'requires_payment_method' || paymentStatus === 'failed' || paymentStatus === 'pending') {
+  if (paymentStatus === 'requires_payment_method' || paymentStatus === 'failed') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -324,11 +398,11 @@ const PaymentResult = () => {
             <h2 className="text-xl font-bold text-gray-900 mb-4">What happened?</h2>
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
               <p className="text-red-800 text-sm">
-                Your payment could not be processed. This might be due to insufficient funds, 
+                Your payment could not be processed. This might be due to insufficient funds,
                 an expired card, or your bank declining the transaction.
               </p>
             </div>
-            
+
             <div className="space-y-3">
               <h3 className="font-semibold text-gray-900">You can try:</h3>
               <ul className="space-y-2 text-gray-600">
@@ -356,8 +430,14 @@ const PaymentResult = () => {
               Try Again
             </button>
             <button
-              onClick={() => navigate('/mentors')}
+              onClick={() => navigate('/dashboard')}
               className="px-8 py-3 bg-white hover:bg-gray-50 text-gray-700 font-medium rounded-xl border border-gray-300 transition-colors"
+            >
+              Go to Dashboard
+            </button>
+            <button
+              onClick={() => navigate('/mentors')}
+              className="px-8 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl border border-gray-300 transition-colors"
             >
               Browse Mentors
             </button>
@@ -370,9 +450,17 @@ const PaymentResult = () => {
   // Default fallback
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="text-center">
+      <div className="text-center max-w-md mx-auto px-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-4">Processing Payment...</h1>
         <LoadingSpinner size="lg" variant="default" />
+        <div className="mt-8">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors"
+          >
+            Go to Dashboard
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -26,3 +26,5 @@ router.post('/:sessionId/invites', videoMeetingController.sendMeetingInvites);
 router.get('/:sessionId/status', videoMeetingController.getMeetingStatus);
 
 module.exports = router;
+// Endpoint for the mentor to end the meeting
+router.post('/:sessionId/end', videoMeetingController.endMeeting);

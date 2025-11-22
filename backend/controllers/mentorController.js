@@ -23,8 +23,8 @@ const formatMentorResponse = (mentor) => {
     categories: mentor.categories || [],
     expertise: mentor.expertise || [],
     
-    // Pricing & Experience
-    hourlyRate: parseFloat(mentor.hourly_rate || 0),
+    // Pricing & Experience (per-minute billing)
+    perMinuteRate: parseFloat(mentor.per_minute_rate || 0),
     currency: mentor.currency || 'INR',
     yearsExperience: mentor.years_experience || 0,
     
@@ -114,7 +114,12 @@ exports.getActiveMentors = async (req, res) => {
         COALESCE(AVG(r.overall_rating), 0) as calculated_rating,
         COUNT(DISTINCT r.id) as review_count,
         COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'completed') as session_count,
-        COALESCE(SUM(CASE WHEN s.status = 'completed' THEN s.mentor_earnings ELSE 0 END), 0) as calculated_earnings,
+        COALESCE((
+          SELECT SUM(me.amount)
+          FROM mentor_earnings me
+          WHERE me.mentor_id = m.id
+            AND me.status IN ('paid', 'pending')
+        ), 0) as calculated_earnings,
         ARRAY_AGG(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL) as categories,
         ARRAY_AGG(DISTINCT et.name) FILTER (WHERE et.name IS NOT NULL) as expertise_tags
       FROM mentors m
@@ -170,13 +175,13 @@ exports.getActiveMentors = async (req, res) => {
     // Price range filters
     if (minPrice) {
       paramCount++;
-      query += ` AND m.hourly_rate >= $${paramCount}`;
+      query += ` AND m.per_minute_rate * 60 >= $${paramCount}`;
       params.push(parseFloat(minPrice));
     }
 
     if (maxPrice) {
       paramCount++;
-      query += ` AND m.hourly_rate <= $${paramCount}`;
+      query += ` AND m.per_minute_rate * 60 <= $${paramCount}`;
       params.push(parseFloat(maxPrice));
     }
 
@@ -210,10 +215,10 @@ exports.getActiveMentors = async (req, res) => {
         query += ` ORDER BY GREATEST(COALESCE(m.average_rating, 0), COALESCE(AVG(r.overall_rating), 0)) DESC, COUNT(DISTINCT r.id) DESC`;
         break;
       case 'price-low':
-        query += ` ORDER BY m.hourly_rate ASC`;
+        query += ` ORDER BY m.per_minute_rate * 60 ASC`;
         break;
       case 'price-high':
-        query += ` ORDER BY m.hourly_rate DESC`;
+        query += ` ORDER BY m.per_minute_rate * 60 DESC`;
         break;
       case 'popular':
         query += ` ORDER BY COUNT(DISTINCT s.id) DESC, GREATEST(COALESCE(m.average_rating, 0), COALESCE(AVG(r.overall_rating), 0)) DESC`;
@@ -324,13 +329,13 @@ exports.getActiveMentors = async (req, res) => {
 
     if (minPrice) {
       countParamCount++;
-      countQuery += ` AND m.hourly_rate >= $${countParamCount}`;
+      countQuery += ` AND m.per_minute_rate * 60 >= $${countParamCount}`;
       countParams.push(parseFloat(minPrice));
     }
 
     if (maxPrice) {
       countParamCount++;
-      countQuery += ` AND m.hourly_rate <= $${countParamCount}`;
+      countQuery += ` AND m.per_minute_rate * 60 <= $${countParamCount}`;
       countParams.push(parseFloat(maxPrice));
     }
 
@@ -609,7 +614,7 @@ exports.registerMentor = async (req, res) => {
             industries = $3,
             skills = $4,
             languages = $5,
-            hourly_rate = $6,
+            per_minute_rate = $6 / 60,
             currency = $7,
             years_experience = $8,
             profile_image = $9,
@@ -657,12 +662,12 @@ exports.registerMentor = async (req, res) => {
         // Create new mentor
         const insertQuery = `
           INSERT INTO mentors (
-            user_id, specializations, industries, skills, languages, hourly_rate, currency,
+            user_id, specializations, industries, skills, languages, per_minute_rate, currency,
             years_experience, profile_image, video_intro_url, portfolio_urls, timezone,
             instant_booking, auto_accept_bookings, advance_booking_days, min_session_duration,
             max_session_duration, session_buffer_minutes, status, verification_status
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'active', 'pending')
+          VALUES ($1, $2, $3, $4, $5, $6 / 60, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'active', 'pending')
           RETURNING *
         `;
 
@@ -779,7 +784,7 @@ exports.requestMentorVerification = async (req, res) => {
         u.bio,
         m.specializations,
         m.languages,
-        m.hourly_rate,
+        m.per_minute_rate * 60 as hourly_rate,
         m.years_experience
       FROM mentors m
       JOIN users u ON m.user_id = u.id

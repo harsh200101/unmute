@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { WalletBalanceHeader } from './WalletBalance';
 
 const Header = () => {
   const { user, logout, isAuthenticated } = useAuth();
@@ -107,7 +108,9 @@ const Header = () => {
             {/* Desktop Auth Section */}
             <div className="hidden md:flex items-center space-x-4">
               {isAuthenticated && user ? (
-                <div className="relative">
+                <>
+                  <WalletBalanceHeader />
+                  <div className="relative">
                   <button
                     onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                     className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors duration-200"
@@ -185,7 +188,8 @@ const Header = () => {
                       </div>
                     </div>
                   )}
-                </div>
+                  </div>
+                </>
               ) : (
                 <div className="flex items-center space-x-3">
                   <Link

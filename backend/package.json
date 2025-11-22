@@ -4,7 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:unit": "jest tests/walletService.test.js",
+    "test:api": "jest tests/walletApi.test.js",
+    "test:db": "jest tests/databaseIntegrity.test.js",
+    "test:errors": "jest tests/errorScenarios.test.js",
     "dev": "nodemon server.js",
     "start": "node server.js"
   },

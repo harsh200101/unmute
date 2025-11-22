@@ -344,6 +344,8 @@ app.get('/api', (req, res) => {
       mentors: '/api/mentors',
       sessions: '/api/sessions',
       payments: '/api/payments',
+      billing: '/api/billing',
+      wallet: '/api/wallet',
       health: '/api/health'
     },
     features: [
@@ -352,6 +354,8 @@ app.get('/api', (req, res) => {
       'Mentor Management',
       'Session Booking',
       'Payment Processing',
+      'Billing Engine',
+      'Wallet System',
       'Video Meetings',
       'PostgreSQL Sessions'
     ]
@@ -408,6 +412,8 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/mentors', require('./routes/mentors'));
 app.use('/api/sessions', require('./routes/sessions'));
 app.use('/api/payments', require('./routes/payments'));
+app.use('/api/billing', require('./routes/billing'));
+app.use('/api/wallet', require('./routes/wallet'));
 app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/meetings', require('./routes/videoMeetings'));
 
@@ -543,6 +549,38 @@ app.post('/payment/callback', async (req, res) => {
     return callbackHandler(req, res);
   } catch (error) {
     console.error('❌ Payment callback error at server level:', error);
+    res.status(500).json({ status: 'error', message: 'Internal server error' });
+  }
+});
+
+// POST /payment/callback/wallet - Handle PhonePe wallet callback (PhonePe POSTs to this URL)
+app.post('/payment/callback/wallet', async (req, res) => {
+  try {
+    console.log('🔄 PhonePe wallet callback received at /payment/callback/wallet (SERVER LEVEL):', {
+      timestamp: new Date().toISOString(),
+      body: req.body,
+      query: req.query,
+      url: req.url,
+      originalUrl: req.originalUrl,
+      headers: req.headers,
+      ip: req.ip
+    });
+
+    // Import the wallet callback handler function directly
+    const walletRoutes = require('./routes/wallet');
+    const callbackHandler = walletRoutes.stack?.find(layer => layer.route?.path === '/callback')?.route?.stack.find(layer => layer.method === 'post')?.handle;
+
+    if (!callbackHandler) {
+      console.error('❌ Wallet callback handler not found in wallet routes');
+      return res.status(500).json({ status: 'error', message: 'Wallet callback handler not available' });
+    }
+
+    console.log('✅ Found wallet callback handler, executing...');
+
+    // Call the wallet callback handler directly
+    return callbackHandler(req, res);
+  } catch (error) {
+    console.error('❌ Wallet callback error at server level:', error);
     res.status(500).json({ status: 'error', message: 'Internal server error' });
   }
 });

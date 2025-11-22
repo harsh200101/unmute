@@ -479,14 +479,14 @@ export const deepClone = (obj) => {
 // ============================================================================
 
 /**
- * Calculate session price based on duration and hourly rate
+ * Calculate session price based on duration and per-minute rate
  * @param {number} durationMinutes - Session duration in minutes
- * @param {number} hourlyRate - Hourly rate
+ * @param {number} perMinuteRate - Per-minute rate
  * @returns {number} Total session price
  */
-export const calculateSessionPrice = (durationMinutes, hourlyRate) => {
-  if (!durationMinutes || !hourlyRate) return 0;
-  return Math.round((durationMinutes / 60) * hourlyRate * 100) / 100;
+export const calculateSessionPrice = (durationMinutes, perMinuteRate) => {
+  if (!durationMinutes || !perMinuteRate) return 0;
+  return Math.round(durationMinutes * perMinuteRate * 100) / 100;
 };
 
 /**

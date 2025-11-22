@@ -95,7 +95,7 @@ router.get('/featured',
           m.id,
           u.bio,  -- Fixed: bio is in users table
           m.specializations,
-          m.hourly_rate,
+          m.per_minute_rate,
           m.years_experience,
           m.profile_image,
           m.average_rating,
@@ -137,7 +137,7 @@ router.get('/featured',
         specializations: mentor.specializations || [],
         categories: [], // Simplified - no categories for now
         languages: mentor.languages || ['en'],
-        hourlyRate: parseFloat(mentor.hourly_rate || 0),
+        perMinuteRate: parseFloat(mentor.per_minute_rate || 0),
         yearsExperience: mentor.years_experience || 0,
         averageRating: parseFloat(mentor.average_rating || 0),
         totalReviews: mentor.total_reviews || 0,
@@ -179,6 +179,7 @@ router.get('/profile',
       const query = `
         SELECT
           m.*,
+          m.per_minute_rate * 60 as hourly_rate,
           u.first_name,
           u.last_name,
           u.email,
@@ -254,8 +255,8 @@ router.get('/profile',
         industries: mentor.industries || [],
         skills: mentor.skills || [],
         languages: mentor.languages || [],
-        hourlyRate: parseFloat(mentor.hourly_rate || 0),
-        currency: mentor.currency || 'USD',
+        perMinuteRate: parseFloat(mentor.per_minute_rate || 0),
+        currency: mentor.currency || 'INR',
         yearsExperience: mentor.years_experience || 0,
 
         // Media
@@ -360,8 +361,9 @@ router.get('/stats',
           COUNT(DISTINCT CASE WHEN r.reviewer_type = 'mentee' THEN r.id END) as total_reviews,
           ROUND(AVG(CASE WHEN s.status = 'completed' THEN EXTRACT(EPOCH FROM (s.actual_end_time - s.actual_start_time))/60 END), 2) as avg_actual_duration,
           COUNT(*) FILTER (WHERE s.status = 'completed' AND s.scheduled_at > CURRENT_TIMESTAMP - INTERVAL '24 hours') as sessions_last_24h,
-          SUM(CASE WHEN s.status = 'completed' THEN s.mentor_earnings ELSE 0 END) as total_earnings
+          COALESCE(SUM(CASE WHEN s.status = 'completed' THEN me.amount ELSE 0 END), 0) as total_earnings
         FROM sessions s
+        LEFT JOIN mentor_earnings me ON s.id = me.session_id AND me.status = 'completed'
         LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false AND r.reviewer_type = 'mentee'
         WHERE s.mentor_id = $1
       `;
@@ -480,13 +482,14 @@ router.get('/earnings',
           s.title,
           s.scheduled_at,
           s.duration_minutes,
-          s.mentor_earnings,
+          COALESCE(me.amount, 0) as mentor_earnings,
           s.status,
           u.first_name as mentee_first_name,
           u.last_name as mentee_last_name,
           s.actual_start_time,
           s.actual_end_time
         FROM sessions s
+        LEFT JOIN mentor_earnings me ON s.id = me.session_id AND me.status = 'completed'
         JOIN users u ON s.mentee_id = u.id
         WHERE s.mentor_id = $1
           AND s.status = 'completed'
@@ -510,9 +513,10 @@ router.get('/earnings',
       const summaryQuery = `
         SELECT
           COUNT(*) as total_sessions,
-          SUM(mentor_earnings) as total_earnings,
-          AVG(mentor_earnings) as avg_earnings
+          COALESCE(SUM(me.amount), 0) as total_earnings,
+          COALESCE(AVG(me.amount), 0) as avg_earnings
         FROM sessions s
+        LEFT JOIN mentor_earnings me ON s.id = me.session_id AND me.status = 'completed'
         WHERE s.mentor_id = $1
           AND s.status = 'completed'
           ${dateFilter}
@@ -1256,7 +1260,7 @@ router.put('/profile',
   [
     body('bio').optional().isLength({ min: 50, max: 1000 }).withMessage('Bio must be between 50 and 1000 characters'),
     body('years_experience').optional().isInt({ min: 0, max: 50 }).withMessage('Years of experience must be between 0 and 50'),
-    body('hourly_rate').optional().isFloat({ min: 10, max: 500 }).withMessage('Hourly rate must be between $10 and $500'),
+    body('per_minute_rate').optional().isFloat({ min: 0.17, max: 8.33 }).withMessage('Per-minute rate must be between ₹0.17 and ₹8.33'),
     body('min_session_duration').optional().isInt({ min: 15, max: 60 }).withMessage('Minimum session duration must be between 15 and 60 minutes'),
     body('max_session_duration').optional().isInt({ min: 60, max: 480 }).withMessage('Maximum session duration must be between 1 and 8 hours'),
     body('timezone').optional().isLength({ min: 1, max: 50 }).withMessage('Invalid timezone'),
@@ -1298,7 +1302,7 @@ router.put('/profile',
         industries: 'industries',
         skills: 'skills',
         languages: 'languages',
-        hourly_rate: 'hourly_rate',
+        per_minute_rate: 'per_minute_rate',
         profile_image: 'profile_image',
         video_intro_url: 'video_intro_url',
         portfolio_urls: 'portfolio_urls',
@@ -1478,12 +1482,13 @@ router.get('/earnings/summary',
       // Get earnings data
       const earningsQuery = `
         SELECT
-          SUM(CASE WHEN s.status = 'completed' AND DATE_TRUNC('month', s.scheduled_at) = DATE_TRUNC('month', CURRENT_DATE) THEN s.mentor_earnings ELSE 0 END) as this_month,
-          SUM(CASE WHEN s.status = 'completed' AND DATE_TRUNC('month', s.scheduled_at) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') THEN s.mentor_earnings ELSE 0 END) as last_month,
-          SUM(CASE WHEN s.status = 'completed' THEN s.mentor_earnings ELSE 0 END) as total_earnings,
+          COALESCE(SUM(CASE WHEN s.status = 'completed' AND DATE_TRUNC('month', s.scheduled_at) = DATE_TRUNC('month', CURRENT_DATE) THEN me.amount ELSE 0 END), 0) as this_month,
+          COALESCE(SUM(CASE WHEN s.status = 'completed' AND DATE_TRUNC('month', s.scheduled_at) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') THEN me.amount ELSE 0 END), 0) as last_month,
+          COALESCE(SUM(CASE WHEN s.status = 'completed' THEN me.amount ELSE 0 END), 0) as total_earnings,
           COUNT(CASE WHEN s.status = 'completed' AND DATE_TRUNC('month', s.scheduled_at) = DATE_TRUNC('month', CURRENT_DATE) THEN 1 END) as sessions_this_month,
           COUNT(CASE WHEN s.status = 'completed' THEN 1 END) as total_sessions
         FROM sessions s
+        LEFT JOIN mentor_earnings me ON s.id = me.session_id AND me.status = 'completed'
         WHERE s.mentor_id = $1
       `;
 
@@ -1539,9 +1544,9 @@ router.get('/meta/stats',
           COUNT(*) FILTER (WHERE badge_level = 'platinum') as platinum_mentors,
           COUNT(*) FILTER (WHERE badge_level = 'gold') as gold_mentors,
           COUNT(*) FILTER (WHERE instant_booking = true) as instant_booking_mentors,
-          AVG(hourly_rate) as avg_hourly_rate,
-          MIN(hourly_rate) as min_hourly_rate,
-          MAX(hourly_rate) as max_hourly_rate,
+          AVG(per_minute_rate * 60) as avg_hourly_rate,
+          MIN(per_minute_rate * 60) as min_hourly_rate,
+          MAX(per_minute_rate * 60) as max_hourly_rate,
           AVG(average_rating) as avg_rating,
           SUM(total_sessions) as total_sessions,
           COUNT(DISTINCT UNNEST(languages)) as unique_languages,

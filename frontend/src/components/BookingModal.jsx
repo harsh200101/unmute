@@ -3,28 +3,35 @@ import { format, addDays, startOfTomorrow, setHours, setMinutes } from 'date-fns
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import PaymentButton from './PaymentButton';
+import LoadingSpinner from './LoadingSpinner';
 
 const BookingModal = ({ mentor, isOpen, onClose }) => {
-   const { isAuthenticated } = useAuth();
-   const [step, setStep] = useState(1); // 1: DateTime, 2: Create Session, 3: Payment
-   const [bookingData, setBookingData] = useState({
-     selectedDate: null,
-     selectedTime: null,
-     durationMinutes: 60,
-     sessionType: 'video',
-     description: '',
-     title: ''
-   });
-   const [loading, setLoading] = useState(false);
-   const [createdSession, setCreatedSession] = useState(null);
-   const [availability, setAvailability] = useState([]);
-   const [loadingAvailability, setLoadingAvailability] = useState(false);
+    const { isAuthenticated } = useAuth();
+    const [step, setStep] = useState(1); // 1: DateTime, 2: Create Session, 3: Confirmation
+    const [bookingData, setBookingData] = useState({
+      selectedDate: null,
+      selectedTime: null,
+      durationMinutes: 60,
+      sessionType: 'video',
+      description: '',
+      title: ''
+    });
+    const [loading, setLoading] = useState(false);
+    const [createdSession, setCreatedSession] = useState(null);
+    const [availability, setAvailability] = useState([]);
+    const [loadingAvailability, setLoadingAvailability] = useState(false);
+    const [walletBalance, setWalletBalance] = useState(null);
+    const [loadingBalance, setLoadingBalance] = useState(false);
+    const [showTopupModal, setShowTopupModal] = useState(false);
+    const [topupAmount, setTopupAmount] = useState('');
+    const [topupLoading, setTopupLoading] = useState(false);
+    const [topupError, setTopupError] = useState('');
 
-  // Load mentor availability when modal opens
+  // Load mentor availability and wallet balance when modal opens
   useEffect(() => {
     if (isOpen && mentor?.id) {
       loadMentorAvailability();
+      fetchWalletBalance();
     }
   }, [isOpen, mentor?.id]);
 
@@ -39,6 +46,59 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
     } finally {
       setLoadingAvailability(false);
     }
+  };
+
+  const fetchWalletBalance = async () => {
+    setLoadingBalance(true);
+    try {
+      const response = await api.get('/wallet/balance');
+      if (response.data.success) {
+        setWalletBalance(response.data.data);
+      } else {
+        throw new Error(response.data.message || 'Failed to fetch balance');
+      }
+    } catch (error) {
+      console.error('Failed to fetch wallet balance:', error);
+      toast.error('Failed to load wallet balance');
+    } finally {
+      setLoadingBalance(false);
+    }
+  };
+
+  const handleTopupSubmit = async () => {
+    const amount = parseFloat(topupAmount);
+
+    // Validation
+    if (!amount || amount < 1 || amount > 50000) {
+      setTopupError('Please enter an amount between ₹1 and ₹50,000');
+      return;
+    }
+
+    try {
+      setTopupLoading(true);
+      setTopupError('');
+
+      const response = await api.post('/wallet/topup', { amount });
+
+      if (response.data.success) {
+        toast.success('Redirecting to payment...');
+        window.location.href = response.data.redirectUrl;
+      } else {
+        throw new Error(response.data.message || 'Failed to initiate top-up');
+      }
+    } catch (err) {
+      console.error('Error initiating top-up:', err);
+      setTopupError(err.response?.data?.message || err.message || 'Failed to initiate top-up');
+      toast.error('Failed to initiate top-up');
+    } finally {
+      setTopupLoading(false);
+    }
+  };
+
+  const closeTopupModal = () => {
+    setShowTopupModal(false);
+    setTopupAmount('');
+    setTopupError('');
   };
 
   // Generate available dates (next 30 days)
@@ -84,44 +144,98 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
   };
 
   const calculatePrice = () => {
-    if (!mentor?.hourlyRate || !bookingData.durationMinutes) return 0;
-    return (mentor.hourlyRate * bookingData.durationMinutes) / 60;
+    // Dynamic pricing based on mentor's per-minute rate
+    if (!mentor?.perMinuteRate || !bookingData.durationMinutes) return 0;
+    return mentor.perMinuteRate * bookingData.durationMinutes;
+  };
+
+  const calculateMinimumBalance = () => {
+    // Minimum balance required (15 minutes worth)
+    if (!mentor?.perMinuteRate) return 0;
+    return mentor.perMinuteRate * 15; // 15 minutes minimum
   };
 
   const calculateFees = () => {
     const subtotal = calculatePrice();
-    const platformFee = subtotal * 0.1; // 10% platform fee (deducted internally)
+    const platformFee = subtotal * 0.1; // 10% platform fee
+    const mentorEarnings = subtotal - platformFee;
 
     return {
       subtotal,
       platformFee,
-      total: subtotal // Mentee pays only the displayed price
+      mentorEarnings,
+      total: subtotal // Mentee pays the full price
     };
   };
 
   const handleDateTimeSubmit = () => {
-    if (!bookingData.selectedDate || !bookingData.selectedTime) {
-      toast.error('Please select both date and time');
-      return;
-    }
+    // Comprehensive validation
     if (!isAuthenticated) {
       toast.error('Please login to book a session');
       return;
     }
+
+    if (!bookingData.selectedDate) {
+      toast.error('Please select a date for your session');
+      return;
+    }
+
+    if (!bookingData.selectedTime) {
+      toast.error('Please select a time for your session');
+      return;
+    }
+
+    // Validate that selected time is in the future
+    const [hours, minutes] = bookingData.selectedTime.split(':').map(Number);
+    const selectedDateTime = setMinutes(setHours(bookingData.selectedDate, hours), minutes);
+
+    if (selectedDateTime <= new Date()) {
+      toast.error('Please select a future date and time');
+      return;
+    }
+
+    // Validate duration
+    if (!bookingData.durationMinutes || bookingData.durationMinutes < 30) {
+      toast.error('Please select a valid session duration');
+      return;
+    }
+
     setStep(2); // Go to session creation step
   };
 
   const handleCreateSession = async () => {
     setLoading(true);
     try {
+      // Check wallet balance first - use minimum balance requirement
+      const requiredAmount = calculateMinimumBalance();
+      const currentBalance = walletBalance?.balance || 0;
+
+      if (currentBalance < requiredAmount) {
+        setShowTopupModal(true);
+        toast.error(`Insufficient wallet balance. You need at least ₹${requiredAmount.toFixed(2)} to book this session.`);
+        return;
+      }
+
+      // Validate session data
+      if (!bookingData.selectedDate || !bookingData.selectedTime) {
+        toast.error('Please select a valid date and time.');
+        return;
+      }
+
       // Combine date and time
       const [hours, minutes] = bookingData.selectedTime.split(':').map(Number);
       const scheduledAt = setMinutes(setHours(bookingData.selectedDate, hours), minutes);
 
+      // Validate scheduled time is in the future
+      if (scheduledAt <= new Date()) {
+        toast.error('Please select a future date and time.');
+        return;
+      }
+
       const sessionData = {
         mentorId: mentor.id,
-        title: bookingData.title || `Mentoring Session with ${mentor.firstName} ${mentor.lastName}`,
-        description: bookingData.description,
+        title: bookingData.title?.trim() || `Mentoring Session with ${mentor.firstName} ${mentor.lastName}`,
+        description: bookingData.description?.trim() || '',
         sessionType: bookingData.sessionType,
         scheduledAt: scheduledAt.toISOString(),
         durationMinutes: bookingData.durationMinutes,
@@ -134,14 +248,26 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
 
       if (response.data.success) {
         setCreatedSession(response.data.data.session);
-        setStep(3); // Go to payment step
-        toast.success('Session created! Please complete payment.');
+        setStep(3); // Go to confirmation step
+        toast.success('Session booked successfully!');
       } else {
         throw new Error(response.data.message || 'Failed to create session');
       }
     } catch (error) {
       console.error('Session creation error:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to create session';
+      let errorMessage = 'Failed to create session. Please try again.';
+
+      if (error.response?.status === 400) {
+        errorMessage = error.response.data?.message || 'Invalid session data. Please check your inputs.';
+      } else if (error.response?.status === 409) {
+        errorMessage = 'This time slot is no longer available. Please select a different time.';
+      } else if (error.response?.status === 402) {
+        errorMessage = 'Payment failed. Please check your wallet balance.';
+        setShowTopupModal(true);
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -149,7 +275,7 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
   };
 
 
-  const handlePaymentComplete = () => {
+  const handleBookingComplete = () => {
     toast.success('Session booked successfully!');
     onClose();
     resetModal();
@@ -168,12 +294,16 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
       title: ''
     });
     setCreatedSession(null);
+    setShowTopupModal(false);
+    setTopupAmount('');
+    setTopupError('');
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <>
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
         <div className="bg-white rounded-lg max-w-3xl w-full max-h-screen overflow-y-auto">
           {/* Header */}
           <div className="flex justify-between items-center p-6 border-b">
@@ -203,6 +333,9 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
                 calculateFees={calculateFees}
                 onNext={handleDateTimeSubmit}
                 loadingAvailability={loadingAvailability}
+                walletBalance={walletBalance}
+                loadingBalance={loadingBalance}
+                calculateMinimumBalance={calculateMinimumBalance}
               />
             )}
 
@@ -214,31 +347,90 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
                 onBack={() => setStep(1)}
                 onSubmit={handleCreateSession}
                 loading={loading}
+                walletBalance={walletBalance}
               />
             )}
 
             {step === 3 && (
-              <PaymentStep
-                bookingData={bookingData}
-                mentor={mentor}
-                calculateFees={calculateFees}
-                onBack={() => setStep(2)}
-                loading={loading}
-                sessionId={createdSession?.id}
-              />
-            )}
-
-            {step === 4 && (
               <ConfirmationStep
                 bookingData={bookingData}
                 mentor={mentor}
-                onComplete={handlePaymentComplete}
+                onComplete={handleBookingComplete}
               />
             )}
           </div>
         </div>
       </div>
-    );
+
+      {showTopupModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Add Money to Wallet</h3>
+                <button
+                  onClick={closeTopupModal}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <label htmlFor="topup-amount" className="block text-sm font-medium text-gray-700 mb-2">
+                  Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  id="topup-amount"
+                  value={topupAmount}
+                  onChange={(e) => setTopupAmount(e.target.value)}
+                  placeholder="Enter amount"
+                  min="1"
+                  max="50000"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={topupLoading}
+                />
+                {topupError && (
+                  <p className="mt-1 text-sm text-red-600">{topupError}</p>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={closeTopupModal}
+                  className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                  disabled={topupLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleTopupSubmit}
+                  disabled={topupLoading || !topupAmount}
+                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-md transition-colors flex items-center justify-center gap-2"
+                >
+                  {topupLoading ? (
+                    <>
+                      <LoadingSpinner size="sm" color="white" />
+                      Processing...
+                    </>
+                  ) : (
+                    'Add Money'
+                  )}
+                </button>
+              </div>
+
+              <div className="mt-4 text-xs text-gray-500 text-center">
+                Amount must be between ₹1 and ₹50,000
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
   };
 
 // Step Indicator Component
@@ -248,9 +440,7 @@ const StepIndicator = ({ currentStep }) => (
     <StepDivider active={currentStep >= 2} />
     <StepItem step={2} currentStep={currentStep} label="Create Session" />
     <StepDivider active={currentStep >= 3} />
-    <StepItem step={3} currentStep={currentStep} label="Payment" />
-    <StepDivider active={currentStep >= 4} />
-    <StepItem step={4} currentStep={currentStep} label="Confirmation" />
+    <StepItem step={3} currentStep={currentStep} label="Confirmation" />
   </div>
 );
 
@@ -272,18 +462,22 @@ const StepDivider = ({ active }) => (
 );
 
 // Date & Time Selection Step
-const DateTimeStep = ({ 
-  mentor, 
-  bookingData, 
-  setBookingData, 
-  availableDates, 
+const DateTimeStep = ({
+  mentor,
+  bookingData,
+  setBookingData,
+  availableDates,
   getAvailableTimeSlots,
-  calculateFees, 
+  calculateFees,
   onNext,
-  loadingAvailability 
+  loadingAvailability,
+  walletBalance,
+  loadingBalance,
+  calculateMinimumBalance
 }) => {
   const availableTimeSlots = getAvailableTimeSlots(bookingData.selectedDate);
   const fees = calculateFees();
+  const minBalance = calculateMinimumBalance();
 
   return (
     <div className="space-y-6">
@@ -346,23 +540,38 @@ const DateTimeStep = ({
           Select Date
         </label>
         {loadingAvailability ? (
-          <div className="text-center py-4">Loading availability...</div>
+          <div className="flex items-center justify-center py-8">
+            <LoadingSpinner size="md" />
+            <span className="ml-3 text-gray-600">Loading mentor availability...</span>
+          </div>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-40 overflow-y-auto">
-            {availableDates.slice(0, 14).map((date) => (
-              <button
-                key={date.toISOString()}
-                onClick={() => setBookingData({...bookingData, selectedDate: date, selectedTime: null})}
-                className={`p-3 text-sm rounded-lg border transition-colors ${
-                  bookingData.selectedDate?.toDateString() === date.toDateString()
-                    ? 'border-blue-500 bg-blue-50 text-blue-600'
-                    : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
-                }`}
-              >
-                {format(date, 'EEE, MMM d')}
-              </button>
-            ))}
+            {availableDates.slice(0, 14).map((date) => {
+              const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
+              return (
+                <button
+                  key={date.toISOString()}
+                  onClick={() => !isPast && setBookingData({...bookingData, selectedDate: date, selectedTime: null})}
+                  disabled={isPast}
+                  className={`p-3 text-sm rounded-lg border transition-colors ${
+                    isPast
+                      ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : bookingData.selectedDate?.toDateString() === date.toDateString()
+                      ? 'border-blue-500 bg-blue-50 text-blue-600'
+                      : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
+                  }`}
+                  title={isPast ? 'Past dates are not available' : ''}
+                >
+                  {format(date, 'EEE, MMM d')}
+                </button>
+              );
+            })}
           </div>
+        )}
+        {!loadingAvailability && (
+          <p className="text-xs text-gray-500 mt-2">
+            Select a date to view available time slots
+          </p>
         )}
       </div>
 
@@ -410,21 +619,42 @@ const DateTimeStep = ({
         />
       </div>
 
-      {/* Price Display */}
+      {/* Wallet Balance Display */}
       <div className="bg-gray-50 p-4 rounded-lg">
         <div className="space-y-2">
           <div className="flex justify-between">
-            <span>Session ({bookingData.durationMinutes} min):</span>
+            <span>Session Cost:</span>
             <span>₹{fees.subtotal.toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
-            <span>Platform fee (10%):</span>
-            <span>₹{fees.platformFee.toFixed(2)} (deducted internally)</span>
+            <span>Platform Fee (10%):</span>
+            <span>-₹{fees.platformFee.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between text-sm text-green-600 font-medium">
+            <span>Mentor Earnings:</span>
+            <span>₹{fees.mentorEarnings.toFixed(2)}</span>
           </div>
           <hr />
-          <div className="flex justify-between items-center font-bold text-lg">
-            <span>You Pay:</span>
-            <span className="text-green-600">₹{fees.total.toFixed(2)}</span>
+          <div className="flex justify-between text-sm text-gray-600">
+            <span>Minimum Balance Required:</span>
+            <span>₹{minBalance.toFixed(2)}</span>
+          </div>
+          {loadingBalance ? (
+            <div className="text-center py-2">
+              <LoadingSpinner size="sm" />
+              <span className="text-sm text-gray-600 ml-2">Loading balance...</span>
+            </div>
+          ) : (
+            <div className="flex justify-between text-sm">
+              <span>Your Wallet Balance:</span>
+              <span className={walletBalance?.balance >= fees.subtotal ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                ₹{(walletBalance?.balance || 0).toFixed(2)}
+              </span>
+            </div>
+          )}
+          <hr />
+          <div className="text-sm text-gray-600">
+            Funds will be deducted from your wallet upon booking confirmation.
           </div>
         </div>
       </div>
@@ -434,14 +664,14 @@ const DateTimeStep = ({
         disabled={!bookingData.selectedDate || !bookingData.selectedTime}
         className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
       >
-        Continue to Payment
+        Continue
       </button>
     </div>
   );
 };
 
 // Create Session Step
-const CreateSessionStep = ({ bookingData, mentor, calculateFees, onBack, onSubmit, loading }) => {
+const CreateSessionStep = ({ bookingData, mentor, calculateFees, onBack, onSubmit, loading, walletBalance }) => {
   const fees = calculateFees();
 
   return (
@@ -456,7 +686,10 @@ const CreateSessionStep = ({ bookingData, mentor, calculateFees, onBack, onSubmi
           <div>Duration: {bookingData.durationMinutes} minutes</div>
           <div>Type: {bookingData.sessionType}</div>
           <div className="font-medium pt-2 border-t border-blue-200">
-            You Pay: ₹{fees.total.toFixed(2)}
+            Amount to be deducted: ₹{fees.total.toFixed(2)}
+          </div>
+          <div className="text-sm text-blue-600">
+            Wallet Balance: ₹{(walletBalance?.balance || 0).toFixed(2)}
           </div>
         </div>
       </div>
@@ -467,7 +700,7 @@ const CreateSessionStep = ({ bookingData, mentor, calculateFees, onBack, onSubmi
         <div className="space-y-2 text-sm text-gray-600">
           <div>• Sessions can be cancelled up to 24 hours in advance for a full refund</div>
           <div>• Late cancellations may incur fees</div>
-          <div>• Payment will be processed securely through Stripe</div>
+          <div>• Amount will be deducted from your wallet upon booking confirmation</div>
         </div>
       </div>
 
@@ -484,66 +717,13 @@ const CreateSessionStep = ({ bookingData, mentor, calculateFees, onBack, onSubmi
           disabled={loading}
           className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
         >
-          {loading ? 'Creating Session...' : 'Create Session & Proceed to Payment'}
+          {loading ? 'Booking Session...' : 'Book Session'}
         </button>
       </div>
     </div>
   );
 };
 
-// Payment Step
-const PaymentStep = ({ bookingData, mentor, calculateFees, onBack, loading, sessionId }) => {
-  const fees = calculateFees();
-
-  return (
-    <div className="space-y-6">
-      {/* Session Summary */}
-      <div className="bg-blue-50 p-4 rounded-lg">
-        <h3 className="font-semibold text-blue-900 mb-2">Session Summary</h3>
-        <div className="space-y-1 text-sm text-blue-800">
-          <div>Mentor: {mentor?.firstName} {mentor?.lastName}</div>
-          <div>Date: {bookingData.selectedDate && format(bookingData.selectedDate, 'EEEE, MMMM d, yyyy')}</div>
-          <div>Time: {bookingData.selectedTime}</div>
-          <div>Duration: {bookingData.durationMinutes} minutes</div>
-          <div>Type: {bookingData.sessionType}</div>
-          <div className="font-medium pt-2 border-t border-blue-200">
-            You Pay: ₹{fees.total.toFixed(2)}
-          </div>
-        </div>
-      </div>
-
-      {/* Payment Method */}
-      <div className="space-y-4">
-        <h3 className="font-semibold">Payment Information</h3>
-        <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
-          <p className="text-yellow-800 text-sm">
-            🔒 Secure payment powered by PhonePe
-          </p>
-        </div>
-        <PaymentButton
-          sessionId={sessionId}
-          amount={fees.subtotal} // Send the actual session price, not total with platform fee
-          onSuccess={() => {
-            // Payment successful, redirect will happen automatically
-          }}
-          onError={(error) => {
-            console.error('Payment error:', error);
-          }}
-        />
-      </div>
-
-      {/* Navigation */}
-      <div className="flex space-x-4">
-        <button
-          onClick={onBack}
-          className="flex-1 bg-gray-200 text-gray-800 py-3 px-4 rounded-lg font-medium hover:bg-gray-300 transition-colors"
-        >
-          Back
-        </button>
-      </div>
-    </div>
-  );
-};
 
 
 // Confirmation Step

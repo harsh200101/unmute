@@ -22,7 +22,7 @@ const MentorProfileForm = () => {
    industries: [],
    skills: [],
    languages: ['en'], // Default to English
-   hourlyRate: 5000,
+   perMinuteRate: 8.33,
    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
    instantBooking: false,
    advanceBookingDays: 30,
@@ -116,7 +116,7 @@ const MentorProfileForm = () => {
           industries: mentor.industries || [],
           skills: mentor.skills || [],
           languages: mentor.languages || ['en'],
-          hourlyRate: mentor.hourlyRate || 75,
+          perMinuteRate: mentor.perMinuteRate || 8.33,
           timezone: mentor.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
           instantBooking: mentor.instantBooking || false,
           advanceBookingDays: mentor.advanceBookingDays || 30,
@@ -206,8 +206,8 @@ const MentorProfileForm = () => {
       errors.categories = 'Select at least one category';
     }
 
-    if (!formData.hourlyRate || formData.hourlyRate < 500) {
-      errors.hourlyRate = 'Hourly rate must be at least ₹500';
+    if (!formData.perMinuteRate || formData.perMinuteRate < 8.33) {
+      errors.perMinuteRate = 'Per-minute rate must be at least ₹8.33';
     }
 
     if (formData.languages.length === 0) {
@@ -249,7 +249,7 @@ const MentorProfileForm = () => {
         industries: formData.industries,
         skills: formData.skills,
         languages: formData.languages,
-        hourly_rate: parseFloat(formData.hourlyRate),
+        per_minute_rate: parseFloat(formData.perMinuteRate),
         timezone: formData.timezone,
         instant_booking: formData.instantBooking,
         advance_booking_days: parseInt(formData.advanceBookingDays),
@@ -498,22 +498,23 @@ const MentorProfileForm = () => {
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Hourly Rate (INR) <span className="text-red-500">*</span>
+                  Per-Minute Rate (INR) <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500">₹</span>
                   <input
                     type="number"
-                    value={formData.hourlyRate}
-                    onChange={(e) => handleChange('hourlyRate', parseInt(e.target.value))}
-                    min="500"
-                    max="25000"
-                    className={`w-full pl-8 pr-4 py-3 rounded-xl border ${formErrors.hourlyRate ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500`}
-                    placeholder="5000"
+                    value={formData.perMinuteRate}
+                    onChange={(e) => handleChange('perMinuteRate', parseFloat(e.target.value))}
+                    min="8.33"
+                    max="416.67"
+                    step="0.01"
+                    className={`w-full pl-8 pr-4 py-3 rounded-xl border ${formErrors.perMinuteRate ? 'border-red-300' : 'border-gray-300'} focus:outline-none focus:ring-2 focus:ring-indigo-500`}
+                    placeholder="8.33"
                   />
                 </div>
-                {formErrors.hourlyRate && <p className="mt-1 text-sm text-red-600">{formErrors.hourlyRate}</p>}
-                <p className="mt-1 text-sm text-gray-600">Typical life coaching session rate in Indian Rupees</p>
+                {formErrors.perMinuteRate && <p className="mt-1 text-sm text-red-600">{formErrors.perMinuteRate}</p>}
+                <p className="mt-1 text-sm text-gray-600">Typical life coaching session rate in Indian Rupees (converted from hourly)</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

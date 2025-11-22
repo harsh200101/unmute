@@ -1,8 +1,7 @@
 const { transaction } = require('../config/database');
 const walletService = require('./walletService');
 
-// In-memory timer storage. In a multi-node production environment, this should be replaced with a distributed system like Redis.
-const sessionTimers = new Map();
+// Note: Timer storage removed since frontend is now authoritative for timer management
 
 /**
  * Validates that a session is in a state where billing can occur.
@@ -18,13 +17,16 @@ function _validateSessionForBilling(session) {
 }
 
 /**
- * Calculates the final bill, applying the 15-minute minimum charge rule.
+ * Calculates the final bill, applying the 15-minute minimum charge rule only if there is billed time.
  * @param {number} totalBilledMinutes - The total minutes where both users were present.
  * @param {number} perMinuteRate - The mentor's rate per minute.
  * @param {number} minimumCharge - The minimum charge for the session.
  * @returns {number} The calculated final bill.
  */
 function _calculateFinalBill(totalBilledMinutes, perMinuteRate, minimumCharge) {
+    if (totalBilledMinutes <= 0) {
+        return 0;  // No charge if no time was billed
+    }
     const calculatedCharge = totalBilledMinutes * perMinuteRate;
     // The final bill is the greater of the minimum charge or the actual calculated charge.
     return Math.max(minimumCharge, calculatedCharge);
@@ -192,6 +194,9 @@ async function _finalizeSession(sessionId, endReason) {
         const actualEndTime = new Date();
         console.log(`[BillingEngine] Actual end time: ${actualEndTime.toISOString()}`);
 
+        // Clear presence columns after meeting ends
+        console.log(`[BillingEngine] Clearing presence columns for session ${sessionId}`);
+
         // safe calculation for total duration
         const actualStart = session.actual_start_time ? new Date(session.actual_start_time) : actualEndTime;
         const totalDuration = (actualEndTime.getTime() - actualStart.getTime()) / (1000 * 60);
@@ -220,6 +225,8 @@ async function _finalizeSession(sessionId, endReason) {
                 actual_billed_amount = $4,
                 platform_fee = $5,
                 mentor_payout_amount = $6,
+                mentee_present = false,
+                mentor_present = false,
                 admin_notes = COALESCE(admin_notes, '') || E'\nEnded: ${endReason}'
             WHERE id = $7`,
             [actualEndTime, roundedDuration, totalBilledMinutes, finalBill, platformFee, mentorPayout, sessionId]
@@ -227,16 +234,8 @@ async function _finalizeSession(sessionId, endReason) {
 
         console.log(`[BillingEngine] Session ${sessionId} finalized successfully. Final Bill: ${finalBill}`);
 
-        // 9. Clean up any running timers for this session.
-        console.log(`[BillingEngine] Step 9: Cleaning up session timers`);
-        if (sessionTimers.has(sessionId)) {
-            console.log(`[BillingEngine] Clearing timer for session ${sessionId}`);
-            clearTimeout(sessionTimers.get(sessionId));
-            sessionTimers.delete(sessionId);
-            console.log(`[BillingEngine] Timer cleared successfully`);
-        } else {
-            console.log(`[BillingEngine] No timer found for session ${sessionId}`);
-        }
+        // 9. Note: Timer cleanup not needed since frontend is now authoritative
+        console.log(`[BillingEngine] Step 9: Timer cleanup skipped (frontend authoritative)`);
 
         return { success: true, finalBill, mentorPayout, platformFee, billedMinutes: totalBilledMinutes };
     });
@@ -339,11 +338,7 @@ async function handleUserLeave(sessionId, userType) {
 async function initiateSessionTimers(sessionId) {
     console.log(`[BillingEngine] Initiating timers for session ${sessionId}`);
     
-    // Clear any previous timers for this session to be safe.
-    if (sessionTimers.has(sessionId)) {
-        clearTimeout(sessionTimers.get(sessionId));
-        sessionTimers.delete(sessionId);
-    }
+    // Note: Timer clearing not needed since frontend is now authoritative
     
     return await transaction(async (client) => {
         const sessionRes = await client.query('SELECT mentee_id, per_minute_rate FROM sessions WHERE id = $1', [sessionId]);
@@ -368,16 +363,8 @@ async function initiateSessionTimers(sessionId) {
 
         console.log(`[BillingEngine] Session ${sessionId} can run for a maximum of ${endInMinutes.toFixed(2)} minutes.`);
 
-        // 3. Set the definitive timeout to end the session.
-        const timer = setTimeout(() => {
-            console.log(`[BillingEngine] Timer triggered for session ${sessionId}. Reason: ${endReason}`);
-            _finalizeSession(sessionId, endReason).catch(err => {
-                console.error(`[BillingEngine] CRITICAL: Failed to finalize session ${sessionId} from timer.`, err);
-                // Optionally, update session status to 'error' for manual review.
-            });
-        }, endInMinutes * 60 * 1000);
-
-        sessionTimers.set(sessionId, timer);
+        // 3. Note: Timer is now handled by frontend. Backend timer removed to make frontend authoritative.
+        console.log(`[BillingEngine] Session ${sessionId} timer will be managed by frontend (authoritative)`);
         
         // 4. Set a 5-minute warning timer if the session will end due to balance depletion.
         if (endReason === 'balance_depleted' && endInMinutes > 5) {
@@ -387,7 +374,7 @@ async function initiateSessionTimers(sessionId) {
              }, (endInMinutes - 5) * 60 * 1000);
         }
 
-        return { success: true, message: `Session timer set to ${endInMinutes.toFixed(2)} minutes.` };
+        return { success: true, message: `Session initialized with ${endInMinutes.toFixed(2)} minute limit (frontend managed).` };
     });
 }
 

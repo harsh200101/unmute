@@ -1,6 +1,6 @@
 const Stripe = require('stripe');
 const db = require('../config/database');
-const { sendPaymentSuccessEmail, sendMeetingReadyEmail } = require('./emailService');
+const { sendPaymentSuccessEmail } = require('./emailService');
 
 class StripePayments {
   constructor() {
@@ -566,24 +566,24 @@ class StripePayments {
         console.warn('⚠️ Failed to send payment success email:', emailError.message);
       }
 
-      // Send meeting ready emails to both parties
-      try {
-        const meetingUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/meeting/${sessionId}`;
-        const meetingEmailData = {
-          title: session.title,
-          scheduledAt: session.scheduled_at,
-          durationMinutes: session.duration_minutes,
-          mentorName: `${session.mentor_first_name} ${session.mentor_last_name}`,
-          menteeName: `${session.mentee_first_name} ${session.mentee_last_name}`,
-          meetingUrl: meetingUrl
-        };
+      // Meeting ready emails have been disabled
+      // try {
+      //   const meetingUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/meeting/${sessionId}`;
+      //   const meetingEmailData = {
+      //     title: session.title,
+      //     scheduledAt: session.scheduled_at,
+      //     durationMinutes: session.duration_minutes,
+      //     mentorName: `${session.mentor_first_name} ${session.mentor_last_name}`,
+      //     menteeName: `${session.mentee_first_name} ${session.mentee_last_name}`,
+      //     meetingUrl: meetingUrl
+      //   };
 
-        await sendMeetingReadyEmail(session.mentee_email, meetingEmailData, 'mentee');
-        await sendMeetingReadyEmail(session.mentor_email, meetingEmailData, 'mentor');
-        console.log('✅ Meeting ready emails sent to both parties');
-      } catch (emailError) {
-        console.warn('⚠️ Failed to send meeting ready emails:', emailError.message);
-      }
+      //   await sendMeetingReadyEmail(session.mentee_email, meetingEmailData, 'mentee');
+      //   await sendMeetingReadyEmail(session.mentor_email, meetingEmailData, 'mentor');
+      //   console.log('✅ Meeting ready emails sent to both parties');
+      // } catch (emailError) {
+      //   console.warn('⚠️ Failed to send meeting ready emails:', emailError.message);
+      // }
 
     } catch (error) {
       console.error('❌ Error processing payment success:', error);

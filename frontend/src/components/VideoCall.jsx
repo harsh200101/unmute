@@ -4,6 +4,7 @@ import { RTM } from 'agora-rtm-sdk';
 
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import LowBalanceWarning from './LowBalanceWarning';
 
 const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
   const [credentials, setCredentials] = useState(null);
@@ -24,6 +25,14 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
   const [messageQueue, setMessageQueue] = useState([]); // Track message queue state
   const [connectionQuality, setConnectionQuality] = useState('good');
 
+  // Billing state
+  const [currentBalance, setCurrentBalance] = useState(null);
+  const [callCost, setCallCost] = useState(0);
+  const [billingRate, setBillingRate] = useState(0);
+  const [showLowBalanceWarning, setShowLowBalanceWarning] = useState(false);
+  const [balanceWarningMinutes, setBalanceWarningMinutes] = useState(0);
+  const [forceDisconnectReason, setForceDisconnectReason] = useState(null);
+
   // CHANGED: Use refs for SDK clients to prevent stale state in callbacks
   const agoraClientRef = useRef(null);
   const rtmClientRef = useRef(null);
@@ -38,7 +47,14 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
 
   // Timer for meeting duration
   const timerRef = useRef(null);
+  const hasTimerStartedRef = useRef(false);
+  const timerStartTimeRef = useRef(null);
+  const initialTimeRemainingRef = useRef(null);
   const chatInputRef = useRef(null);
+
+  // Billing refs
+  const callStartTimeRef = useRef(null);
+  const callStartedRef = useRef(false);
 
   // Track if component is mounted to prevent stale closure issues
   const isMountedRef = useRef(true);
@@ -210,6 +226,25 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
         const messageText = eventArgs.message;
         const memberId = eventArgs.publisher;
         const localUid = creds.uid.toString(); // Get local UID from function's scope
+
+        // Check for billing-related messages first
+        if (messageText.startsWith('BILLING_')) {
+          debugLog('Billing message received', { messageText, memberId });
+
+          if (messageText === 'BILLING_LOW_BALANCE_WARNING') {
+            const minutesMatch = messageText.match(/BILLING_LOW_BALANCE_WARNING_(\d+)/);
+            const minutes = minutesMatch ? parseInt(minutesMatch[1]) : 5;
+            setBalanceWarningMinutes(minutes);
+            setShowLowBalanceWarning(true);
+            toast.warn(`Low balance warning: ${minutes} minutes remaining`);
+          } else if (messageText === 'BILLING_FORCE_DISCONNECT_INSUFFICIENT_FUNDS') {
+            handleForceDisconnect('Insufficient funds');
+          } else if (messageText === 'BILLING_FORCE_DISCONNECT_BALANCE_DEPLETED') {
+            handleForceDisconnect('Balance depleted');
+          }
+
+          return; // Don't process as regular chat message
+        }
 
         // ==========================================================
         // FIX: Ignore messages sent by the local user (echo)
@@ -498,23 +533,56 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
   };
 
   // Wrapped in useCallback to satisfy the linter
-  const startTimer = useCallback((initialTime) => {
+  const startTimer = useCallback((initialMinutes) => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
 
-    setTimeRemaining(initialTime);
+    const initialSeconds = initialMinutes * 60;
+    initialTimeRemainingRef.current = initialSeconds;
+    timerStartTimeRef.current = Date.now();
 
-    timerRef.current = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
-          // Meeting time is up
-          // Don't call handleMeetingEnd here to avoid infinite loop
-          return 0;
-        }
-        return prev - 1;
+    // Store in localStorage for persistence across rejoin
+    const timerState = {
+      initialSeconds,
+      startTime: timerStartTimeRef.current,
+      sessionId
+    };
+    localStorage.setItem(`timer_${sessionId}`, JSON.stringify(timerState));
+    console.log('🎥 Stored timer state in localStorage:', timerState);
+
+    console.log('🎥 Timer started with', initialMinutes, 'minutes (', initialSeconds, 'seconds)');
+
+    const updateTimer = () => {
+      const elapsedSeconds = Math.floor((Date.now() - timerStartTimeRef.current) / 1000);
+      const remainingSeconds = Math.max(0, initialTimeRemainingRef.current - elapsedSeconds);
+
+      setTimeRemaining(remainingSeconds);
+
+      console.log('🎥 Timer update:', {
+        elapsedSeconds,
+        remainingSeconds,
+        initialTimeRemaining: initialTimeRemainingRef.current,
+        startTime: new Date(timerStartTimeRef.current).toISOString()
       });
-    }, 60000); // Update every minute
+
+      if (remainingSeconds <= 0) {
+        console.log('🎥 Timer reached zero, ending meeting');
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+        localStorage.removeItem(`timer_${sessionId}`);
+        hasTimerStartedRef.current = false;
+        timerStartTimeRef.current = null;
+        initialTimeRemainingRef.current = null;
+        // Don't call handleMeetingEnd here to avoid infinite loop
+      }
+    };
+
+    // Update immediately
+    updateTimer();
+
+    // Then update every second
+    timerRef.current = setInterval(updateTimer, 1000);
   }, []);
 
   const logMeetingEvent = useCallback(async (eventType, eventData = {}) => {
@@ -525,13 +593,51 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
           ...eventData,
           rtcParticipantsCount: participants.length,
           rtmParticipantsCount: rtmParticipants.length,
-          timeRemaining
+          timeRemaining: Math.floor(timeRemaining / 60) // Convert seconds to minutes for logging
         }
       });
     } catch (err) {
       console.error('Failed to log meeting event:', err);
     }
   }, [participants.length, rtmParticipants.length, timeRemaining]);
+
+  // Billing functions
+  const fetchWalletBalance = useCallback(async () => {
+    try {
+      const response = await api.get('/wallet/balance');
+      const balance = response.data.data.balance;
+      setCurrentBalance(balance);
+      return balance;
+    } catch (err) {
+      console.error('Failed to fetch wallet balance:', err);
+      return null;
+    }
+  }, []);
+
+  const notifyCallStart = useCallback(async () => {
+    try {
+      await api.post('/billing/call-started', { sessionId });
+      callStartedRef.current = true;
+      callStartTimeRef.current = new Date();
+      console.log('Call start notified to billing engine');
+    } catch (err) {
+      console.error('Failed to notify call start:', err);
+      toast.error('Failed to start billing. Please refresh and try again.');
+    }
+  }, [sessionId]);
+
+  const notifyCallEnd = useCallback(async (actualDurationMinutes) => {
+    try {
+      await api.post('/billing/call-ended', {
+        sessionId,
+        actualDurationMinutes
+      });
+      console.log('Call end notified to billing engine');
+    } catch (err) {
+      console.error('Failed to notify call end:', err);
+    }
+  }, [sessionId]);
+
 
   const cleanup = useCallback(async () => {
     if (isCleaningUpRef.current) {
@@ -547,6 +653,18 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
+      }
+
+      // Only clear timer state from localStorage if meeting is ending (time reached 0)
+      // For temporary leaves, keep it for rejoin
+      if (timeRemaining === 0) {
+        console.log('🎥 Clearing timer state from localStorage (meeting ended)');
+        localStorage.removeItem(`timer_${sessionId}`);
+        hasTimerStartedRef.current = false;
+        timerStartTimeRef.current = null;
+        initialTimeRemainingRef.current = null;
+      } else {
+        console.log('🎥 Keeping timer state in localStorage for potential rejoin');
       }
 
       // Stop and close local tracks
@@ -614,9 +732,35 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
     }
   }, []); // Remove state dependencies
 
+  const handleForceDisconnect = useCallback((reason) => {
+    setForceDisconnectReason(reason);
+    toast.error(`Call ended: ${reason}`);
+    // Force end the meeting
+    setTimeout(() => {
+      // Use cleanup and onMeetingEnd directly to avoid circular dependency
+      cleanup();
+      onMeetingEnd && onMeetingEnd();
+    }, 2000);
+  }, [cleanup, onMeetingEnd]);
+
   const handleMeetingEnd = useCallback(async () => {
     try {
       console.log('🎥 Meeting ending - time limit reached');
+
+      // Calculate actual duration and end the session
+      if (callStartedRef.current && callStartTimeRef.current) {
+        const actualDurationMinutes = Math.ceil((new Date() - callStartTimeRef.current) / (1000 * 60));
+
+        // Call the end meeting API with timer_expired reason
+        try {
+          await api.post(`/meetings/${sessionId}/end`, { reason: 'timer_expired' });
+          console.log('🎥 Session ended via API with timer_expired reason');
+        } catch (apiErr) {
+          console.error('🎥 Failed to end session via API:', apiErr);
+          // Continue with cleanup even if API call fails
+        }
+      }
+
       await logMeetingEvent('meeting_ended');
       toast.success('Meeting ended automatically after time limit');
       await cleanup(); // Await cleanup
@@ -624,11 +768,85 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
     } catch (err) {
       console.error('🎥 Error ending meeting:', err);
     }
-  }, [logMeetingEvent, cleanup, onMeetingEnd]);
+  }, [sessionId, logMeetingEvent, cleanup, onMeetingEnd]);
+
+  // Start timer when both participants are present (only once)
+  useEffect(() => {
+    if (meetingInfo && !hasTimerStartedRef.current) {
+      // Check if timer was already started (persisted in localStorage)
+      const storedTimer = localStorage.getItem(`timer_${sessionId}`);
+      console.log('🎥 Checking localStorage for timer state, found:', !!storedTimer);
+      if (storedTimer) {
+        try {
+          const timerState = JSON.parse(storedTimer);
+          console.log('🎥 Parsed timer state from localStorage:', timerState);
+          if (timerState.sessionId === sessionId) {
+            hasTimerStartedRef.current = true;
+            timerStartTimeRef.current = timerState.startTime;
+            initialTimeRemainingRef.current = timerState.initialSeconds;
+            console.log('🎥 Restoring timer from localStorage, startTime:', new Date(timerState.startTime).toISOString(), 'initialSeconds:', timerState.initialSeconds);
+
+            // Start the timer with restored state
+            const updateTimer = () => {
+              const elapsedSeconds = Math.floor((Date.now() - timerStartTimeRef.current) / 1000);
+              const remainingSeconds = Math.max(0, initialTimeRemainingRef.current - elapsedSeconds);
+
+              setTimeRemaining(remainingSeconds);
+
+              console.log('🎥 Restored timer update:', {
+                elapsedSeconds,
+                remainingSeconds,
+                initialTimeRemaining: initialTimeRemainingRef.current,
+                startTime: new Date(timerStartTimeRef.current).toISOString()
+              });
+
+              if (remainingSeconds <= 0) {
+                console.log('🎥 Restored timer reached zero, ending meeting');
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+                localStorage.removeItem(`timer_${sessionId}`);
+                hasTimerStartedRef.current = false;
+                timerStartTimeRef.current = null;
+                initialTimeRemainingRef.current = null;
+              }
+            };
+
+            updateTimer();
+            timerRef.current = setInterval(updateTimer, 1000);
+          }
+        } catch (error) {
+          console.error('🎥 Error restoring timer from localStorage:', error);
+          localStorage.removeItem(`timer_${sessionId}`);
+        }
+      } else if (participants.length >= 2) {
+        // Start new timer
+        hasTimerStartedRef.current = true;
+        const initialMinutes = meetingInfo.meeting.timeRemaining;
+        console.log('🎥 Both participants present for the first time, starting NEW timer with', initialMinutes, 'minutes');
+        startTimer(initialMinutes);
+      } else {
+        console.log('🎥 Timer not started yet: participants.length =', participants.length, 'hasStoredTimer =', !!storedTimer);
+      }
+    }
+  }, [participants.length, meetingInfo, sessionId]);
+
+  // Show low balance warning when time remaining is 5 minutes or less
+  useEffect(() => {
+    if (timeRemaining !== null && timeRemaining <= 300 && !showLowBalanceWarning) {
+      const minutesRemaining = Math.ceil(timeRemaining / 60);
+      console.log('🎥 Low balance warning triggered: timeRemaining =', timeRemaining, 'seconds (', minutesRemaining, 'minutes)');
+      setBalanceWarningMinutes(minutesRemaining);
+      setShowLowBalanceWarning(true);
+    } else if (timeRemaining !== null && timeRemaining > 300 && showLowBalanceWarning) {
+      console.log('🎥 Low balance warning cleared: timeRemaining =', timeRemaining, 'seconds');
+      setShowLowBalanceWarning(false);
+    }
+  }, [timeRemaining, showLowBalanceWarning]);
 
   // Re-link startTimer to the memoized handleMeetingEnd
   useEffect(() => {
     if (timeRemaining === 0 && timeRemaining !== null) {
+      console.log('🎥 Time remaining reached zero, ending meeting');
       handleMeetingEnd();
     }
   }, [timeRemaining, handleMeetingEnd]);
@@ -740,7 +958,12 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
 
       setCredentials(creds);
       setMeetingInfo({ session, meeting });
-      setTimeRemaining(meeting.timeRemaining);
+      // timeRemaining will be set when timer starts
+
+      // Set billing info
+      setBillingRate(meeting.per_minute_rate || 0);
+      await fetchWalletBalance();
+
       dumpState('credentials_set');
 
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -812,8 +1035,11 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
       setMeetingStatus('connected');
       debugLog('Meeting status set to connected');
 
-      startTimer(meeting.timeRemaining);
-      debugLog('Timer started', { timeRemaining: meeting.timeRemaining });
+      // Start billing
+      await notifyCallStart();
+
+      // Timer will be started when both participants are present
+      debugLog('Timer will start when both participants join', { timeRemaining: meeting.timeRemaining });
 
       await logMeetingEvent('user_joined');
       debugLog('Meeting initialization completed successfully');
@@ -865,7 +1091,7 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
       isInitializingRef.current = false;
       dumpState('init_cleanup');
     }
-  }, [sessionId]); // Only depend on sessionId
+  }, [sessionId, fetchWalletBalance]); // Include fetchWalletBalance dependency
 
   // ENHANCED: Main useEffect hook with comprehensive debugging and network failure detection
   useEffect(() => {
@@ -1201,7 +1427,7 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
 
   // Pass localId to compare
   const handleUserJoined = (user, localId) => {
-    console.log('🎥 User joined:', user.uid, 'Local user:', localId);
+    console.log('🎥 User joined:', user.uid, 'Local user:', localId, 'Current participants count:', participants.length);
     if (user.uid) {
       setParticipants(prev => {
         const existing = prev.find(p => p.uid === user.uid);
@@ -1215,7 +1441,7 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
             videoMuted: false,
             name: user.uid.toString() === localId.toString() ? 'You' : `Participant ${user.uid}`
           };
-          console.log('🎥 Added participant on join:', newParticipant);
+          console.log('🎥 Added participant on join:', newParticipant, 'New count:', prev.length + 1);
           return [...prev, newParticipant];
         }
         return prev;
@@ -1224,9 +1450,13 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
   };
 
   const handleUserLeft = (user) => {
-    console.log('🎥 User left:', user.uid);
+    console.log('🎥 User left:', user.uid, 'Previous participants count:', participants.length);
     if (user.uid) {
-      setParticipants(prev => prev.filter(p => p.uid !== user.uid.toString()));
+      setParticipants(prev => {
+        const newList = prev.filter(p => p.uid !== user.uid.toString());
+        console.log('🎥 Removed participant, new count:', newList.length);
+        return newList;
+      });
       const container = document.getElementById(`remote-video-${user.uid}`);
       if (container) {
         container.innerHTML = ''; // Clear container
@@ -1645,6 +1875,12 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
 
   const leaveMeeting = async () => {
     try {
+      // Calculate actual duration and notify billing
+      if (callStartedRef.current && callStartTimeRef.current) {
+        const actualDurationMinutes = Math.ceil((new Date() - callStartTimeRef.current) / (1000 * 60));
+        await notifyCallEnd(actualDurationMinutes);
+      }
+
       await logMeetingEvent('user_left');
       await cleanup(); // Await the cleanup
       onClose && onClose();
@@ -1653,10 +1889,10 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
     }
   };
 
-  const formatTime = (minutes) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}:${mins.toString().padStart(2, '0')}`;
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   const getQualityColor = (quality) => {
@@ -1725,6 +1961,20 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
 
   return (
     <div className="fixed inset-0 bg-gray-900 z-50 flex flex-col">
+      {/* Low Balance Warning */}
+      {showLowBalanceWarning && (
+        <LowBalanceWarning
+          balance={currentBalance || 0}
+          minutesRemaining={balanceWarningMinutes}
+          onTopUp={() => {
+            // Handle top up - could open wallet/payment modal
+            toast.info('Redirecting to wallet...');
+            // For now, just hide the warning
+            setShowLowBalanceWarning(false);
+          }}
+        />
+      )}
+
       {/* ENHANCED: Header with debug information */}
       <div className="bg-gray-800 text-white p-4 flex justify-between items-center border-b border-gray-700">
         <div className="flex items-center space-x-4">
@@ -1747,14 +1997,25 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
           )}
         </div>
         <div className="flex items-center space-x-4">
-          <div className="text-sm text-gray-300">
-            <span className="font-medium">{participants.length}</span> participant{participants.length !== 1 ? 's' : ''}
-          </div>
-          {timeRemaining !== null && (
-            <div className={`text-sm font-medium ${timeRemaining < 15 ? 'text-red-400' : 'text-white'}`}>
-              {formatTime(timeRemaining)} remaining
-            </div>
-          )}
+           <div className="text-sm text-gray-300">
+             <span className="font-medium">{participants.length}</span> participant{participants.length !== 1 ? 's' : ''}
+           </div>
+           {timeRemaining !== null && (
+             <div className={`text-sm font-medium ${timeRemaining < 15 * 60 ? 'text-red-400' : 'text-white'}`}>
+               {formatTime(timeRemaining)} remaining
+             </div>
+           )}
+           {/* Billing Information */}
+           {currentBalance !== null && billingRate > 0 && (
+             <div className="text-sm text-gray-300">
+               <span className="font-medium">₹{currentBalance.toFixed(2)}</span> balance
+               {callStartedRef.current && (
+                 <span className="ml-2 text-yellow-400">
+                   ₹{(billingRate * Math.ceil((new Date() - (callStartTimeRef.current || new Date())) / (1000 * 60))).toFixed(2)} spent
+                 </span>
+               )}
+             </div>
+           )}
           {/* Debug Export Button - only show if debug mode is active */}
           {window.location.search.includes('debug') && (
             <button

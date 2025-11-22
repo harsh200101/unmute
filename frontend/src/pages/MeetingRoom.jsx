@@ -15,8 +15,16 @@ const MeetingRoom = () => {
   const [showVideoCall, setShowVideoCall] = useState(false);
 
   useEffect(() => {
+    // Check if user is authenticated before proceeding
+    if (!user) {
+      console.log('🏠 [DEBUG] User not authenticated, redirecting to login');
+      toast.error('Please log in to access this meeting');
+      navigate('/login');
+      return;
+    }
+
     checkMeetingStatus();
-  }, [sessionId]);
+  }, [sessionId, user, navigate]);
 
   const checkMeetingStatus = async () => {
     try {
@@ -33,6 +41,15 @@ const MeetingRoom = () => {
         response: err.response?.data,
         status: err.response?.status
       });
+
+      // Handle authentication errors specifically
+      if (err.response?.status === 401) {
+        console.log('🏠 [DEBUG] Authentication required, redirecting to login');
+        toast.error('Please log in to access this meeting');
+        navigate('/login');
+        return;
+      }
+
       setError(err.response?.data?.message || 'Failed to load meeting status');
     } finally {
       setLoading(false);

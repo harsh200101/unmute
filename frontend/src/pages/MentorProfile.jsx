@@ -18,6 +18,8 @@ const MentorProfile = () => {
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [categories, setCategories] = useState([]);
+  const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   // Pagination for reviews
   const [reviewsPage, setReviewsPage] = useState(1);
@@ -60,6 +62,7 @@ const MentorProfile = () => {
     const loadMentorData = async () => {
       try {
         setLoading(true);
+        setError(null);
 
         // Load categories first
         const categoriesResponse = await fetch('/api/mentors/meta/categories');
@@ -67,12 +70,20 @@ const MentorProfile = () => {
           const categoriesData = await categoriesResponse.json();
           const categoriesList = categoriesData.data?.categories || [];
           setCategories(categoriesList);
+        } else if (categoriesResponse.status >= 500) {
+          console.warn('Failed to load categories, continuing without them');
         }
 
         // Load mentor profile
         const mentorResponse = await fetch(`/api/mentors/${mentorId}`);
         if (!mentorResponse.ok) {
-          throw new Error('Mentor not found');
+          if (mentorResponse.status === 404) {
+            throw new Error('Mentor not found');
+          } else if (mentorResponse.status >= 500) {
+            throw new Error('Server error. Please try again later.');
+          } else {
+            throw new Error('Failed to load mentor profile');
+          }
         }
         const mentorData = await mentorResponse.json();
         setMentor(mentorData.data.mentor);
@@ -80,10 +91,25 @@ const MentorProfile = () => {
         // Load reviews
         await loadReviews(1);
 
+        // Reset retry count on success
+        setRetryCount(0);
+
       } catch (error) {
         console.error('Failed to load mentor data:', error);
-        toast.error('Failed to load mentor profile');
-        navigate('/mentors');
+        setError(error.message);
+
+        // Auto-retry for network/server errors (up to 2 times)
+        if (retryCount < 2 && (error.message.includes('Server error') || error.message.includes('network'))) {
+          setTimeout(() => {
+            setRetryCount(prev => prev + 1);
+            loadMentorData();
+          }, 2000 * (retryCount + 1)); // Exponential backoff
+        } else {
+          toast.error(error.message);
+          if (error.message === 'Mentor not found') {
+            navigate('/mentors');
+          }
+        }
       } finally {
         setLoading(false);
       }
@@ -92,7 +118,7 @@ const MentorProfile = () => {
     if (mentorId) {
       loadMentorData();
     }
-  }, [mentorId, navigate]);
+  }, [mentorId, navigate, retryCount]);
 
   // Load reviews with pagination
   const loadReviews = async (page = 1) => {
@@ -162,12 +188,53 @@ const MentorProfile = () => {
     }
   };
 
+  // Handle manual retry
+  const handleRetry = () => {
+    setRetryCount(0);
+    setError(null);
+    // Trigger re-load by updating effect dependency
+    setLoading(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="text-center">
           <LoadingSpinner size="xl" variant="gradient" />
           <p className="text-gray-600 mt-4 text-lg">Loading mentor profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-50">
+        <div className="text-center max-w-md mx-auto p-8">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Unable to Load Mentor Profile</h1>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={handleRetry}
+              className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate('/mentors')}
+              className="px-6 py-3 bg-gray-200 text-gray-800 rounded-xl hover:bg-gray-300 transition-colors"
+            >
+              Browse Mentors
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -285,14 +352,25 @@ const MentorProfile = () => {
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 sticky top-4">
                 <div className="text-center mb-6">
                   <div className="text-3xl font-bold text-gray-900 mb-1">
-                    ₹{mentor.hourlyRate || 5000}/hour
+                    ₹{mentor.perMinuteRate ? (mentor.perMinuteRate * 60).toFixed(0) : '5000'}/hour
                   </div>
-                  <p className="text-sm text-gray-600">Video session</p>
+                  <p className="text-sm text-gray-600">
+                    ₹{mentor.perMinuteRate ? mentor.perMinuteRate.toFixed(2) : '83.33'}/minute • Video session
+                  </p>
                 </div>
 
                 <button
                   onClick={() => setShowBookingModal(true)}
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-[1.02] shadow-lg hover:shadow-xl mb-4"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setShowBookingModal(true);
+                    }
+                  }}
+                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-[1.02] shadow-lg hover:shadow-xl mb-4 focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50"
+                  aria-label={`Book a session with ${mentor.firstName} ${mentor.lastName}`}
+                  role="button"
+                  tabIndex={0}
                 >
                   Book Session
                 </button>
@@ -493,7 +571,7 @@ const MentorProfile = () => {
           id: mentor?.id,
           firstName: mentor?.firstName || 'Mentor',
           lastName: mentor?.lastName || '',
-          hourlyRate: mentor?.hourlyRate || 5000
+          perMinuteRate: mentor?.perMinuteRate || 83.33
         }}
         isOpen={showBookingModal}
         onClose={() => setShowBookingModal(false)}

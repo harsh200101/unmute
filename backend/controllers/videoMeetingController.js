@@ -1,6 +1,7 @@
 const db = require('../config/database');
 const agoraService = require('../utils/agora');
 const { sendMeetingInviteEmail } = require('../utils/emailService');
+const billingEngine = require('../services/billingEngine');
 
 // Create or get video meeting for a session
 exports.createVideoMeeting = async (req, res) => {
@@ -216,18 +217,54 @@ exports.getMeetingCredentials = async (req, res) => {
       menteeId: session.mentee_id
     });
 
+    // Fetch mentee wallet balance to calculate time remaining
+    debugLog('Fetching mentee wallet balance');
+    const balanceQuery = `SELECT balance FROM wallets WHERE user_id = $1`;
+    const balanceResult = await db.query(balanceQuery, [session.mentee_id]);
+    const balance = balanceResult.rows[0]?.balance || 0;
+    const perMinuteRate = session.per_minute_rate || 10;
+    const maxMinutes = balance >= 60 * perMinuteRate ? 60 : Math.floor(balance / perMinuteRate);
+
+    debugLog('Balance calculation completed', {
+      balance,
+      perMinuteRate,
+      maxMinutes
+    });
+
+    // Check minimum balance requirement for 15 minutes of meeting time
+    const minimumBalanceRequired = 15 * perMinuteRate;
+    if (maxMinutes < 15) {
+      debugLog('Insufficient balance for meeting', {
+        balance,
+        perMinuteRate,
+        maxMinutes,
+        minimumBalanceRequired
+      }, 'warn');
+
+      return res.status(403).json({
+        success: false,
+        message: `Insufficient balance. You must have a minimum balance of ${minimumBalanceRequired} to start the meeting.`,
+        code: 'INSUFFICIENT_BALANCE',
+        data: {
+          currentBalance: balance,
+          minimumRequired: minimumBalanceRequired,
+          perMinuteRate
+        }
+      });
+    }
+
     // Time-based access control
     const now = new Date();
     const sessionStart = new Date(session.scheduled_at);
     const timeUntilStart = (sessionStart - now) / (1000 * 60); // minutes
-    const sessionEnd = new Date(sessionStart.getTime() + 75 * 60 * 1000); // 75 minutes
+    const sessionEnd = new Date(sessionStart.getTime() + 75 * 60 * 1000); // 75 minutes (for access control only)
 
     debugLog('Time-based access control check', {
       now: now.toISOString(),
       sessionStart: sessionStart.toISOString(),
       sessionEnd: sessionEnd.toISOString(),
       timeUntilStart,
-      timeRemaining: Math.max(0, Math.floor((sessionEnd - now) / (1000 * 60))),
+      timeRemaining: maxMinutes,
       isAfterEnd: now > sessionEnd
     });
 
@@ -367,10 +404,14 @@ exports.getMeetingCredentials = async (req, res) => {
           status: session.meeting_status,
           maxDurationMinutes: session.max_duration_minutes,
           participantsJoined: session.participants_joined || [],
-          timeRemaining: Math.max(0, Math.floor((sessionEnd - now) / (1000 * 60)))
+          timeRemaining: maxMinutes
         }
       }
     };
+
+    debugLog('Sending timeRemaining to frontend:', responseData.data.meeting.timeRemaining, 'minutes');
+    debugLog('Session actual_start_time:', session.actual_start_time);
+    debugLog('Current time:', now.toISOString());
 
     debugLog('Credentials response prepared', {
       responseSize: JSON.stringify(responseData).length,
@@ -458,63 +499,45 @@ exports.logMeetingEvent = async (req, res) => {
     `, [JSON.stringify([eventLog]), sessionId]);
 
     // Handle specific events
-    if (eventType === 'user_joined') {
-      // Add user to participants list if not already there
-      await db.query(`
-        UPDATE video_meetings
-        SET participants_joined = CASE
-          WHEN NOT (participants_joined @> $1::jsonb)
-          THEN participants_joined || $1::jsonb
-          ELSE participants_joined
-        END,
-        meeting_status = CASE
-          WHEN meeting_status = 'scheduled' THEN 'active'
-          ELSE meeting_status
-        END,
-        actual_start_time = CASE
-          WHEN actual_start_time IS NULL THEN CURRENT_TIMESTAMP
-          ELSE actual_start_time
-        END
-        WHERE session_id = $2
-      `, [JSON.stringify([userId]), sessionId]);
+    const sessionQuery = `
+        SELECT s.mentee_id, m.user_id as mentor_user_id, s.actual_start_time
+        FROM sessions s
+        JOIN mentors m ON s.mentor_id = m.id
+        WHERE s.id = $1
+    `;
+    const sessionResult = await db.query(sessionQuery, [sessionId]);
+    if (sessionResult.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Session not found' });
+    }
+    const session = sessionResult.rows[0];
 
-      // Update session status if this is the first join
-      await db.query(`
-        UPDATE sessions
-        SET status = 'in_progress',
-            actual_start_time = COALESCE(actual_start_time, CURRENT_TIMESTAMP)
-        WHERE id = $1 AND status IN ('scheduled', 'confirmed')
-      `, [sessionId]);
+    const userType = session.mentee_id === userId ? 'mentee' : (session.mentor_user_id === userId ? 'mentor' : null);
 
-    } else if (eventType === 'user_left') {
-      // Check if this was the last participant
-      const meetingResult = await db.query(
-        'SELECT participants_joined FROM video_meetings WHERE session_id = $1',
-        [sessionId]
-      );
+    if (!userType) {
+        return res.status(403).json({ success: false, message: 'User is not a participant in this session.' });
+    }
 
-      if (meetingResult.rows.length > 0) {
-        const participants = meetingResult.rows[0].participants_joined || [];
-        if (participants.length <= 1) {
-          // Last participant left, end the meeting
-          await db.query(`
-            UPDATE video_meetings
-            SET meeting_status = 'ended',
-                actual_end_time = CURRENT_TIMESTAMP,
-                actual_duration_minutes = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - actual_start_time)) / 60
-            WHERE session_id = $1
-          `, [sessionId]);
+    try {
+        if (eventType === 'user_joined') {
+            console.log(`[Controller] User ${userType} joined session ${sessionId} at ${new Date().toISOString()}`);
+            await billingEngine.handleUserJoin(sessionId, userType);
 
-          // Update session status
-          await db.query(`
-            UPDATE sessions
-            SET status = 'completed',
-                actual_end_time = CURRENT_TIMESTAMP,
-                actual_duration_minutes = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - actual_start_time)) / 60
-            WHERE id = $1
-          `, [sessionId]);
+            // If this is the very first user joining, kick off the session timers.
+            if (!session.actual_start_time) {
+                console.log(`[Controller] First user joined. Initiating timers for session ${sessionId} at ${new Date().toISOString()}`);
+                await db.query(`UPDATE sessions SET actual_start_time = CURRENT_TIMESTAMP, status = 'in_progress' WHERE id = $1`, [sessionId]);
+                await billingEngine.initiateSessionTimers(sessionId);
+            } else {
+                console.log(`[Controller] User rejoined session ${sessionId}, actual_start_time already set to ${session.actual_start_time}`);
+            }
+        } else if (eventType === 'user_left') {
+            console.log(`[Controller] User ${userType} left session ${sessionId} at ${new Date().toISOString()}`);
+            await billingEngine.handleUserLeave(sessionId, userType);
         }
-      }
+    } catch (error) {
+        console.error(`[Controller] Error handling billing for event '${eventType}' on session ${sessionId}:`, error);
+        // Do not send a 500 here, as logging the event itself succeeded.
+        // The billing engine has its own robust error handling.
     }
 
     res.json({
@@ -657,7 +680,14 @@ exports.getMeetingStatus = async (req, res) => {
     const meeting = result.rows[0];
     const now = new Date();
     const sessionStart = new Date(meeting.scheduled_at);
-    const sessionEnd = new Date(sessionStart.getTime() + 75 * 60 * 1000); // 75 minutes
+    const sessionEnd = new Date(sessionStart.getTime() + 75 * 60 * 1000); // 75 minutes (for access control)
+
+    // Fetch mentee wallet balance to calculate time remaining
+    const balanceQuery = `SELECT balance FROM wallets WHERE user_id = $1`;
+    const balanceResult = await db.query(balanceQuery, [meeting.mentee_id]);
+    const balance = balanceResult.rows[0]?.balance || 0;
+    const perMinuteRate = meeting.per_minute_rate || 10;
+    const maxMinutes = balance >= 60 * perMinuteRate ? 60 : Math.floor(balance / perMinuteRate);
 
     res.json({
       success: true,
@@ -668,7 +698,7 @@ exports.getMeetingStatus = async (req, res) => {
           actualStartTime: meeting.actual_start_time,
           actualEndTime: meeting.actual_end_time,
           actualDurationMinutes: meeting.actual_duration_minutes,
-          timeRemaining: Math.max(0, Math.floor((sessionEnd - now) / (1000 * 60))),
+          timeRemaining: maxMinutes,
           canJoin: now >= new Date(sessionStart.getTime() - 15 * 60 * 1000) && now <= sessionEnd // Within 15 min before to 75 min after start
         },
         session: {
@@ -732,3 +762,49 @@ exports.testAgoraConfig = async (req, res) => {
 };
 
 module.exports = exports;
+// End a meeting (mentor can end, or timer expiration)
+exports.endMeeting = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const userId = req.user.userId;
+        const { reason = 'mentor_ended_session' } = req.body;
+
+        console.log(`[Controller] Received request from user ${userId} to end session ${sessionId}, reason: ${reason}`);
+
+        const sessionQuery = `
+            SELECT s.mentor_id, m.user_id as mentor_user_id
+            FROM sessions s
+            JOIN mentors m ON s.mentor_id = m.id
+            WHERE s.id = $1
+        `;
+
+        const sessionResult = await db.query(sessionQuery, [sessionId]);
+
+        if (sessionResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Session not found." });
+        }
+
+        const session = sessionResult.rows[0];
+
+        // Security check: only the assigned mentor can end the session, unless it's timer expiration
+        if (reason !== 'timer_expired' && session.mentor_user_id !== userId) {
+            return res.status(403).json({ success: false, message: "Only the mentor can end this session." });
+        }
+
+        const result = await billingEngine.endSession(sessionId, reason);
+
+        res.status(200).json({
+            success: true,
+            message: "Session ended successfully and billing is being finalized.",
+            data: result,
+        });
+
+    } catch (error) {
+        console.error(`[Controller] Error ending session ${req.params.sessionId}:`, error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to end the session.',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal Server Error',
+        });
+    }
+};

@@ -544,7 +544,10 @@ const MentorDashboard = () => {
                                 👨‍🎓 {session.mentee?.firstName} {session.mentee?.lastName}
                               </span>
                               <span className="text-sm font-medium text-green-600">
-                                ₹{session.price}
+                                ₹{(() => {
+                                  const isCompleted = session.status === 'completed';
+                                  return (isCompleted ? session.actualBilledAmount : session.price)?.toFixed(2) || '0.00';
+                                })()}
                               </span>
                             </div>
                           </div>

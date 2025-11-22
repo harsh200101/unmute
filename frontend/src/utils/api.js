@@ -357,6 +357,14 @@ export const endpoints = {
     verify: '/payments/verify',
     refund: '/payments/refund',
     history: '/payments/history',
+    status: (transactionId) => `/payments/status/${transactionId}`,
+  },
+
+  // Wallet endpoints
+  wallet: {
+    balance: '/wallet/balance',
+    transactions: '/wallet/transactions',
+    topup: '/wallet/topup',
   },
 
   // Notification endpoints

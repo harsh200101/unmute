@@ -538,11 +538,11 @@ const Mentors = () => {
                       </div>
 
                       {/* Price and CTA */}
-                      <div className="flex items-center justify-between">
-                        <div className="text-2xl font-bold text-gray-900">
-                          ₹{mentor.hourlyRate || 5000}
-                          <span className="text-sm font-normal text-gray-600">/hour</span>
-                        </div>
+                     <div className="flex items-center justify-between">
+                       <div className="text-2xl font-bold text-gray-900">
+                         ₹{mentor.perMinuteRate ? (mentor.perMinuteRate * 60).toFixed(0) : 'N/A'}
+                         <span className="text-sm font-normal text-gray-600">/session</span>
+                       </div>
                         
                         <button
                           onClick={(e) => {
