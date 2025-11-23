@@ -27,6 +27,10 @@ const UserProfile = () => {
     lastName: '',
     email: '',
     phone: '',
+    dateOfBirth: '',
+    gender: '',
+    maritalStatus: '',
+    preferredLanguage: 'en',
     location: '',
     timezone: ''
   });
@@ -78,12 +82,20 @@ const UserProfile = () => {
       console.log('location:', typeof user.location, user.location);
       console.log('timezone:', typeof user.timezone, user.timezone);
       console.log('avatarUrl:', typeof user.avatarUrl, user.avatarUrl);
+      console.log('dateOfBirth:', typeof user.dateOfBirth, user.dateOfBirth);
+      console.log('gender:', typeof user.gender, user.gender);
+      console.log('maritalStatus:', typeof user.maritalStatus, user.maritalStatus);
+      console.log('preferredLanguage:', typeof user.preferredLanguage, user.preferredLanguage);
 
       setProfileData({
         firstName: user.firstName || '',
         lastName: user.lastName || '',
         email: user.email || '',
         phone: user.phone || '',
+        dateOfBirth: user.dateOfBirth ? user.dateOfBirth.split('T')[0] : '', // Format for date input
+        gender: user.gender || '',
+        maritalStatus: user.maritalStatus || '',
+        preferredLanguage: user.preferredLanguage || 'en',
         location: user.location || '',
         timezone: user.timezone || 'UTC'
       });
@@ -234,6 +246,10 @@ const UserProfile = () => {
         last_name: profileData.lastName,
         email: profileData.email,
         phone: profileData.phone,
+        date_of_birth: profileData.dateOfBirth || null,
+        gender: profileData.gender || null,
+        marital_status: profileData.maritalStatus || null,
+        preferred_language: profileData.preferredLanguage,
         location: profileData.location,
         timezone: profileData.timezone,
         avatar_url: avatarUrl,
@@ -501,6 +517,10 @@ const UserProfile = () => {
                         lastName: user.lastName || '',
                         email: user.email || '',
                         phone: user.phone || '',
+                        dateOfBirth: user.dateOfBirth ? user.dateOfBirth.split('T')[0] : '',
+                        gender: user.gender || '',
+                        maritalStatus: user.maritalStatus || '',
+                        preferredLanguage: user.preferredLanguage || 'en',
                         location: user.location || '',
                         timezone: user.timezone || 'UTC'
                       });
@@ -670,6 +690,105 @@ const UserProfile = () => {
                   ) : (
                     <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
                       {safeRender(user.location)}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date of Birth
+                  </label>
+                  {editMode ? (
+                    <input
+                      type="date"
+                      name="dateOfBirth"
+                      value={profileData.dateOfBirth}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  ) : (
+                    <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
+                      {user.age ? `${user.age} years old` : safeRender(user.dateOfBirth)}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Gender
+                  </label>
+                  {editMode ? (
+                    <select
+                      name="gender"
+                      value={profileData.gender}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select gender</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                      <option value="prefer_not_to_say">Prefer not to say</option>
+                    </select>
+                  ) : (
+                    <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
+                      {safeRender(user.gender)}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Marital Status
+                  </label>
+                  {editMode ? (
+                    <select
+                      name="maritalStatus"
+                      value={profileData.maritalStatus}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select status</option>
+                      <option value="single">Single</option>
+                      <option value="married">Married</option>
+                      <option value="divorced">Divorced</option>
+                      <option value="widowed">Widowed</option>
+                      <option value="prefer_not_to_say">Prefer not to say</option>
+                    </select>
+                  ) : (
+                    <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
+                      {safeRender(user.maritalStatus)}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Preferred Language
+                  </label>
+                  {editMode ? (
+                    <select
+                      name="preferredLanguage"
+                      value={profileData.preferredLanguage}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="en">English</option>
+                      <option value="hi">Hindi</option>
+                      <option value="es">Spanish</option>
+                      <option value="fr">French</option>
+                      <option value="de">German</option>
+                      <option value="zh">Chinese</option>
+                      <option value="ja">Japanese</option>
+                      <option value="ko">Korean</option>
+                      <option value="ar">Arabic</option>
+                      <option value="pt">Portuguese</option>
+                      <option value="ru">Russian</option>
+                      <option value="it">Italian</option>
+                    </select>
+                  ) : (
+                    <p className="px-4 py-3 bg-gray-50 rounded-xl text-gray-900">
+                      {safeRender(user.preferredLanguage, 'en').toUpperCase()}
                     </p>
                   )}
                 </div>

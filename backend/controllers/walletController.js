@@ -5,15 +5,14 @@ const axios = require('axios');
 const dns = require('dns').promises;
 const { getWalletBalance, getWalletTransactions, creditWallet } = require('../services/walletService');
 
-// PhonePe Configuration (same as payments.js)
+// PhonePe UAT Configuration - Production-grade
 const PHONEPE_CONFIG = {
-  merchantId: process.env.PHONEPE_MERCHANT_ID,
-  saltKey: process.env.PHONEPE_SALT_KEY,
-  saltIndex: process.env.PHONEPE_SALT_INDEX,
-  payApiUrl: process.env.PHONEPE_PAY_API_URL,
-  statusApiUrl: process.env.PHONEPE_STATUS_API_URL,
-  frontendRedirectUrl: process.env.FRONTEND_REDIRECT_URL,
-  callbackUrl: process.env.PHONEPE_CALLBACK_URL
+  baseUrl: 'https://api-preprod.phonepe.com/apis/pg-sandbox',
+  merchantId: 'PGTESTPAYUAT86',
+  saltKey: '96434309-7796-489d-8924-ab56988a6076',
+  saltIndex: 1,
+  callbackUrl: process.env.PHONEPE_CALLBACK_URL || 'https://your-ngrok-url.ngrok-free.app/api/payments/callback',
+  frontendRedirectUrl: process.env.FRONTEND_REDIRECT_URL || 'http://localhost:3000/payment/status'
 };
 
 /**
@@ -141,25 +140,6 @@ exports.initiateWalletTopup = async (req, res) => {
 
     const walletId = walletResult.rows[0].id;
 
-    // Check if there's already a pending top-up for this user
-    const existingTopup = await query(
-      `SELECT id FROM payments
-       WHERE payment_gateway = 'phonepe'
-       AND payment_status = 'pending'
-       AND session_id IS NULL
-       AND metadata ->> 'type' = 'wallet_topup'
-       AND metadata ->> 'userId' = $1`,
-      [userId.toString()]
-    );
-
-    if (existingTopup.rows.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'A pending wallet top-up already exists for this user',
-        code: 'PENDING_TOPUP_EXISTS'
-      });
-    }
-
     // Get user details for PhonePe payload
     const userResult = await query(
       'SELECT first_name, last_name, phone FROM users WHERE id = $1',
@@ -188,7 +168,7 @@ exports.initiateWalletTopup = async (req, res) => {
       amount: amountInPaisa,
       redirectUrl: `${PHONEPE_CONFIG.frontendRedirectUrl}?transactionId=${merchantTransactionId}&type=wallet_topup`,
       redirectMode: 'POST',
-      callbackUrl: `${PHONEPE_CONFIG.callbackUrl}/wallet`,
+      callbackUrl: PHONEPE_CONFIG.callbackUrl,
       mobileNumber: user.phone || '9999999999',
       paymentInstrument: {
         type: 'PAY_PAGE'
@@ -210,22 +190,14 @@ exports.initiateWalletTopup = async (req, res) => {
       'accept': 'application/json'
     };
 
-    console.log('🔍 PhonePe API URL:', PHONEPE_CONFIG.payApiUrl);
-
-    // DNS resolution check
-    try {
-      const dnsResult = await dns.lookup('api-preprod.phonepe.com');
-      console.log('✅ DNS resolution successful for api-preprod.phonepe.com');
-    } catch (dnsError) {
-      console.error('❌ DNS resolution failed for api-preprod.phonepe.com');
-    }
+    // Real PhonePe API call
+    console.log('🔍 PhonePe API URL:', `${PHONEPE_CONFIG.baseUrl}/pg/v1/pay`);
 
     // Call PhonePe API
-    const response = await axios.post(PHONEPE_CONFIG.payApiUrl, { request: base64Payload }, { headers });
+    const response = await axios.post(`${PHONEPE_CONFIG.baseUrl}/pg/v1/pay`, { request: base64Payload }, { headers });
+    const paymentUrl = response.data.data.instrumentResponse.redirectInfo.url;
 
     if (response.data.success) {
-      const paymentUrl = response.data.data.instrumentResponse.redirectInfo.url;
-
       // Save payment to database
       await query(
         `INSERT INTO payments (
@@ -279,99 +251,90 @@ exports.initiateWalletTopup = async (req, res) => {
  * POST /api/wallet/callback
  */
 exports.handleWalletTopupCallback = async (req, res) => {
-  console.log('🔄 Wallet top-up callback received:', {
+  const requestId = req.requestId || 'unknown';
+  console.log(`🔄 [${requestId}] Wallet top-up callback received:`, {
     timestamp: new Date().toISOString(),
-    headers: req.headers,
+    method: req.method,
+    url: req.url,
+    originalUrl: req.originalUrl,
+    headers: {
+      'content-type': req.headers['content-type'],
+      'x-verify': req.headers['x-verify'] ? '[PRESENT]' : '[MISSING]',
+      'user-agent': req.headers['user-agent'],
+      'host': req.headers['host']
+    },
     body: req.body,
-    ip: req.ip
+    ip: req.ip,
+    environment: {
+      PHONEPE_CALLBACK_URL: process.env.PHONEPE_CALLBACK_URL,
+      FRONTEND_REDIRECT_URL: process.env.FRONTEND_REDIRECT_URL,
+      FRONTEND_URL: process.env.FRONTEND_URL,
+      NODE_ENV: process.env.NODE_ENV
+    }
   });
 
   try {
-    let payload;
-    let isTestPayload = false;
-
-    // Check payload format - handle both production and test simulator
-    if (req.body.response) {
-      console.log('Processing PRODUCTION payload...');
-      const decodedResponse = Buffer.from(req.body.response, 'base64').toString('utf-8');
-      payload = JSON.parse(decodedResponse);
-    }
-    // Check if this is the TEST SIMULATOR format
-    else if (req.body.code && req.body.transactionId) {
-      console.log('Processing TEST SIMULATOR payload...');
-      payload = req.body;
-      isTestPayload = true;
-    }
-    else {
-      console.error('❌ Unrecognized payload format:', req.body);
-      return res.status(400).json({ status: "error", message: "Invalid payload format" });
+    // Strict validation for production PhonePe callbacks
+    if (!req.body.response) {
+      console.error(`❌ [${requestId}] Missing response field in callback payload`);
+      return res.status(400).json({ status: "error", message: "Invalid payload format - missing response" });
     }
 
-    console.log('✅ Parsed payload:', payload);
-
-    // --- CHECKSUM VALIDATION ---
-    let receivedChecksum;
-    let base64PayloadString;
-
-    if (isTestPayload) {
-      receivedChecksum = payload.checksum;
-      const payloadToVerify = { ...payload };
-      delete payloadToVerify.checksum;
-      const sortedPayload = Object.keys(payloadToVerify).sort().reduce((result, key) => {
-        result[key] = payloadToVerify[key];
-        return result;
-      }, {});
-      base64PayloadString = Buffer.from(JSON.stringify(sortedPayload)).toString('base64');
-    } else {
-      receivedChecksum = req.headers['x-verify'];
-      base64PayloadString = req.body.response;
+    const xVerifyHeader = req.headers['x-verify'];
+    if (!xVerifyHeader) {
+      console.error(`❌ [${requestId}] Missing X-VERIFY header`);
+      return res.status(403).json({ status: "error", message: "Missing X-VERIFY header" });
     }
 
-    if (!receivedChecksum) {
-      console.error('❌ Checksum not found.');
-      return res.status(400).json({ status: "error", message: "Checksum not found" });
-    }
+    console.log(`🔍 [${requestId}] Decoding base64 response...`);
+    // Decode and parse payload
+    const decodedResponse = Buffer.from(req.body.response, 'base64').toString('utf-8');
+    const payload = JSON.parse(decodedResponse);
 
-    // Calculate checksum
-    const saltKey = PHONEPE_CONFIG.saltKey;
-    const saltIndex = PHONEPE_CONFIG.saltIndex;
+    console.log(`✅ [${requestId}] Parsed callback payload:`, {
+      success: payload.success,
+      code: payload.code,
+      message: payload.message,
+      merchantId: payload.data?.merchantId,
+      merchantTransactionId: payload.data?.merchantTransactionId,
+      transactionId: payload.data?.transactionId,
+      amount: payload.data?.amount,
+      state: payload.data?.state
+    });
 
-    let stringToHash;
-    if (isTestPayload) {
-      const payloadToVerify = { ...payload };
-      delete payloadToVerify.checksum;
-      stringToHash = JSON.stringify(payloadToVerify) + saltKey;
-    } else {
-      stringToHash = base64PayloadString + saltKey;
-    }
-
+    // Validate checksum
+    console.log(`🔐 [${requestId}] Validating checksum...`);
+    const base64PayloadString = req.body.response;
+    const stringToHash = base64PayloadString + PHONEPE_CONFIG.saltKey;
     const calculatedHash = crypto.createHash('sha256').update(stringToHash).digest('hex');
-    const calculatedChecksum = `${calculatedHash}###${saltIndex}`;
+    const calculatedChecksum = `${calculatedHash}###${PHONEPE_CONFIG.saltIndex}`;
 
-    if (calculatedChecksum !== receivedChecksum) {
-      console.log('❌ Checksum mismatch!', {
-        received: receivedChecksum,
+    console.log(`🔍 [${requestId}] Checksum details:`, {
+      received: xVerifyHeader,
+      calculated: calculatedChecksum,
+      match: calculatedChecksum === xVerifyHeader
+    });
+
+    if (calculatedChecksum !== xVerifyHeader) {
+      console.error(`❌ [${requestId}] Checksum validation failed`, {
+        received: xVerifyHeader,
         calculated: calculatedChecksum,
       });
-
-      if (isTestPayload) {
-        console.log('⚠️ Skipping checksum validation for test simulator payload');
-      } else {
-        return res.status(400).json({ status: "error", message: "Invalid checksum" });
-      }
+      return res.status(403).json({ status: "error", message: "Invalid checksum" });
     }
 
-    console.log('✅ Checksum verified successfully.');
+    console.log(`✅ [${requestId}] Checksum verified successfully`);
 
     // Get transaction details
     const merchantTransactionId = payload.data ? payload.data.merchantTransactionId : payload.transactionId;
     const paymentStatus = payload.code;
 
-    console.log('📊 Parsed callback data:', {
+    console.log(`📊 [${requestId}] Parsed callback data:`, {
       merchantTransactionId,
       paymentStatus,
       responseCode: payload.code,
-      responseMessage: payload.message
+      responseMessage: payload.message,
+      fullPayload: payload
     });
 
     // Update payment status
@@ -382,7 +345,7 @@ exports.handleWalletTopupCallback = async (req, res) => {
       dbStatus = 'failed';
     }
 
-    console.log(`🔄 Updating wallet top-up payment ${merchantTransactionId} to status: ${dbStatus}`);
+    console.log(`🔄 [${requestId}] Updating wallet top-up payment ${merchantTransactionId} to status: ${dbStatus}`);
 
     const paymentUpdate = await query(
       `UPDATE payments
@@ -392,8 +355,13 @@ exports.handleWalletTopupCallback = async (req, res) => {
       [merchantTransactionId, dbStatus]
     );
 
-    console.log('💾 Payment update result:', {
-      rowsAffected: paymentUpdate.rows.length
+    console.log(`💾 [${requestId}] Payment update result:`, {
+      rowsAffected: paymentUpdate.rows.length,
+      updatedPayment: paymentUpdate.rows[0] ? {
+        id: paymentUpdate.rows[0].id,
+        amount: paymentUpdate.rows[0].amount,
+        metadata: paymentUpdate.rows[0].metadata
+      } : null
     });
 
     if (paymentUpdate.rows.length > 0 && dbStatus === 'completed') {
@@ -402,29 +370,81 @@ exports.handleWalletTopupCallback = async (req, res) => {
       const userId = parseInt(metadata.userId);
       const amount = parseFloat(payment.amount);
 
-      console.log(`🔄 Crediting wallet for user ${userId} with amount ${amount}`);
+      console.log(`🔄 [${requestId}] Crediting wallet for user ${userId} with amount ${amount}`);
 
       // Credit the wallet
       try {
         await creditWallet(userId, amount, payment.id, 'Wallet Top-up');
-        console.log('✅ Wallet credited successfully');
+        console.log(`✅ [${requestId}] Wallet credited successfully`);
       } catch (creditError) {
-        console.error('❌ Failed to credit wallet:', creditError);
+        console.error(`❌ [${requestId}] Failed to credit wallet:`, creditError);
         // Don't fail the callback, but log the error
       }
     }
 
-    console.log(`✅ Wallet top-up callback processing completed for ${merchantTransactionId}`);
+    console.log(`✅ [${requestId}] Wallet top-up callback processing completed for ${merchantTransactionId}`);
 
-    // Redirect to payment success page
-    const redirectUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?transactionId=${merchantTransactionId}&status=${dbStatus}&type=wallet_topup`;
-    console.log('🔄 Redirecting to:', redirectUrl);
-
-    return res.redirect(302, redirectUrl);
+    // Return 200 OK to acknowledge callback receipt (webhook standard)
+    // Do not redirect - PhonePe expects 200 response for successful callback processing
+    console.log(`📋 [${requestId}] Returning 200 OK response for callback acknowledgment`);
+    return res.status(200).json({
+      status: 'OK',
+      message: 'Callback processed successfully',
+      transactionId: merchantTransactionId
+    });
 
   } catch (error) {
-    console.error('❌ Wallet top-up callback error:', error);
+    console.error(`❌ [${requestId}] Wallet top-up callback error:`, error);
     return res.status(500).json({ status: 'error', message: 'Internal server error' });
+  }
+};
+
+/**
+ * Check payment status
+ * GET /api/payments/status/:transactionId
+ */
+exports.checkPaymentStatus = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+
+    // Get payment from database
+    const paymentResult = await query(
+      `SELECT p.payment_status, p.amount, p.metadata
+       FROM payments p
+       WHERE p.transaction_id = $1
+       AND p.session_id IS NULL
+       AND JSON_EXTRACT_PATH_TEXT(p.metadata, 'type') = 'wallet_topup'
+       AND JSON_EXTRACT_PATH_TEXT(p.metadata, 'userId') = $2`,
+      [transactionId, req.user.userId.toString()]
+    );
+
+    if (paymentResult.rows.length === 0) {
+      return res.status(404).json({ status: 'NOT_FOUND' });
+    }
+
+    const payment = paymentResult.rows[0];
+
+    // If already completed/failed, return cached status
+    if (payment.payment_status !== 'pending') {
+      return res.json({
+        status: payment.payment_status,
+        amount: payment.amount
+      });
+    }
+
+    // For now, just return pending status since we don't have status check API implemented
+    // In production, you would call PhonePe status API here
+    return res.json({
+      status: payment.payment_status,
+      amount: payment.amount
+    });
+
+  } catch (error) {
+    console.error('❌ Status check error:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Internal server error'
+    });
   }
 };
 

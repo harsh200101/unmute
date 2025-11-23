@@ -500,7 +500,8 @@ class SessionController {
 
       const response = await apiClient.post(`/sessions/${sessionId}/review`, {
         overall_rating: reviewData.overallRating || undefined,
-        comment: reviewData.comment || undefined
+        comment: reviewData.comment || undefined,
+        is_anonymous: reviewData.isAnonymous || false
       });
 
       const review = response.data.data;
@@ -825,7 +826,7 @@ export const sessionUtils = {
     const now = new Date();
     const sessionTime = new Date(session.scheduled_at);
     const hoursUntilSession = (sessionTime - now) / (1000 * 60 * 60);
-    return ['confirmed', 'in_progress'].includes(session.status) && hoursUntilSession > 24;
+    return session.status === 'confirmed' && hoursUntilSession > 24;
   },
 
   /**

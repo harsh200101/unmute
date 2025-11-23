@@ -564,7 +564,7 @@ exports.getUserSessions = async (req, res) => {
       LEFT JOIN reviews r ON s.id = r.session_id AND r.reviewer_type = 'mentee'
       LEFT JOIN mentor_earnings me ON s.id = me.session_id AND me.status = 'completed'
       WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
-        AND s.status NOT IN ('cancelled_by_mentee', 'cancelled_by_mentor')
+        AND s.status NOT IN ('cancelled_by_mentor')
     `;
 
     const params = [userId];
@@ -617,7 +617,7 @@ exports.getUserSessions = async (req, res) => {
       INNER JOIN mentors m ON s.mentor_id = m.id
       INNER JOIN users mentor_user ON m.user_id = mentor_user.id
       WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
-        AND s.status NOT IN ('cancelled_by_mentee', 'cancelled_by_mentor')
+        AND s.status NOT IN ('cancelled_by_mentor')
     `;
 
     const countParams = [userId];
@@ -2382,7 +2382,8 @@ exports.submitSessionReview = async (req, res) => {
 
     const {
       overall_rating,
-      comment
+      comment,
+      is_anonymous
     } = req.body;
 
     // Validate rating if provided (optional now)
@@ -2435,9 +2436,9 @@ exports.submitSessionReview = async (req, res) => {
       const reviewQuery = `
         INSERT INTO reviews (
           session_id, mentor_id, mentee_id, reviewer_type, review_target,
-          overall_rating, comment, created_at, updated_at
+          overall_rating, comment, is_anonymous, created_at, updated_at
         )
-        VALUES ($1, $2, $3, 'mentee', 'mentor', $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, 'mentee', 'mentor', $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
       `;
 
@@ -2446,7 +2447,8 @@ exports.submitSessionReview = async (req, res) => {
         session.mentor_id,
         session.mentee_id,
         overall_rating || null,
-        comment || null
+        comment || null,
+        is_anonymous || false
       ];
 
       console.log('Inserting review with values:', reviewValues);
@@ -2913,6 +2915,207 @@ exports.getMenteeNotesHistory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch mentee notes history',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+/**
+ * Get user's sessions with filtering and pagination
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+exports.getUserSessions = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const {
+      status,
+      type,
+      upcoming = false,
+      past = false,
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    console.log('🔍 [getUserSessions] Fetching sessions for user:', userId, { status, type, upcoming, past, page, limit });
+
+    // Build query for user sessions
+    let query = `
+      SELECT
+        s.*,
+        mentor_user.first_name as mentor_first_name,
+        mentor_user.last_name as mentor_last_name,
+        mentor_user.avatar_url as mentor_avatar,
+        mentor_user.email as mentor_email,
+        mentee_user.first_name as mentee_first_name,
+        mentee_user.last_name as mentee_last_name,
+        mentee_user.avatar_url as mentee_avatar,
+        mentee_user.email as mentee_email,
+        m.per_minute_rate * 60 as hourly_rate,
+        m.badge_level,
+        m.timezone as mentor_timezone,
+        p.payment_status,
+        p.amount as payment_amount,
+        p.currency as payment_currency,
+        r.overall_rating,
+        r.comment as review_comment,
+        r.target_response as mentor_response,
+        r.created_at as review_created_at,
+        r.reviewer_type,
+        r.is_anonymous
+      FROM sessions s
+      INNER JOIN mentors m ON s.mentor_id = m.id
+      INNER JOIN users mentor_user ON m.user_id = mentor_user.id
+      INNER JOIN users mentee_user ON s.mentee_id = mentee_user.id
+      LEFT JOIN payments p ON s.id = p.session_id
+      LEFT JOIN reviews r ON s.id = r.session_id AND (
+        (s.mentee_id = $1 AND r.reviewer_type = 'mentee') OR
+        (mentor_user.id = $1 AND r.reviewer_type = 'mentee' AND (r.is_anonymous IS NULL OR r.is_anonymous = false))
+      )
+      WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
+        AND s.scheduled_at IS NOT NULL
+    `;
+
+    const params = [userId];
+    let paramCount = 1;
+
+    // Status filter
+    if (status) {
+      paramCount++;
+      query += ` AND s.status = $${paramCount}`;
+      params.push(status);
+    }
+
+    // Session type filter
+    if (type) {
+      paramCount++;
+      query += ` AND s.session_type = $${paramCount}`;
+      params.push(type);
+    }
+
+    // Upcoming sessions
+    if (upcoming === 'true') {
+      query += ` AND s.scheduled_at > CURRENT_TIMESTAMP AND s.status IN ('scheduled', 'confirmed')`;
+    }
+
+    // Past sessions
+    if (past === 'true') {
+      query += ` AND s.scheduled_at < CURRENT_TIMESTAMP`;
+    }
+
+    query += ` ORDER BY s.scheduled_at DESC`;
+
+    // Pagination
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    paramCount++;
+    query += ` LIMIT $${paramCount}`;
+    params.push(parseInt(limit));
+
+    paramCount++;
+    query += ` OFFSET $${paramCount}`;
+    params.push(offset);
+
+    console.log('🔍 [getUserSessions] Executing query with params:', params);
+
+    const result = await db.query(query, params);
+
+    // Get total count
+    let countQuery = `
+      SELECT COUNT(*) as total
+      FROM sessions s
+      INNER JOIN mentors m ON s.mentor_id = m.id
+      INNER JOIN users mentor_user ON m.user_id = mentor_user.id
+      WHERE (s.mentee_id = $1 OR mentor_user.id = $1)
+        AND s.scheduled_at IS NOT NULL
+    `;
+
+    const countParams = [userId];
+    let countParamCount = 1;
+
+    if (status) {
+      countParamCount++;
+      countQuery += ` AND s.status = $${countParamCount}`;
+      countParams.push(status);
+    }
+
+    if (type) {
+      countParamCount++;
+      countQuery += ` AND s.session_type = $${countParamCount}`;
+      countParams.push(type);
+    }
+
+    if (upcoming === 'true') {
+      countQuery += ` AND s.scheduled_at > CURRENT_TIMESTAMP AND s.status IN ('scheduled', 'confirmed')`;
+    }
+
+    if (past === 'true') {
+      countQuery += ` AND s.scheduled_at < CURRENT_TIMESTAMP`;
+    }
+
+    const countResult = await db.query(countQuery, countParams);
+    const totalSessions = parseInt(countResult.rows[0].total);
+
+    // Format sessions
+    const sessions = result.rows.map(session => {
+      const sessionData = formatSessionResponse(session);
+
+      // Add review information
+      if (session.overall_rating) {
+        sessionData.review = {
+          overallRating: session.overall_rating,
+          comment: session.review_comment,
+          mentorResponse: session.mentor_response,
+          createdAt: session.review_created_at,
+          reviewerType: session.reviewer_type,
+          isAnonymous: session.is_anonymous
+        };
+      } else {
+        sessionData.review = null;
+      }
+
+      // Add action permissions
+      sessionData.canCancel = ['pending', 'confirmed'].includes(session.status) &&
+                              new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000);
+      sessionData.canReschedule = ['pending', 'confirmed', 'scheduled'].includes(session.status) &&
+                                  new Date(session.scheduled_at) > new Date(Date.now() + 24 * 60 * 60 * 1000);
+      sessionData.canReview = session.status === 'completed' && !session.overall_rating && session.mentee_id === userId;
+      sessionData.canStart = session.status === 'confirmed' &&
+                            Math.abs(new Date(session.scheduled_at) - new Date()) < 15 * 60 * 1000;
+
+      return sessionData;
+    });
+
+    console.log(`✅ [getUserSessions] Found ${sessions.length} sessions for user ${userId}`);
+
+    res.json({
+      success: true,
+      data: {
+        sessions,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalSessions / limit),
+          totalSessions,
+          limit: parseInt(limit),
+          hasNextPage: page < Math.ceil(totalSessions / limit),
+          hasPreviousPage: page > 1
+        },
+        summary: {
+          total: totalSessions,
+          upcoming: sessions.filter(s => new Date(s.scheduledAt) > new Date()).length,
+          past: sessions.filter(s => new Date(s.scheduledAt) < new Date()).length,
+          completed: sessions.filter(s => s.status === 'completed').length,
+          pending: sessions.filter(s => s.status === 'pending').length,
+          confirmed: sessions.filter(s => s.status === 'confirmed').length,
+          cancelled: sessions.filter(s => s.status.includes('cancelled')).length
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching user sessions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch sessions',
       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }

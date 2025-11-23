@@ -4,6 +4,8 @@ import axios from 'axios';
 import sessionController from '../controllers/sessionController';
 
 const PaymentStatusPage = () => {
+  // DEBUGGING: Immediate log when component is instantiated
+  console.log('🎯 PAYMENT_STATUS_PAGE COMPONENT INSTANTIATED');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const transactionId = searchParams.get('transactionId');
@@ -14,8 +16,25 @@ const PaymentStatusPage = () => {
   const [polling, setPolling] = useState(!paymentStatus);
   const [sessionDetails, setSessionDetails] = useState(null);
 
+  // DEBUGGING: Log when component mounts and receives props
   useEffect(() => {
-    console.log('🔍 PaymentStatusPage - Query params:', {
+    console.log('🚀 PAYMENT_STATUS_PAGE LOADED:', {
+      timestamp: new Date().toISOString(),
+      currentURL: window.location.href,
+      pathname: window.location.pathname,
+      search: window.location.search,
+      hash: window.location.hash,
+      queryParams: {
+        transactionId,
+        paymentStatus,
+        sessionId,
+        allParams: Object.fromEntries(searchParams.entries())
+      },
+      userAgent: navigator.userAgent,
+      referrer: document.referrer
+    });
+
+    console.log(' PaymentStatusPage - Query params:', {
       transactionId,
       paymentStatus,
       sessionId

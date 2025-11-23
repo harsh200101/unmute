@@ -154,6 +154,10 @@ router.get('/details/:sessionId',
           mentee_user.last_name as mentee_last_name,
           mentee_user.avatar_url as mentee_avatar,
           mentee_user.email as mentee_email,
+          mentee_user.date_of_birth,
+          mentee_user.gender,
+          mentee_user.marital_status,
+          mentee_user.preferred_language,
           m.per_minute_rate * 60 as hourly_rate,
           m.badge_level,
           m.timezone as mentor_timezone,
@@ -164,7 +168,8 @@ router.get('/details/:sessionId',
           r.comment as review_comment,
           r.target_response as mentor_response,
           r.created_at as review_created_at,
-          r.reviewer_type
+          r.reviewer_type,
+          r.is_anonymous
         FROM sessions s
         INNER JOIN mentors m ON s.mentor_id = m.id
         INNER JOIN users mentor_user ON m.user_id = mentor_user.id
@@ -186,6 +191,19 @@ router.get('/details/:sessionId',
       }
 
       const session = result.rows[0];
+
+      // Debug logging for review data
+      console.log('🔍 [Backend Session Details Debug]', {
+        sessionId,
+        userId,
+        hasReview: !!session.overall_rating,
+        reviewData: {
+          overallRating: session.overall_rating,
+          comment: session.review_comment,
+          reviewerType: session.reviewer_type,
+          isAnonymous: session.is_anonymous
+        }
+      });
 
       // Format comprehensive session data
       const sessionData = {
@@ -255,7 +273,8 @@ router.get('/details/:sessionId',
           comment: session.review_comment,
           mentorResponse: session.mentor_response,
           createdAt: session.review_created_at,
-          reviewerType: session.reviewer_type
+          reviewerType: session.reviewer_type,
+          isAnonymous: session.is_anonymous
         } : null,
         
         // Action Permissions
@@ -1198,17 +1217,23 @@ router.get('/mentor/all',
           u.last_name as mentee_last_name,
           u.avatar_url as mentee_avatar,
           u.email as mentee_email,
+          u.date_of_birth as mentee_date_of_birth,
+          u.gender as mentee_gender,
+          u.marital_status as mentee_marital_status,
+          u.preferred_language as mentee_preferred_language,
           p.payment_status,
           p.amount as payment_amount,
           r.overall_rating,
           r.comment as review_comment,
+          r.reviewer_type,
+          r.is_anonymous,
           rr.id as reschedule_request_id,
           rr.status as reschedule_request_status,
           rr.reason as reschedule_request_reason
         FROM sessions s
         INNER JOIN users u ON s.mentee_id = u.id
         LEFT JOIN payments p ON s.id = p.session_id
-        LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false AND r.reviewer_type = 'mentee'
+        LEFT JOIN reviews r ON s.id = r.session_id AND r.is_hidden = false AND r.reviewer_type = 'mentee' AND (r.is_anonymous IS NULL OR r.is_anonymous = false)
         LEFT JOIN session_reschedule_requests rr ON s.id = rr.session_id AND rr.status = 'pending'
         WHERE s.mentor_id = $1
           AND s.status IN ('confirmed', 'in_progress', 'completed', 'cancelled_by_mentee', 'cancelled_by_mentor')
@@ -1345,7 +1370,21 @@ router.get('/mentor/all',
           lastName: session.mentee_last_name,
           fullName: `${session.mentee_first_name} ${session.mentee_last_name}`.trim(),
           avatar: session.mentee_avatar,
-          email: session.mentee_email
+          email: session.mentee_email,
+          dateOfBirth: session.mentee_date_of_birth,
+          age: session.mentee_date_of_birth ? (() => {
+            const birthDate = new Date(session.mentee_date_of_birth);
+            const today = new Date();
+            let age = today.getFullYear() - birthDate.getFullYear();
+            const monthDiff = today.getMonth() - birthDate.getMonth();
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+              age--;
+            }
+            return age;
+          })() : null,
+          gender: session.mentee_gender,
+          maritalStatus: session.mentee_marital_status,
+          preferredLanguage: session.mentee_preferred_language
         },
 
         // Payment info
@@ -1357,7 +1396,9 @@ router.get('/mentor/all',
         // Review info
         review: session.overall_rating ? {
           overallRating: session.overall_rating,
-          comment: session.review_comment
+          comment: session.review_comment,
+          reviewerType: session.reviewer_type,
+          isAnonymous: session.is_anonymous
         } : null,
 
         // Reschedule request info
@@ -1680,14 +1721,20 @@ router.get('/mentor/all',
           u.last_name as mentee_last_name,
           u.avatar_url as mentee_avatar,
           u.email as mentee_email,
+          u.date_of_birth,
+          u.gender,
+          u.marital_status,
+          u.preferred_language,
           p.payment_status,
           p.amount as payment_amount,
           r.overall_rating as session_rating,
-          r.comment as session_review
+          r.comment as session_review,
+          r.reviewer_type,
+          r.is_anonymous
         FROM sessions s
         INNER JOIN users u ON s.mentee_id = u.id
         LEFT JOIN payments p ON s.id = p.session_id
-        LEFT JOIN reviews r ON s.id = r.session_id
+        LEFT JOIN reviews r ON s.id = r.session_id AND r.reviewer_type = 'mentee' AND (r.is_anonymous IS NULL OR r.is_anonymous = false)
         WHERE s.mentor_id = $1
           AND s.scheduled_at IS NOT NULL
       `;
@@ -1803,7 +1850,21 @@ router.get('/mentor/all',
           lastName: session.mentee_last_name,
           fullName: `${session.mentee_first_name} ${session.mentee_last_name}`.trim(),
           avatar: session.mentee_avatar,
-          email: session.mentee_email
+          email: session.mentee_email,
+          dateOfBirth: session.date_of_birth,
+          age: session.date_of_birth ? (() => {
+            const birthDate = new Date(session.date_of_birth);
+            const today = new Date();
+            let age = today.getFullYear() - birthDate.getFullYear();
+            const monthDiff = today.getMonth() - birthDate.getMonth();
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+              age--;
+            }
+            return age;
+          })() : null,
+          gender: session.gender,
+          maritalStatus: session.marital_status,
+          preferredLanguage: session.preferred_language
         },
 
         // Payment info
@@ -1816,7 +1877,8 @@ router.get('/mentor/all',
         review: session.session_rating ? {
           overallRating: session.session_rating,
           comment: session.session_review,
-          reviewerType: session.review_reviewer_type
+          reviewerType: session.reviewer_type,
+          isAnonymous: session.is_anonymous
         } : null,
 
         // Computed fields

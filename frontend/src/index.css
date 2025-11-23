@@ -118,4 +118,15 @@
   .group:focus-within .group-focus-within\:text-blue-600 {
     color: #2563eb;
   }
+
+  /* Agora video elements styling for modern interface */
+  .agora_video_player {
+    border-radius: inherit !important;
+    object-fit: cover !important;
+  }
+
+  video {
+    border-radius: inherit !important;
+    object-fit: cover !important;
+  }
 }

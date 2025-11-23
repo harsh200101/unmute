@@ -49,6 +49,18 @@ const generateTokens = (user) => {
 
 // Format user response data
 const formatUserResponse = (user) => {
+  // Calculate age from date of birth
+  let age = null;
+  if (user.date_of_birth) {
+    const birthDate = new Date(user.date_of_birth);
+    const today = new Date();
+    age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+  }
+
   return {
     id: user.id,
     uuid: user.uuid,
@@ -58,7 +70,10 @@ const formatUserResponse = (user) => {
     fullName: `${user.first_name} ${user.last_name}`.trim(),
     phone: user.phone,
     dateOfBirth: user.date_of_birth,
+    age: age,
     gender: user.gender,
+    maritalStatus: user.marital_status,
+    preferredLanguage: user.preferred_language,
     role: user.role,
     avatarUrl: user.avatar_url,
     bio: user.bio,
@@ -635,6 +650,8 @@ exports.updateProfile = async (req, res) => {
       phone,
       date_of_birth,
       gender,
+      marital_status,
+      preferred_language,
       avatar_url,
       bio,
       location,
@@ -649,11 +666,13 @@ exports.updateProfile = async (req, res) => {
         phone = COALESCE($4, phone),
         date_of_birth = COALESCE($5, date_of_birth),
         gender = COALESCE($6, gender),
-        avatar_url = COALESCE($7, avatar_url),
-        bio = COALESCE($8, bio),
-        location = COALESCE($9::jsonb, location),
-        social_links = COALESCE($10::jsonb, social_links),
-        preferences = COALESCE($11::jsonb, preferences),
+        marital_status = COALESCE($7, marital_status),
+        preferred_language = COALESCE($8, preferred_language),
+        avatar_url = COALESCE($9, avatar_url),
+        bio = COALESCE($10, bio),
+        location = COALESCE($11::jsonb, location),
+        social_links = COALESCE($12::jsonb, social_links),
+        preferences = COALESCE($13::jsonb, preferences),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND is_active = true
       RETURNING *
@@ -666,6 +685,8 @@ exports.updateProfile = async (req, res) => {
       phone,
       date_of_birth,
       gender,
+      marital_status,
+      preferred_language,
       avatar_url,
       bio,
       location ? JSON.stringify(location) : null,

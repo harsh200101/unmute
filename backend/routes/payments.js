@@ -24,35 +24,7 @@ router.post(
 router.post('/callback', walletController.handleWalletTopupCallback);
 
 // GET /api/payments/status/:transactionId - Check wallet top-up payment status
-router.get('/status/:transactionId', auth, async (req, res) => {
-  try {
-    const { transactionId } = req.params;
-
-    const paymentRes = await db.query(
-      `SELECT p.payment_status, p.amount, p.metadata
-       FROM payments p
-       WHERE p.transaction_id = $1
-       AND p.session_id IS NULL
-       AND JSON_EXTRACT_PATH_TEXT(p.metadata, 'type') = 'wallet_topup'
-       AND JSON_EXTRACT_PATH_TEXT(p.metadata, 'userId') = $2`,
-      [transactionId, req.user.userId.toString()]
-    );
-
-    if (paymentRes.rows.length === 0) {
-      return res.status(404).json({ status: 'NOT_FOUND' });
-    }
-
-    const payment = paymentRes.rows[0];
-    return res.json({
-      status: payment.payment_status,
-      amount: payment.amount
-    });
-
-  } catch (error) {
-    console.error('❌ Status check error:', error);
-    return res.status(500).json({ status: 'error', message: 'Internal server error' });
-  }
-});
+router.get('/status/:transactionId', auth, walletController.checkPaymentStatus);
 
 // POST /api/payments/payment-status - Handle PhonePe redirect (some gateways POST to redirect URL)
 router.post('/payment-status', (req, res) => {

@@ -106,44 +106,54 @@ const updateProfileValidation = [
     .isLength({ min: 1, max: 100 })
     .withMessage('First name must be less than 100 characters')
     .escape(),
-  
+
   body('last_name')
     .optional()
     .trim()
     .isLength({ min: 1, max: 100 })
     .withMessage('Last name must be less than 100 characters')
     .escape(),
-  
+
   body('phone')
     .optional()
     .isMobilePhone()
     .withMessage('Please provide a valid phone number'),
-  
+
   body('date_of_birth')
     .optional()
     .isISO8601()
     .withMessage('Please provide a valid date of birth'),
-  
+
   body('gender')
     .optional()
     .isIn(['male', 'female', 'other', 'prefer_not_to_say'])
     .withMessage('Invalid gender option'),
-  
+
+  body('marital_status')
+    .optional()
+    .isIn(['single', 'married', 'divorced', 'widowed', 'prefer_not_to_say'])
+    .withMessage('Invalid marital status option'),
+
+  body('preferred_language')
+    .optional()
+    .isIn(['en', 'hi', 'es', 'fr', 'de', 'zh', 'ja', 'ko', 'ar', 'pt', 'ru', 'it'])
+    .withMessage('Invalid preferred language'),
+
   body('bio')
     .optional()
     .isLength({ max: 1000 })
     .withMessage('Bio must be less than 1000 characters'),
-  
+
   body('location')
     .optional()
     .isObject()
     .withMessage('Location must be an object'),
-  
+
   body('social_links')
     .optional()
     .isObject()
     .withMessage('Social links must be an object'),
-  
+
   body('preferences')
     .optional()
     .isObject()

@@ -521,37 +521,6 @@ app.get('/api/mentors/meta/categories', async (req, res) => {
 
 // Featured mentors and reviews endpoints are now handled by routes/mentors.js and routes/reviews.js
 
-// POST /payment/callback - Handle PhonePe callback (PhonePe POSTs to this URL)
-app.post('/payment/callback', async (req, res) => {
-  try {
-    console.log('🔄 PhonePe callback received at /payment/callback (SERVER LEVEL):', {
-      timestamp: new Date().toISOString(),
-      body: req.body,
-      query: req.query,
-      url: req.url,
-      originalUrl: req.originalUrl,
-      headers: req.headers,
-      ip: req.ip
-    });
-
-    // Import the callback handler function directly
-    const paymentsRoutes = require('./routes/payments');
-    const callbackHandler = paymentsRoutes.callback;
-
-    if (!callbackHandler) {
-      console.error('❌ Callback handler not found in payments routes');
-      return res.status(500).json({ status: 'error', message: 'Callback handler not available' });
-    }
-
-    console.log('✅ Found callback handler, executing...');
-
-    // Call the callback handler directly
-    return callbackHandler(req, res);
-  } catch (error) {
-    console.error('❌ Payment callback error at server level:', error);
-    res.status(500).json({ status: 'error', message: 'Internal server error' });
-  }
-});
 
 // POST /payment/callback/wallet - Handle PhonePe wallet callback (PhonePe POSTs to this URL)
 app.post('/payment/callback/wallet', async (req, res) => {
@@ -585,39 +554,81 @@ app.post('/payment/callback/wallet', async (req, res) => {
   }
 });
 
-// POST /payment-status - Handle PhonePe redirect (PhonePe POSTs to redirect URL)
-app.post('/payment-status', (req, res) => {
+// POST /payment/status - Handle PhonePe redirect (PhonePe POSTs to redirect URL)
+app.post('/payment/status', (req, res) => {
+  const requestId = req.requestId || 'unknown';
   try {
-    console.log('Payment status POST received at root level:', {
+    console.log(`🔄 [${requestId}] Payment status POST received at /payment/status:`, {
+      timestamp: new Date().toISOString(),
+      method: req.method,
+      url: req.url,
+      originalUrl: req.originalUrl,
+      headers: {
+        'content-type': req.headers['content-type'],
+        'user-agent': req.headers['user-agent'],
+        'host': req.headers['host'],
+        'x-forwarded-for': req.headers['x-forwarded-for'],
+        'referer': req.headers['referer']
+      },
       body: req.body,
       query: req.query,
-      url: req.url,
-      originalUrl: req.originalUrl
+      ip: req.ip,
+      environment: {
+        FRONTEND_REDIRECT_URL: process.env.FRONTEND_REDIRECT_URL,
+        FRONTEND_URL: process.env.FRONTEND_URL,
+        NODE_ENV: process.env.NODE_ENV
+      }
     });
 
     // PhonePe might POST transaction data to redirect URL
-    const { transactionId } = req.body;
+    const { transactionId, code, merchantId, amount } = req.body;
     const queryTransactionId = req.query.transactionId;
 
     const finalTransactionId = transactionId || queryTransactionId;
 
-    console.log('Extracted transaction ID:', finalTransactionId);
+    console.log(`📋 [${requestId}] Transaction data extraction:`, {
+      bodyTransactionId: transactionId,
+      queryTransactionId: queryTransactionId,
+      finalTransactionId: finalTransactionId,
+      paymentCode: code,
+      merchantId: merchantId,
+      amount: amount
+    });
+
+    // Determine status from body if available
+    let status = 'completed'; // Default assumption
+    if (code) {
+      status = code === 'PAYMENT_SUCCESS' ? 'completed' : 'failed';
+    }
 
     if (finalTransactionId) {
-      // Redirect to frontend with transaction ID
-      const frontendUrl = `${process.env.FRONTEND_REDIRECT_URL}?transactionId=${finalTransactionId}`;
-      console.log('Redirecting to frontend:', frontendUrl);
+      // Redirect to frontend with transaction ID and status
+      const frontendUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/status?transactionId=${finalTransactionId}&status=${status}&type=wallet_topup`;
+      console.log(`🔄 [${requestId}] REDIRECTING TO FRONTEND - URL:`, frontendUrl);
+      console.log(`📋 [${requestId}] REDIRECT RESPONSE:`, {
+        statusCode: 302,
+        locationHeader: frontendUrl,
+        contentType: 'text/plain',
+        userAgent: req.headers['user-agent'],
+        timestamp: new Date().toISOString()
+      });
+
+      // Set explicit headers before redirect
+      res.setHeader('Location', frontendUrl);
+      res.setHeader('Content-Type', 'text/plain');
+
+      console.log(`🚨 [${requestId}] ABOUT TO SEND 302 REDIRECT to: ${frontendUrl}`);
       return res.redirect(302, frontendUrl);
     }
 
     // If no transaction ID, redirect to generic payment status page
-    const fallbackUrl = process.env.FRONTEND_REDIRECT_URL || 'http://localhost:3000/payment-status';
-    console.log('Redirecting to fallback:', fallbackUrl);
+    const fallbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/status?status=unknown`;
+    console.log(`🔄 [${requestId}] No transaction ID found, redirecting to fallback:`, fallbackUrl);
     return res.redirect(302, fallbackUrl);
   } catch (error) {
-    console.error('Payment status redirect error:', error);
-    const errorUrl = 'http://localhost:3000/payment-status';
-    console.log('Redirecting to error fallback:', errorUrl);
+    console.error(`❌ [${requestId}] Payment status redirect error:`, error);
+    const errorUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/status?status=error`;
+    console.log(`🔄 [${requestId}] Redirecting to error fallback:`, errorUrl);
     return res.redirect(302, errorUrl);
   }
 });

@@ -26,15 +26,22 @@ const SessionCard = ({
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [showNotesForm, setShowNotesForm] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [reviewData, setReviewData] = useState({
     overallRating: 5,
-    comment: ''
+    comment: '',
+    isAnonymous: false
   });
   const [notesData, setNotesData] = useState({
     discussionSummary: '',
     keyTakeaways: '',
     additionalNotes: ''
   });
+
+  // Sync sessionStatus with session.status prop
+  useEffect(() => {
+    setSessionStatus(session.status);
+  }, [session.status]);
 
   // Calculate time remaining for upcoming and active sessions
   useEffect(() => {
@@ -196,7 +203,7 @@ const SessionCard = ({
     if (isNaN(sessionTime.getTime())) return false;
 
     const hoursUntilSession = (sessionTime - now) / (1000 * 60 * 60);
-    return ['confirmed', 'in_progress'].includes(sessionStatus) && hoursUntilSession > 24;
+    return sessionStatus === 'confirmed' && hoursUntilSession > 24;
   };
 
   // Check if session can be rescheduled
@@ -210,7 +217,7 @@ const SessionCard = ({
 
     const hoursUntilSession = (sessionTime - now) / (1000 * 60 * 60);
     // Mentees can reschedule with 24 hours notice, mentors use request system
-    return userRole === 'mentee' && ['confirmed', 'in_progress'].includes(sessionStatus) && hoursUntilSession > 24;
+    return userRole === 'mentee' && sessionStatus === 'confirmed' && hoursUntilSession > 24;
   };
 
   // Handle action with loading
@@ -236,7 +243,8 @@ const SessionCard = ({
       // Prepare simplified review data
       const simplifiedReviewData = {
         overallRating: reviewData.overallRating,
-        comment: reviewData.comment
+        comment: reviewData.comment,
+        isAnonymous: reviewData.isAnonymous
       };
 
       if (userRole === 'mentor') {
@@ -301,6 +309,17 @@ const SessionCard = ({
     }
   };
 
+
+  // Debug logging
+  console.log('🔍 [SessionCard Debug]', {
+    sessionId: session.id,
+    userRole,
+    sessionStatus,
+    hasReview: !!session.review,
+    reviewData: session.review,
+    showReviewForm,
+    canShowReviewButton: sessionStatus === 'completed' && !session.review && !showReviewForm
+  });
 
   const statusStyle = getStatusStyle(sessionStatus);
   const typeStyle = getSessionTypeStyle(session.sessionType);
@@ -381,11 +400,11 @@ const SessionCard = ({
             /* Show Mentee Info for Mentors */
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold">
-                {session.menteeName?.charAt(0).toUpperCase() || 'S'}
+                {(session.mentee?.firstName || session.menteeName || 'S').charAt(0).toUpperCase()}
               </div>
               <div>
                 <h4 className="font-semibold text-gray-900">
-                  {session.menteeName || 'Student'}
+                  {session.mentee?.fullName || session.menteeName || 'Student'}
                 </h4>
                 <p className="text-sm text-gray-500">Mentee</p>
               </div>
@@ -532,6 +551,24 @@ const SessionCard = ({
                 />
               </div>
 
+              {/* Anonymous Review Checkbox */}
+              <div className="mb-3">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={reviewData.isAnonymous}
+                    onChange={(e) => handleRatingChange('isAnonymous', e.target.checked)}
+                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Submit this review anonymously
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  Your name will not be visible to the mentor if checked.
+                </p>
+              </div>
+
               {/* Submit Buttons */}
               <div className="flex gap-2">
                 <button
@@ -554,7 +591,15 @@ const SessionCard = ({
         )}
 
         {/* Review Display */}
-        {session.review && !showReviewForm && (
+        {(() => {
+          console.log('🔍 [Review Display Debug]', {
+            hasReview: !!session.review,
+            showReviewForm,
+            shouldShow: session.review && !showReviewForm,
+            reviewData: session.review
+          });
+          return session.review && !showReviewForm;
+        })() && (
           <div className="mb-4 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl">
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0">
@@ -565,8 +610,19 @@ const SessionCard = ({
                 </div>
               </div>
               <div className="flex-1">
-                {/* Mentee-to-Mentor Review: Only show to the specific mentor */}
-                {session.review.reviewerType === 'mentee' && userRole === 'mentor' && (
+                {/* Mentee-to-Mentor Review: Only show to the specific mentor and only non-anonymous reviews */}
+                {(() => {
+                  const shouldShowMentorReview = session.review.reviewerType === 'mentee' && userRole === 'mentor' && !session.review.isAnonymous;
+                  console.log('🔍 [Mentor Review Display Debug]', {
+                    reviewerType: session.review.reviewerType,
+                    userRole,
+                    isAnonymous: session.review.isAnonymous,
+                    shouldShowMentorReview,
+                    rating: session.review.overallRating,
+                    comment: session.review.comment
+                  });
+                  return shouldShowMentorReview;
+                })() && (
                   <div>
                     <div className="flex items-center gap-2 mb-2">
                       <h4 className="text-sm font-semibold text-gray-900">Mentee Review</h4>
@@ -621,11 +677,44 @@ const SessionCard = ({
                   </div>
                 )}
 
-                {/* For mentees: Show privacy notices */}
-                {session.review.reviewerType === 'mentee' && userRole === 'mentee' && (
+                {/* For mentees: Show their own review */}
+                {(() => {
+                  const shouldShowMenteeReview = session.review.reviewerType === 'mentee' && userRole === 'mentee';
+                  console.log('🔍 [Mentee Review Display Debug]', {
+                    reviewerType: session.review.reviewerType,
+                    userRole,
+                    shouldShowMenteeReview,
+                    rating: session.review.overallRating,
+                    comment: session.review.comment,
+                    isAnonymous: session.review.isAnonymous
+                  });
+                  return shouldShowMenteeReview;
+                })() && (
                   <div>
-                    <h4 className="text-sm font-semibold text-gray-900 mb-2">Your Review</h4>
-                    <p className="text-xs text-gray-500">Your review is only visible to the mentor</p>
+                    <div className="flex items-center gap-2 mb-2">
+                      <h4 className="text-sm font-semibold text-gray-900">Your Review</h4>
+                      <div className="flex items-center gap-1">
+                        {[...Array(5)].map((_, i) => (
+                          <svg
+                            key={i}
+                            className={`w-4 h-4 ${i < session.review.overallRating ? 'text-yellow-400' : 'text-gray-300'}`}
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                          </svg>
+                        ))}
+                        <span className="text-sm font-medium text-gray-700 ml-1">
+                          {session.review.overallRating}/5
+                        </span>
+                      </div>
+                    </div>
+                    {session.review.comment && (
+                      <p className="text-sm text-gray-700 italic">"{session.review.comment}"</p>
+                    )}
+                    {session.review.isAnonymous && (
+                      <p className="text-xs text-orange-600 mt-1">This review is anonymous</p>
+                    )}
                   </div>
                 )}
 
@@ -713,6 +802,90 @@ const SessionCard = ({
           </div>
         )}
 
+        {/* Profile Modal */}
+        {showProfileModal && userRole === 'mentor' && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-bold text-gray-900">Mentee Profile</h3>
+                  <button
+                    onClick={() => setShowProfileModal(false)}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Avatar and Name */}
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center text-white font-semibold text-xl">
+                      {(session.mentee?.firstName || session.menteeName || 'S').charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-900">
+                        {session.mentee?.fullName || session.menteeName || 'Student'}
+                      </h4>
+                      <p className="text-sm text-gray-500">Mentee</p>
+                    </div>
+                  </div>
+
+                  {/* Profile Details */}
+                  <div className="space-y-3 pt-4 border-t border-gray-200">
+                    {session.mentee?.age && (
+                      <div className="flex justify-between">
+                        <span className="text-sm font-medium text-gray-600">Age:</span>
+                        <span className="text-sm text-gray-900">{session.mentee.age} years old</span>
+                      </div>
+                    )}
+
+                    {session.mentee?.gender && (
+                      <div className="flex justify-between">
+                        <span className="text-sm font-medium text-gray-600">Gender:</span>
+                        <span className="text-sm text-gray-900">{session.mentee.gender}</span>
+                      </div>
+                    )}
+
+                    {session.mentee?.maritalStatus && (
+                      <div className="flex justify-between">
+                        <span className="text-sm font-medium text-gray-600">Marital Status:</span>
+                        <span className="text-sm text-gray-900">{session.mentee.maritalStatus}</span>
+                      </div>
+                    )}
+
+                    {session.mentee?.preferredLanguage && (
+                      <div className="flex justify-between">
+                        <span className="text-sm font-medium text-gray-600">Preferred Language:</span>
+                        <span className="text-sm text-gray-900">{session.mentee.preferredLanguage.toUpperCase()}</span>
+                      </div>
+                    )}
+
+                    {session.mentee?.email && (
+                      <div className="flex justify-between">
+                        <span className="text-sm font-medium text-gray-600">Email:</span>
+                        <span className="text-sm text-gray-900">{session.mentee.email}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Close Button */}
+                  <div className="pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => setShowProfileModal(false)}
+                      className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
         {showActions && (
           <div className="flex flex-wrap gap-2">
@@ -761,7 +934,7 @@ const SessionCard = ({
             )}
 
             {/* Request Reschedule (Mentor only) */}
-            {userRole === 'mentor' && ['confirmed', 'in_progress'].includes(sessionStatus) && (
+            {userRole === 'mentor' && sessionStatus === 'confirmed' && (
               <button
                 onClick={() => handleAction(onRescheduleSession, session.id)}
                 disabled={isActionLoading}
@@ -782,6 +955,17 @@ const SessionCard = ({
               </button>
             )}
 
+            {/* Profile Button (Mentor only) */}
+            {userRole === 'mentor' && (
+              <button
+                onClick={() => setShowProfileModal(true)}
+                disabled={isActionLoading}
+                className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 font-medium rounded-lg transition-colors flex items-center gap-2"
+              >
+                {isActionLoading ? <LoadingSpinner size="sm" /> : '👤'} Profile
+              </button>
+            )}
+
             {/* History Button (Mentor only for confirmed sessions) */}
             {userRole === 'mentor' && (sessionStatus === 'confirmed' || sessionStatus === 'completed') && (
               <button
@@ -794,7 +978,16 @@ const SessionCard = ({
             )}
 
             {/* Review Button */}
-            {sessionStatus === 'completed' && !session.review && !showReviewForm && (
+            {(() => {
+              const shouldShowButton = sessionStatus === 'completed' && !session.review && !showReviewForm;
+              console.log('🔍 [Review Button Debug]', {
+                sessionStatus,
+                hasReview: !!session.review,
+                showReviewForm,
+                shouldShowButton
+              });
+              return shouldShowButton;
+            })() && (
               <button
                 onClick={() => setShowReviewForm(true)}
                 disabled={isActionLoading}

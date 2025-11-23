@@ -8,6 +8,8 @@ export const WalletBalanceHeader = () => {
   const [balance, setBalance] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [customAmount, setCustomAmount] = useState('');
+  const [customError, setCustomError] = useState('');
 
   const fetchBalance = async () => {
     try {
@@ -36,6 +38,31 @@ export const WalletBalanceHeader = () => {
       });
   };
 
+  const handleCustomTopup = () => {
+    const amount = parseFloat(customAmount);
+
+    // Validation
+    if (!amount || amount < 1 || amount > 50000) {
+      setCustomError('Please enter an amount between ₹1 and ₹50,000');
+      return;
+    }
+
+    setCustomError('');
+    setShowDropdown(false);
+    setCustomAmount('');
+
+    api.post('/wallet/topup', { amount })
+      .then(response => {
+        if (response.data.success) {
+          toast.success('Redirecting to payment...');
+          window.location.href = response.data.redirectUrl;
+        }
+      })
+      .catch(err => {
+        toast.error('Failed to initiate top-up');
+      });
+  };
+
   useEffect(() => {
     fetchBalance();
   }, []);
@@ -52,7 +79,13 @@ export const WalletBalanceHeader = () => {
   return (
     <div className="relative">
       <button
-        onClick={() => setShowDropdown(!showDropdown)}
+        onClick={() => {
+          setShowDropdown(!showDropdown);
+          if (!showDropdown) {
+            setCustomAmount('');
+            setCustomError('');
+          }
+        }}
         className="flex items-center space-x-2 px-3 py-2 bg-white hover:bg-gray-50 rounded-lg border border-gray-200 transition-all duration-200 hover:shadow-sm"
         title="Wallet balance"
       >
@@ -81,7 +114,7 @@ export const WalletBalanceHeader = () => {
 
             <div className="px-4 py-3">
               <div className="text-xs text-gray-600 mb-3">Quick Add Money</div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-2 mb-3">
                 {[100, 500, 1000].map(amount => (
                   <button
                     key={amount}
@@ -91,6 +124,34 @@ export const WalletBalanceHeader = () => {
                     ₹{amount}
                   </button>
                 ))}
+              </div>
+
+              <div className="border-t border-gray-100 pt-3">
+                <div className="text-xs text-gray-600 mb-2">Or enter custom amount</div>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    value={customAmount}
+                    onChange={(e) => {
+                      setCustomAmount(e.target.value);
+                      setCustomError('');
+                    }}
+                    placeholder="₹"
+                    min="1"
+                    max="50000"
+                    className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+                  />
+                  <button
+                    onClick={handleCustomTopup}
+                    disabled={!customAmount}
+                    className="px-3 py-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-sm font-medium rounded transition-colors duration-200"
+                  >
+                    Add
+                  </button>
+                </div>
+                {customError && (
+                  <p className="mt-1 text-xs text-red-600">{customError}</p>
+                )}
               </div>
             </div>
 
@@ -113,7 +174,11 @@ export const WalletBalanceHeader = () => {
           {/* Click outside handler */}
           <div
             className="fixed inset-0 z-40"
-            onClick={() => setShowDropdown(false)}
+            onClick={() => {
+              setShowDropdown(false);
+              setCustomAmount('');
+              setCustomError('');
+            }}
           />
         </>
       )}

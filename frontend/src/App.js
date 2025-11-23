@@ -184,6 +184,28 @@ function App() {
                 }
               />
 
+              <Route
+                path="/payment/callback"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout showHeader={false} showFooter={false}>
+                      <PaymentStatusPage />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/payment/status"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout showHeader={false} showFooter={false}>
+                      <PaymentStatusPage />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+
               {/* Protected User Routes */}
               <Route
                 path="/dashboard"
