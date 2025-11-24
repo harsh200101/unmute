@@ -129,4 +129,25 @@
     border-radius: inherit !important;
     object-fit: cover !important;
   }
+
+  /* Transaction card animations */
+  @keyframes slide-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-in-up {
+    animation: slide-in-up 0.5s ease-out forwards;
+  }
+
+  /* Dark mode support */
+  .dark {
+    color-scheme: dark;
+  }
 }

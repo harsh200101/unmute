@@ -45,13 +45,16 @@ exports.getWalletBalance = async (req, res) => {
 
 /**
  * Get paginated wallet transaction history
- * GET /api/wallet/transactions?limit=50&offset=0
+ * GET /api/wallet/transactions?limit=50&offset=0&type=credit&startDate=2023-01-01&endDate=2023-12-31
  */
 exports.getWalletTransactions = async (req, res) => {
   try {
     const userId = req.user.userId;
     const limit = parseInt(req.query.limit) || 50;
     const offset = parseInt(req.query.offset) || 0;
+    const type = req.query.type; // 'credit' or 'debit'
+    const startDate = req.query.startDate;
+    const endDate = req.query.endDate;
 
     // Validate pagination parameters
     if (limit < 1 || limit > 100) {
@@ -70,7 +73,33 @@ exports.getWalletTransactions = async (req, res) => {
       });
     }
 
-    const transactions = await getWalletTransactions(userId, limit, offset);
+    // Validate type filter
+    if (type && !['credit', 'debit'].includes(type)) {
+      return res.status(422).json({
+        success: false,
+        message: 'Type must be either credit or debit',
+        code: 'INVALID_TYPE'
+      });
+    }
+
+    // Validate date filters
+    if (startDate && isNaN(Date.parse(startDate))) {
+      return res.status(422).json({
+        success: false,
+        message: 'Invalid start date format',
+        code: 'INVALID_START_DATE'
+      });
+    }
+
+    if (endDate && isNaN(Date.parse(endDate))) {
+      return res.status(422).json({
+        success: false,
+        message: 'Invalid end date format',
+        code: 'INVALID_END_DATE'
+      });
+    }
+
+    const transactions = await getWalletTransactions(userId, limit, offset, { type, startDate, endDate });
 
     res.json({
       success: true,
@@ -413,8 +442,8 @@ exports.checkPaymentStatus = async (req, res) => {
        FROM payments p
        WHERE p.transaction_id = $1
        AND p.session_id IS NULL
-       AND JSON_EXTRACT_PATH_TEXT(p.metadata, 'type') = 'wallet_topup'
-       AND JSON_EXTRACT_PATH_TEXT(p.metadata, 'userId') = $2`,
+       AND p.metadata ->> 'type' = 'wallet_topup'
+       AND p.metadata ->> 'userId' = $2`,
       [transactionId, req.user.userId.toString()]
     );
 

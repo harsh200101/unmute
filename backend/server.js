@@ -555,7 +555,7 @@ app.post('/payment/callback/wallet', async (req, res) => {
 });
 
 // POST /payment/status - Handle PhonePe redirect (PhonePe POSTs to redirect URL)
-app.post('/payment/status', (req, res) => {
+app.post('/payment/status', async (req, res) => {
   const requestId = req.requestId || 'unknown';
   try {
     console.log(`🔄 [${requestId}] Payment status POST received at /payment/status:`, {
@@ -595,13 +595,31 @@ app.post('/payment/status', (req, res) => {
       amount: amount
     });
 
-    // Determine status from body if available
-    let status = 'completed'; // Default assumption
-    if (code) {
-      status = code === 'PAYMENT_SUCCESS' ? 'completed' : 'failed';
-    }
+    let status = 'unknown';
 
     if (finalTransactionId) {
+      // Query database for actual payment status
+      try {
+        const paymentResult = await db.query(
+          `SELECT payment_status FROM payments
+           WHERE transaction_id = $1
+           AND session_id IS NULL
+           AND metadata ->> 'type' = 'wallet_topup'`,
+          [finalTransactionId]
+        );
+
+        if (paymentResult.rows.length > 0) {
+          status = paymentResult.rows[0].payment_status;
+          console.log(`✅ [${requestId}] Retrieved payment status from database:`, status);
+        } else {
+          console.log(`⚠️ [${requestId}] Payment not found in database for transaction:`, finalTransactionId);
+          status = 'not_found';
+        }
+      } catch (dbError) {
+        console.error(`❌ [${requestId}] Database query error:`, dbError);
+        status = 'error';
+      }
+
       // Redirect to frontend with transaction ID and status
       const frontendUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/status?transactionId=${finalTransactionId}&status=${status}&type=wallet_topup`;
       console.log(`🔄 [${requestId}] REDIRECTING TO FRONTEND - URL:`, frontendUrl);

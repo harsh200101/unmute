@@ -139,6 +139,12 @@ exports.createSession = async (req, res) => {
     // Convert scheduledAt from local timezone to UTC for database storage
     const scheduledAtUTC = fromZonedTime(scheduledAt, timezone);
 
+    // Calculate local times for availability blocking
+    const localDateTime = new Date(scheduledAt);
+    const bookingDate = localDateTime.toISOString().split('T')[0];
+    const startTimeLocal = localDateTime.toTimeString().substring(0, 8);
+    const endTimeLocal = new Date(localDateTime.getTime() + durationMinutes * 60000).toTimeString().substring(0, 8);
+
     console.log('🔄 Creating session:', { mentorId, menteeId, scheduledAt, timezone, scheduledAtUTC, durationMinutes });
 
     // Use transaction for data consistency
@@ -185,6 +191,31 @@ exports.createSession = async (req, res) => {
         throw new Error(`BOOKING_TOO_FAR: Cannot book more than ${mentor.advance_booking_days} days in advance`);
       }
 
+      // Check for conflicting sessions (overlapping time ranges)
+      const conflictQuery = `
+        SELECT id, scheduled_at, duration_minutes
+        FROM sessions
+        WHERE mentor_id = $1
+          AND status NOT IN ('cancelled_by_mentee', 'cancelled_by_mentor', 'cancelled_by_mentor')
+          AND (
+            -- Check if new session starts during existing session
+            scheduled_at <= $2 AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+            OR
+            -- Check if new session ends during existing session
+            scheduled_at < $2 + ($3 * INTERVAL '1 minute') AND scheduled_at + (duration_minutes * INTERVAL '1 minute') >= $2 + ($3 * INTERVAL '1 minute')
+            OR
+            -- Check if new session completely contains existing session
+            scheduled_at >= $2 AND scheduled_at + (duration_minutes * INTERVAL '1 minute') <= $2 + ($3 * INTERVAL '1 minute')
+          )
+      `;
+
+      const conflictResult = await client.query(conflictQuery, [mentorId, scheduledAtUTC, durationMinutes]);
+
+      if (conflictResult.rows.length > 0) {
+        console.log('❌ Time slot conflict detected:', conflictResult.rows);
+        throw new Error('TIME_SLOT_UNAVAILABLE: This time slot conflicts with an existing booking');
+      }
+
       // Dynamic pricing based on mentor's per-minute rate
       const perMinuteRate = parseFloat(mentor.per_minute_rate);
       if (!perMinuteRate || perMinuteRate <= 0) {
@@ -227,6 +258,19 @@ exports.createSession = async (req, res) => {
 
       const sessionResult = await client.query(sessionQuery, sessionValues);
       const session = sessionResult.rows[0];
+
+      // Mark the booked slot as unavailable in availability
+      await client.query(`
+        INSERT INTO mentor_availability (mentor_id, specific_date, start_time, end_time, is_available, slot_duration_minutes)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
+        mentorId,
+        bookingDate,
+        startTimeLocal,
+        endTimeLocal,
+        false,
+        durationMinutes
+      ]);
 
       // Create meeting if video session (now that we have the session ID)
       let meetingDetails = {};
@@ -369,6 +413,14 @@ exports.createSession = async (req, res) => {
         success: false,
         message: 'Failed to create video meeting. Please try again.',
         code: 'MEETING_CREATION_FAILED'
+      });
+    }
+
+    if (error.message === 'TIME_SLOT_UNAVAILABLE') {
+      return res.status(409).json({
+        success: false,
+        message: 'This time slot is already booked. Please select a different time.',
+        code: 'TIME_SLOT_UNAVAILABLE'
       });
     }
 
@@ -771,6 +823,16 @@ exports.cancelSession = async (req, res) => {
       const cancelReason = `Cancelled by ${isMentorCancelling ? 'mentor' : 'mentee'}: ${reason || 'No reason provided'}`;
       const updateResult = await client.query(updateQuery, [sessionId, newStatus, cancelReason]);
 
+      // Remove the booked slot from availability
+      const sessionDate = new Date(session.scheduled_at).toISOString().split('T')[0];
+      const sessionStart = new Date(session.scheduled_at).toTimeString().substring(0, 8);
+      const sessionEnd = new Date(new Date(session.scheduled_at).getTime() + session.duration_minutes * 60000).toTimeString().substring(0, 8);
+
+      await client.query(`
+        DELETE FROM mentor_availability
+        WHERE mentor_id = $1 AND specific_date = $2 AND start_time = $3 AND end_time = $4 AND is_available = false
+      `, [session.mentor_id, sessionDate, sessionStart, sessionEnd]);
+
       // Update payment status to refunded
       await client.query(`
         UPDATE payments 
@@ -880,6 +942,12 @@ exports.rescheduleSession = async (req, res) => {
     // Convert newScheduledAt from local timezone to UTC for database storage
     const newScheduledAtUTC = fromZonedTime(newScheduledAt, timezone);
 
+    // Calculate new local times for availability
+    const newLocalDateTime = new Date(newScheduledAt);
+    const newBookingDate = newLocalDateTime.toISOString().split('T')[0];
+    const newStartTimeLocal = newLocalDateTime.toTimeString().substring(0, 8);
+    const newEndTimeLocal = new Date(newLocalDateTime.getTime() + (newDurationMinutes || session.duration_minutes) * 60000).toTimeString().substring(0, 8);
+
     console.log('🔄 Rescheduling session:', { sessionId, userId, newScheduledAt, timezone, newScheduledAtUTC, newDurationMinutes });
 
     const result = await db.transaction(async (client) => {
@@ -906,6 +974,17 @@ exports.rescheduleSession = async (req, res) => {
       }
 
       const session = sessionResult.rows[0];
+
+      // Remove old booked slot from availability
+      const oldLocalDateTime = new Date(session.scheduled_at);
+      const oldBookingDate = oldLocalDateTime.toISOString().split('T')[0];
+      const oldStartTime = oldLocalDateTime.toTimeString().substring(0, 8);
+      const oldEndTime = new Date(oldLocalDateTime.getTime() + session.duration_minutes * 60000).toTimeString().substring(0, 8);
+
+      await client.query(`
+        DELETE FROM mentor_availability
+        WHERE mentor_id = $1 AND specific_date = $2 AND start_time = $3 AND end_time = $4 AND is_available = false
+      `, [session.mentor_id, oldBookingDate, oldStartTime, oldEndTime]);
 
       // Check if user has permission to reschedule
       const isMentee = session.mentee_id === userId;
@@ -1095,6 +1174,19 @@ exports.rescheduleSession = async (req, res) => {
 
       const updateResult = await client.query(updateQuery, updateValues);
 
+      // Mark the new booked slot as unavailable
+      await client.query(`
+        INSERT INTO mentor_availability (mentor_id, specific_date, start_time, end_time, is_available, slot_duration_minutes)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
+        session.mentor_id,
+        newBookingDate,
+        newStartTimeLocal,
+        newEndTimeLocal,
+        false,
+        newDurationMinutes || session.duration_minutes
+      ]);
+
       // Create notifications for both parties
       const notifications = [
         // Notification for the other party
@@ -1262,7 +1354,7 @@ exports.respondToRescheduleRequest = async (req, res) => {
     const userId = req.user.userId;
 
     // Convert newScheduledAt from local timezone to UTC for database storage
-    const newScheduledAtUTC = newScheduledAt ? zonedTimeToUtc(newScheduledAt, timezone) : null;
+    const newScheduledAtUTC = newScheduledAt ? fromZonedTime(newScheduledAt, timezone) : null;
 
     console.log('🔄 Responding to reschedule request:', { requestId, action, newScheduledAt, timezone, newScheduledAtUTC, userId });
 
@@ -1298,7 +1390,49 @@ exports.respondToRescheduleRequest = async (req, res) => {
           throw new Error('NEW_SCHEDULED_AT_REQUIRED');
         }
 
+        // Remove old booked slot from availability
+        const oldLocalDateTime = new Date(request.scheduled_at);
+        const oldBookingDate = oldLocalDateTime.toISOString().split('T')[0];
+        const oldStartTime = oldLocalDateTime.toTimeString().substring(0, 8);
+        const oldEndTime = new Date(oldLocalDateTime.getTime() + request.duration_minutes * 60000).toTimeString().substring(0, 8);
+
+        await client.query(`
+          DELETE FROM mentor_availability
+          WHERE mentor_id = $1 AND specific_date = $2 AND start_time = $3 AND end_time = $4 AND is_available = false
+        `, [request.mentor_id, oldBookingDate, oldStartTime, oldEndTime]);
+
         const newScheduledDateTime = new Date(newScheduledAtUTC);
+
+        // Calculate new local times for availability
+        // Check for conflicting sessions (overlapping time ranges) at the new time (excluding current session)
+        const conflictQuery = `
+          SELECT id, scheduled_at, duration_minutes
+          FROM sessions
+          WHERE mentor_id = $1
+            AND id != $2
+            AND status NOT IN ('cancelled_by_mentee', 'cancelled_by_mentor', 'cancelled_by_mentor')
+            AND (
+              -- Check if new session starts during existing session
+              scheduled_at <= $3 AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $3
+              OR
+              -- Check if new session ends during existing session
+              scheduled_at < $3 + ($4 * INTERVAL '1 minute') AND scheduled_at + (duration_minutes * INTERVAL '1 minute') >= $3 + ($4 * INTERVAL '1 minute')
+              OR
+              -- Check if new session completely contains existing session
+              scheduled_at >= $3 AND scheduled_at + (duration_minutes * INTERVAL '1 minute') <= $3 + ($4 * INTERVAL '1 minute')
+            )
+        `;
+
+        const conflictResult = await client.query(conflictQuery, [request.mentor_id, request.session_id, newScheduledAtUTC, newDuration || request.duration_minutes]);
+
+        if (conflictResult.rows.length > 0) {
+          throw new Error('TIME_SLOT_UNAVAILABLE: The new time slot is already booked');
+        }
+
+        const newLocalDateTime = new Date(newScheduledAt);
+        const newBookingDate = newLocalDateTime.toISOString().split('T')[0];
+        const newStartTimeLocal = newLocalDateTime.toTimeString().substring(0, 8);
+        const newEndTimeLocal = new Date(newLocalDateTime.getTime() + (newDuration || request.duration_minutes) * 60000).toTimeString().substring(0, 8);
 
         // Validate the new time is not in the past and at least 24 hours from now
         const now = new Date();
@@ -1336,6 +1470,19 @@ exports.respondToRescheduleRequest = async (req, res) => {
         `;
 
         await client.query(updateQuery, updateValues);
+
+        // Mark the new booked slot as unavailable
+        await client.query(`
+          INSERT INTO mentor_availability (mentor_id, specific_date, start_time, end_time, is_available, slot_duration_minutes)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          request.mentor_id,
+          newBookingDate,
+          newStartTimeLocal,
+          newEndTimeLocal,
+          false,
+          newDuration || request.duration_minutes
+        ]);
 
         // Update request status
         await client.query(`
@@ -2101,8 +2248,23 @@ exports.respondToRescheduleRequest = async (req, res) => {
           throw new Error('NEW_SCHEDULED_AT_REQUIRED');
         }
 
+        // Check for conflicting sessions at the new time (excluding current session)
+        const conflictQuery = `
+          SELECT id FROM sessions
+          WHERE mentor_id = $1
+            AND scheduled_at = $2
+            AND id != $3
+            AND status NOT IN ('cancelled_by_mentee', 'cancelled_by_mentor')
+        `;
+ 
+        const conflictResult = await client.query(conflictQuery, [request.mentor_id, newScheduledAtUTC, request.session_id]);
+ 
+        if (conflictResult.rows.length > 0) {
+          throw new Error('TIME_SLOT_UNAVAILABLE: The new time slot is already booked');
+        }
+ 
         const newScheduledDateTime = new Date(newScheduledAtUTC);
-
+ 
         // Validate the new time is not in the past and at least 24 hours from now
         const now = new Date();
         const hoursUntilNewSession = (newScheduledDateTime - now) / (1000 * 60 * 60);

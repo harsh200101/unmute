@@ -19,6 +19,7 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
     const [loading, setLoading] = useState(false);
     const [createdSession, setCreatedSession] = useState(null);
     const [availability, setAvailability] = useState([]);
+    const [existingBookings, setExistingBookings] = useState([]);
     const [loadingAvailability, setLoadingAvailability] = useState(false);
     const [walletBalance, setWalletBalance] = useState(null);
     const [loadingBalance, setLoadingBalance] = useState(false);
@@ -40,6 +41,7 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
     try {
       const response = await api.get(`/mentors/${mentor.id}/availability`);
       setAvailability(response.data.data.availability || []);
+      setExistingBookings(response.data.data.existingBookings || []);
     } catch (error) {
       console.error('Failed to load availability:', error);
       toast.error('Failed to load mentor availability');
@@ -117,16 +119,29 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
       return defaultSlots;
     }
 
-    // Filter time slots based on mentor's actual availability
+    // Get date key for specific overrides
+    const dateKey = selectedDate.toISOString().split('T')[0];
     const dayOfWeek = selectedDate.getDay();
-    const dayAvailability = availability.filter(slot =>
-      slot.day_of_week === dayOfWeek && slot.is_available
-    );
 
-    if (dayAvailability.length === 0) return [];
+    // Check if there are specific date overrides for this date
+    const dateOverrides = availability.filter(slot => slot.specific_date === dateKey);
+    const hasDateOverrides = dateOverrides.length > 0;
 
-    // Generate time slots based on mentor's available hours
-    const allSlots = dayAvailability.flatMap(slot => {
+    let availableRanges;
+    if (hasDateOverrides) {
+      // Use date-specific overrides
+      availableRanges = dateOverrides.filter(slot => slot.is_available);
+    } else {
+      // Use recurring availability
+      availableRanges = availability.filter(slot =>
+        slot.day_of_week === dayOfWeek && slot.is_available && slot.specific_date === null
+      );
+    }
+
+    if (availableRanges.length === 0) return [];
+
+    // Generate time slots from available ranges (1-hour slots)
+    const allSlots = availableRanges.flatMap(slot => {
       const slots = [];
       const startHour = parseInt(slot.start_time.split(':')[0]);
       const endHour = parseInt(slot.end_time.split(':')[0]);
@@ -139,8 +154,26 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
 
     // Remove duplicates and sort
     const uniqueSlots = [...new Set(allSlots)].sort();
-    console.log('Generated time slots:', uniqueSlots);
-    return uniqueSlots;
+
+    // Filter out slots that conflict with existing bookings
+    const availableSlots = uniqueSlots.filter(slotTime => {
+      const slotStart = new Date(selectedDate);
+      const [hours, minutes] = slotTime.split(':').map(Number);
+      slotStart.setHours(hours, minutes, 0, 0);
+      const slotEnd = new Date(slotStart.getTime() + bookingData.durationMinutes * 60000);
+
+      // Check if this slot conflicts with any existing booking
+      return !existingBookings.some(booking => {
+        const bookingStart = new Date(booking.scheduledAt);
+        const bookingEnd = new Date(bookingStart.getTime() + booking.duration * 60000);
+
+        // Overlap check: slot starts before booking ends AND booking starts before slot ends
+        return slotStart < bookingEnd && bookingStart < slotEnd;
+      });
+    });
+
+    console.log('Generated time slots:', availableSlots);
+    return availableSlots;
   };
 
   const calculatePrice = () => {
@@ -294,6 +327,8 @@ const BookingModal = ({ mentor, isOpen, onClose }) => {
       title: ''
     });
     setCreatedSession(null);
+    setAvailability([]);
+    setExistingBookings([]);
     setShowTopupModal(false);
     setTopupAmount('');
     setTopupError('');

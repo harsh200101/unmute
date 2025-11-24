@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import LoadingSpinner from './LoadingSpinner';
 import { toast } from 'react-hot-toast';
 
 // Compact version for header
 export const WalletBalanceHeader = () => {
+  const navigate = useNavigate();
   const [balance, setBalance] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -159,7 +161,7 @@ export const WalletBalanceHeader = () => {
               <button
                 onClick={() => {
                   setShowDropdown(false);
-                  toast.info('Transaction history coming soon');
+                  navigate('/wallet/transactions');
                 }}
                 className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150 flex items-center space-x-2"
               >
@@ -187,6 +189,7 @@ export const WalletBalanceHeader = () => {
 };
 
 const WalletBalance = () => {
+  const navigate = useNavigate();
   const [balance, setBalance] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -363,7 +366,7 @@ const WalletBalance = () => {
         </button>
 
         <button
-          onClick={() => toast.info('Transaction history coming soon')}
+          onClick={() => navigate('/wallet/transactions')}
           className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

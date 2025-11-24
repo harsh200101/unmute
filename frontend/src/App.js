@@ -42,6 +42,9 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 // Session Notes History Page
 const SessionNotesHistory = lazy(() => import('./pages/SessionNotesHistory'));
 
+// Wallet Transaction History Page
+const WalletTransactionHistory = lazy(() => import('./pages/WalletTransactionHistory'));
+
 // Loading fallback component
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -290,15 +293,26 @@ function App() {
                 }
               />
               
-              <Route 
-                path="/profile" 
+              <Route
+                path="/profile"
                 element={
                   <ProtectedRoute>
                     <AppLayout>
                       <UserProfile />
                     </AppLayout>
                   </ProtectedRoute>
-                } 
+                }
+              />
+
+              <Route
+                path="/wallet/transactions"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <WalletTransactionHistory />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
               />
               
               <Route 

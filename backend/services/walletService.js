@@ -129,9 +129,10 @@ async function creditWallet(userId, amount, referenceId, description, client = n
  * @param {number} userId - User ID
  * @param {number} limit - Number of transactions to return (default: 50)
  * @param {number} offset - Offset for pagination (default: 0)
+ * @param {object} filters - Optional filters { type, startDate, endDate }
  * @returns {Promise<Array>} Array of transactions
  */
-async function getWalletTransactions(userId, limit = 50, offset = 0) {
+async function getWalletTransactions(userId, limit = 50, offset = 0, filters = {}) {
   if (!userId || typeof userId !== 'number') {
     throw new Error('Invalid user ID');
   }
@@ -143,8 +144,7 @@ async function getWalletTransactions(userId, limit = 50, offset = 0) {
   }
 
   try {
-    const result = await query(
-      `SELECT
+    let queryStr = `SELECT
         wt.uuid,
         wt.transaction_type,
         wt.amount,
@@ -153,13 +153,37 @@ async function getWalletTransactions(userId, limit = 50, offset = 0) {
         wt.reference_id,
         wt.balance_after,
         wt.created_at
-       FROM wallet_transactions wt
-       JOIN wallets w ON wt.wallet_id = w.id
-       WHERE w.user_id = $1 AND w.is_active = true
-       ORDER BY wt.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [userId, limit, offset]
-    );
+      FROM wallet_transactions wt
+      JOIN wallets w ON wt.wallet_id = w.id
+      WHERE w.user_id = $1 AND w.is_active = true`;
+
+    const queryParams = [userId];
+    let paramIndex = 2;
+
+    // Add type filter
+    if (filters.type) {
+      queryStr += ` AND wt.transaction_type = $${paramIndex}`;
+      queryParams.push(filters.type);
+      paramIndex++;
+    }
+
+    // Add date range filter
+    if (filters.startDate) {
+      queryStr += ` AND DATE(wt.created_at) >= $${paramIndex}`;
+      queryParams.push(filters.startDate);
+      paramIndex++;
+    }
+
+    if (filters.endDate) {
+      queryStr += ` AND DATE(wt.created_at) <= $${paramIndex}`;
+      queryParams.push(filters.endDate);
+      paramIndex++;
+    }
+
+    queryStr += ` ORDER BY wt.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    queryParams.push(limit, offset);
+
+    const result = await query(queryStr, queryParams);
 
     return result.rows.map(row => ({
       id: row.uuid,

@@ -298,8 +298,8 @@ exports.checkStatus = async (req, res) => {
        FROM payments p
        WHERE p.transaction_id = $1
        AND p.session_id IS NULL
-       AND JSON_EXTRACT_PATH_TEXT(p.metadata, 'type') = 'wallet_topup'
-       AND JSON_EXTRACT_PATH_TEXT(p.metadata, 'userId') = $2`,
+       AND p.metadata ->> 'type' = 'wallet_topup'
+       AND p.metadata ->> 'userId' = $2`,
       [transactionId, req.user.userId.toString()]
     );
 
