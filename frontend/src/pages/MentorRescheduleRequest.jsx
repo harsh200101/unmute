@@ -62,7 +62,7 @@ const MentorRescheduleRequest = () => {
 
     setSubmitting(true);
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/reschedule-request`, {
+      const response = await fetch(`/api/sessions/details/${sessionId}/reschedule-request`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
