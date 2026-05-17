@@ -265,8 +265,14 @@ const MentorProfile = () => {
             {/* Mentor Info */}
             <div className="flex-1">
               <div className="flex items-start gap-6">
-                <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center text-white text-3xl font-bold flex-shrink-0">
-                  {mentor.firstName?.charAt(0).toUpperCase() || mentor.lastName?.charAt(0).toUpperCase() || 'M'}
+                <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center text-white text-3xl font-bold flex-shrink-0 overflow-hidden">
+                  {mentor.avatarUrl ? (
+                    <img src={mentor.avatarUrl} alt={`${mentor.firstName} ${mentor.lastName}`} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-white text-3xl font-bold">
+                      {mentor.firstName?.charAt(0).toUpperCase() || mentor.lastName?.charAt(0).toUpperCase() || 'M'}
+                    </span>
+                  )}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">

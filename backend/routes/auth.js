@@ -5,6 +5,40 @@ const authController = require('../controllers/authController');
 const auth = require('../middleware/auth');
 const { rateLimit, authorize, requireEmailVerification } = require('../middleware/auth');
 const passport = require('../config/passport');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs'); // Import the 'fs' module
+
+// Ensure the upload directory exists
+const uploadDir = 'uploads/avatars/';
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Configure Multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir); // Files will be saved in the 'uploads/avatars' directory
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${req.user.userId}-${Date.now()}${path.extname(file.originalname)}`);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png|gif/;
+    const mimetype = filetypes.test(file.mimetype);
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Only images (jpeg, jpg, png, gif) are allowed'));
+  }
+});
 
 // Enhanced validation rules for registration
 const registerValidation = [
@@ -333,11 +367,18 @@ router.get('/profile',
 );
 
 // Update User Profile
-router.put('/profile', 
+router.put('/profile',
   auth,
   rateLimit(10, 60 * 60 * 1000), // 10 updates per hour
   updateProfileValidation,
   authController.updateProfile
+);
+
+// Upload Avatar
+router.post('/upload-avatar',
+  auth,
+  upload.single('avatar'), // 'avatar' is the field name for the file
+  authController.uploadAvatar
 );
 
 // Logout (invalidate tokens)

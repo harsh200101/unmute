@@ -746,6 +746,165 @@ router.get('/my-reviews',
     }
   }
 );
+// GET /api/mentors/available - Get available mentors by date and time slots
+router.get('/available',
+  rateLimit(200, 15 * 60 * 1000), // 200 requests per 15 minutes
+  [
+    query('date')
+      .isISO8601()
+      .withMessage('Date must be a valid ISO date'),
+    query('timezone')
+      .optional()
+      .isLength({ min: 1, max: 50 })
+      .withMessage('Invalid timezone')
+  ],
+  async (req, res) => {
+    try {
+      const { date, timezone = 'UTC' } = req.query;
+
+      console.log('🔍 Fetching available mentors for date:', date, 'timezone:', timezone);
+
+      // Generate time slots from 10:00 to 21:00 (12 slots of 1 hour each)
+      const timeSlots = [];
+      for (let hour = 10; hour <= 21; hour++) {
+        const slotStart = `${hour.toString().padStart(2, '0')}:00`;
+        const slotEnd = `${(hour + 1).toString().padStart(2, '0')}:00`;
+        timeSlots.push({
+          startTime: slotStart,
+          endTime: slotEnd,
+          label: slotStart
+        });
+      }
+
+      // Complex query to find available mentors for each time slot
+      const availabilityQuery = `
+        WITH time_slots AS (
+          SELECT
+            slot_start::time as slot_start,
+            slot_end::time as slot_end,
+            slot_start::text as slot_label
+          FROM unnest(ARRAY[
+            '10:00', '11:00', '12:00', '13:00', '14:00', '15:00',
+            '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'
+          ]) AS t(slot_start)
+          CROSS JOIN unnest(ARRAY[
+            '11:00', '12:00', '13:00', '14:00', '15:00', '16:00',
+            '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'
+          ]) AS u(slot_end)
+          WHERE array_position(ARRAY[
+            '10:00', '11:00', '12:00', '13:00', '14:00', '15:00',
+            '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'
+          ], slot_start) = array_position(ARRAY[
+            '11:00', '12:00', '13:00', '14:00', '15:00', '16:00',
+            '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'
+          ], slot_end)
+        ),
+        mentor_availability_check AS (
+          SELECT
+            m.id as mentor_id,
+            ts.slot_label,
+            ts.slot_start,
+            ts.slot_end,
+            CASE
+              WHEN EXISTS (
+                SELECT 1 FROM mentor_availability ma
+                WHERE ma.mentor_id = m.id
+                  AND ma.specific_date = $1
+                  AND ma.is_available = false
+                  AND (
+                    (ma.start_time <= ts.slot_start AND ma.end_time > ts.slot_start)
+                    OR (ma.start_time < ts.slot_end AND ma.end_time >= ts.slot_end)
+                    OR (ma.start_time >= ts.slot_start AND ma.end_time <= ts.slot_end)
+                  )
+              ) THEN false
+              WHEN EXISTS (
+                SELECT 1 FROM mentor_availability ma
+                WHERE ma.mentor_id = m.id
+                  AND ma.day_of_week = EXTRACT(DOW FROM $1::date)
+                  AND ma.is_available = true
+                  AND ma.start_time <= ts.slot_start
+                  AND ma.end_time > ts.slot_start
+              ) THEN true
+              WHEN EXISTS (
+                SELECT 1 FROM mentor_availability ma
+                WHERE ma.mentor_id = m.id
+                  AND ma.specific_date = $1
+                  AND ma.is_available = true
+                  AND ma.start_time <= ts.slot_start
+                  AND ma.end_time > ts.slot_start
+              ) THEN true
+              WHEN NOT EXISTS (
+                SELECT 1 FROM mentor_availability ma
+                WHERE ma.mentor_id = m.id
+                  AND (ma.specific_date = $1 OR ma.day_of_week = EXTRACT(DOW FROM $1::date))
+              ) THEN true
+              ELSE false
+            END as is_available
+          FROM mentors m
+          CROSS JOIN time_slots ts
+          WHERE m.status = 'active'
+            AND m.verification_status = 'verified'
+        )
+        SELECT
+          mac.slot_label,
+          json_agg(
+            json_build_object(
+              'id', m.id,
+              'name', CONCAT(u.first_name, ' ', u.last_name),
+              'avatarUrl', u.avatar_url,
+              'specializations', m.specializations,
+              'perMinuteRate', m.per_minute_rate,
+              'averageRating', m.average_rating,
+              'totalReviews', m.total_reviews,
+              'badgeLevel', m.badge_level
+            )
+          ) FILTER (WHERE mac.is_available = true) as mentors
+        FROM mentor_availability_check mac
+        JOIN mentors m ON mac.mentor_id = m.id
+        JOIN users u ON m.user_id = u.id
+        WHERE u.is_verified = true
+          AND u.is_active = true
+        GROUP BY mac.slot_label
+        ORDER BY mac.slot_label
+      `;
+
+      const result = await db.query(availabilityQuery, [date]);
+
+      // Format the response
+      const timeSlotsData = {};
+      result.rows.forEach(row => {
+        timeSlotsData[row.slot_label] = row.mentors || [];
+      });
+
+      // Ensure all time slots are present (even if empty)
+      timeSlots.forEach(slot => {
+        if (!timeSlotsData[slot.label]) {
+          timeSlotsData[slot.label] = [];
+        }
+      });
+
+      console.log('✅ Available mentors fetched for date:', date);
+
+      res.json({
+        success: true,
+        data: {
+          date,
+          timezone,
+          timeSlots: timeSlotsData
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching available mentors:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch available mentors',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
+
 // GET /api/mentors/availability - Get current mentor's availability
 router.get('/availability',
   auth,

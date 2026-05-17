@@ -256,8 +256,14 @@ const MentorDashboard = () => {
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
             <div className="flex items-center gap-6">
               <div className="relative">
-                <div className="w-20 h-20 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center text-white text-3xl font-bold shadow-lg">
-                  {user?.first_name?.charAt(0).toUpperCase() || 'M'}
+                <div className="w-20 h-20 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center text-white text-3xl font-bold shadow-lg overflow-hidden">
+                  {user?.avatarUrl ? (
+                    <img src={user.avatarUrl} alt="Mentor Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-white text-3xl font-bold">
+                      {user?.first_name?.charAt(0).toUpperCase() || 'M'}
+                    </span>
+                  )}
                 </div>
                 {mentorProfile?.isVerified && (
                   <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">

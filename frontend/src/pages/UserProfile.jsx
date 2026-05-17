@@ -224,7 +224,7 @@ const UserProfile = () => {
         const formData = new FormData();
         formData.append('avatar', avatarFile);
 
-        const uploadResponse = await fetch('/api/users/upload-avatar', {
+        const uploadResponse = await fetch('/api/auth/upload-avatar', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
@@ -235,6 +235,7 @@ const UserProfile = () => {
         if (uploadResponse.ok) {
           const uploadData = await uploadResponse.json();
           avatarUrl = uploadData.data.avatar_url;
+          toast.success('Profile picture uploaded successfully!');
         } else {
           throw new Error('Failed to upload avatar');
         }

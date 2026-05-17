@@ -735,7 +735,7 @@ try {
   const isMentor = useCallback(() => state.user?.role === 'mentor' || state.user?.role === 'super_admin', [state.user]);
   const isMentee = useCallback(() => state.user?.role === 'mentee', [state.user]);
   const isAdmin = useCallback(() => ['admin', 'super_admin'].includes(state.user?.role), [state.user]);
-  const isEmailVerified = useCallback(() => !!state.user?.email_verified_at, [state.user]);
+  const isEmailVerified = useCallback(() => !!state.user?.emailVerifiedAt, [state.user]);
   const isMentorVerified = useCallback(() => state.user?.mentor_profile?.verification_status === 'verified', [state.user]);
 
   // Context Value - Memoized to prevent unnecessary re-renders

@@ -116,10 +116,14 @@ const Header = () => {
                     className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors duration-200"
                   >
                     <div className="relative">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center ring-2 ring-gray-200">
-                        <span className="text-white font-bold text-sm">
-                          {user.firstName ? user.firstName.charAt(0).toUpperCase() : 'U'}
-                        </span>
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center ring-2 ring-gray-200 overflow-hidden">
+                        {user.avatarUrl ? (
+                          <img src={user.avatarUrl} alt="User Avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-white font-bold text-sm">
+                            {user.firstName ? user.firstName.charAt(0).toUpperCase() : 'U'}
+                          </span>
+                        )}
                       </div>
                       <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></div>
                     </div>
@@ -285,10 +289,14 @@ const Header = () => {
                 {isAuthenticated && user ? (
                   <div className="space-y-3">
                     <div className="flex items-center space-x-3 px-4 py-2">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                        <span className="text-white font-bold text-base">
-                          {user.firstName ? user.firstName.charAt(0).toUpperCase() : 'U'}
-                        </span>
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center overflow-hidden">
+                        {user.avatarUrl ? (
+                          <img src={user.avatarUrl} alt="User Avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-white font-bold text-base">
+                            {user.firstName ? user.firstName.charAt(0).toUpperCase() : 'U'}
+                          </span>
+                        )}
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-900">

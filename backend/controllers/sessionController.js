@@ -191,6 +191,47 @@ exports.createSession = async (req, res) => {
         throw new Error(`BOOKING_TOO_FAR: Cannot book more than ${mentor.advance_booking_days} days in advance`);
       }
 
+      // Check if mentee has any session at the same time slot with any other mentor
+      const menteeTimeConflictQuery = `
+        SELECT id, scheduled_at, duration_minutes, mentor_id
+        FROM sessions
+        WHERE mentee_id = $1
+          AND mentor_id != $2
+          AND status NOT IN ('cancelled_by_mentee', 'cancelled_by_mentor', 'cancelled_by_mentor')
+          AND (
+            -- Check if new session starts during existing session
+            scheduled_at <= $3 AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $3
+            OR
+            -- Check if new session ends during existing session
+            scheduled_at < $3 + ($4 * INTERVAL '1 minute') AND scheduled_at + (duration_minutes * INTERVAL '1 minute') >= $3 + ($4 * INTERVAL '1 minute')
+            OR
+            -- Check if new session completely contains existing session
+            scheduled_at >= $3 AND scheduled_at + (duration_minutes * INTERVAL '1 minute') <= $3 + ($4 * INTERVAL '1 minute')
+          )
+      `;
+
+      const menteeTimeConflictResult = await client.query(menteeTimeConflictQuery, [menteeId, mentorId, scheduledAtUTC, durationMinutes]);
+
+      if (menteeTimeConflictResult.rows.length > 0) {
+        console.log('❌ Mentee time slot conflict detected:', menteeTimeConflictResult.rows);
+        throw new Error('MENTEE_TIME_CONFLICT: You already have a session scheduled at this time with another mentor');
+      }
+
+      // Check if mentee already has three or more confirmed sessions
+      const confirmedSessionsQuery = `
+        SELECT COUNT(*) as confirmed_count
+        FROM sessions
+        WHERE mentee_id = $1 AND status = 'confirmed'
+      `;
+
+      const confirmedSessionsResult = await client.query(confirmedSessionsQuery, [menteeId]);
+      const confirmedCount = parseInt(confirmedSessionsResult.rows[0].confirmed_count);
+
+      if (confirmedCount >= 3) {
+        console.log('❌ Mentee has reached maximum confirmed sessions limit:', confirmedCount);
+        throw new Error('MAX_CONFIRMED_SESSIONS: You can only have a maximum of 3 confirmed sessions at any time');
+      }
+
       // Check for conflicting sessions (overlapping time ranges)
       const conflictQuery = `
         SELECT id, scheduled_at, duration_minutes
@@ -421,6 +462,22 @@ exports.createSession = async (req, res) => {
         success: false,
         message: 'This time slot is already booked. Please select a different time.',
         code: 'TIME_SLOT_UNAVAILABLE'
+      });
+    }
+
+    if (error.message.startsWith('MENTEE_TIME_CONFLICT')) {
+      return res.status(409).json({
+        success: false,
+        message: 'You already have a session scheduled at this time with another mentor. Please select a different time.',
+        code: 'MENTEE_TIME_CONFLICT'
+      });
+    }
+
+    if (error.message.startsWith('MAX_CONFIRMED_SESSIONS')) {
+      return res.status(422).json({
+        success: false,
+        message: 'You can only have a maximum of 3 confirmed sessions at any time. Please complete or cancel existing sessions before booking new ones.',
+        code: 'MAX_CONFIRMED_SESSIONS'
       });
     }
 

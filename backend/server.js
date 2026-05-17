@@ -185,6 +185,9 @@ app.use(express.static('public', {
   maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0
 }));
 
+// Serve static files from the 'uploads' directory
+app.use('/uploads', express.static('uploads'));
+
 // Request ID middleware
 app.use((req, res, next) => {
   req.requestId = Math.random().toString(36).substr(2, 9);

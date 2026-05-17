@@ -725,6 +725,60 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
+// Upload Avatar
+exports.uploadAvatar = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded',
+        code: 'NO_FILE_UPLOADED'
+      });
+    }
+
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+
+    const updateQuery = `
+      UPDATE users SET
+        avatar_url = $2,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING avatar_url
+    `;
+
+    const { rows } = await db.query(updateQuery, [userId, avatarUrl]);
+    const updatedUser = rows[0];
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+
+    console.log('✅ Avatar uploaded and profile updated for user:', userId);
+
+    res.json({
+      success: true,
+      message: 'Avatar uploaded successfully',
+      data: {
+        avatar_url: updatedUser.avatar_url
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Upload avatar error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload avatar',
+      code: 'SERVER_ERROR'
+    });
+  }
+};
+
 // Send email verification
 exports.sendVerificationEmail = async (req, res) => {
   try {
@@ -882,6 +936,7 @@ module.exports = {
   verifyEmail: exports.verifyEmail,
   forgotPassword: exports.forgotPassword,
   resetPassword: exports.resetPassword,
+  uploadAvatar: exports.uploadAvatar, // Add the new function here
   generateTokens,
   formatUserResponse
 };
