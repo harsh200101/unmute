@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../utils/api';
 import sessionController from '../controllers/sessionController';
 
 const PaymentStatusPage = () => {
@@ -77,23 +77,8 @@ const PaymentStatusPage = () => {
     if (!paymentStatus) {
       const checkStatus = async () => {
         try {
-          const token = localStorage.getItem('token');
-
-          if (!token) {
-            // No token available, show success since payment was completed via webhook
-            setStatus('Success!');
-            setPolling(false);
-            return;
-          }
-
-          const response = await axios.get(
-            `http://localhost:5000/api/payments/status/${transactionId}`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`
-              }
-            }
-          );
+          // Use shared api instance; it will add Authorization header from localStorage if available
+          const response = await api.get(`/payments/status/${transactionId}`);
 
           const paymentStatus = response.data.status;
 

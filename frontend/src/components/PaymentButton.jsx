@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 
 const PaymentButton = ({ sessionId, amount, onSuccess, onError }) => {
   const [loading, setLoading] = useState(false);
@@ -9,24 +9,15 @@ const PaymentButton = ({ sessionId, amount, onSuccess, onError }) => {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await axios.post(
-        'http://localhost:5000/api/payments/pay',
-        { sessionId, amount },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      );
+    const response = await api.post('/payments/pay', { sessionId, amount });
 
-      if (response.data.success) {
-        // Redirect to PhonePe payment page
-        window.location.href = response.data.redirectUrl;
-      } else {
-        setError(response.data.message || 'Payment initiation failed.');
-        if (onError) onError(response.data.message);
-      }
+    if (response.data.success) {
+      // Redirect to PhonePe payment page
+      window.location.href = response.data.redirectUrl;
+    } else {
+      setError(response.data.message || 'Payment initiation failed.');
+      if (onError) onError(response.data.message);
+    }
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'An error occurred. Please try again.';
       setError(errorMessage);

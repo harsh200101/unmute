@@ -456,10 +456,18 @@ export const AuthProvider = ({ children }) => {
 
     console.log('🔄 AUTH: Initiating Google OAuth with role:', role);
     console.log('🔄 AUTH: Generated CSRF state:', state);
-    console.log('🔄 AUTH: Full OAuth URL:', `${API_BASE_URL || 'http://localhost:5000'}/api/auth/google?role=${role}&state=${state}`);
+    const BACKEND_HOST = (() => {
+      if (API_BASE_URL) {
+        return API_BASE_URL.replace(/\/api\/?$/i, '').replace(/\/$/, '');
+      }
+      return 'http://localhost:5000';
+    })();
+
+    const oauthUrl = `${BACKEND_HOST}/api/auth/google?role=${role}&state=${state}`;
+    console.log('🔄 AUTH: Full OAuth URL:', oauthUrl);
 
     // Redirect to Google OAuth with role as query parameter (use full backend URL since proxy doesn't work for window.location)
-    window.location.href = `${API_BASE_URL || 'http://localhost:5000'}/api/auth/google?role=${role}&state=${state}`;
+    window.location.href = oauthUrl;
   }, []);
 
   // Handle OAuth Callback
