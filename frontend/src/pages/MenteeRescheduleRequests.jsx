@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
 import sessionController from '../controllers/sessionController';
+import api from '../utils/api';
 
 const MenteeRescheduleRequests = () => {
   const { user, isAuthenticated, isMentee } = useAuth();
@@ -20,19 +21,8 @@ const MenteeRescheduleRequests = () => {
 
     setLoading(true);
     try {
-      const response = await fetch('/api/sessions/reschedule-requests/pending', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setRequests(data.data.requests || []);
-      } else {
-        toast.error('Failed to load reschedule requests');
-      }
+      const response = await api.get('/sessions/reschedule-requests/pending');
+      setRequests(response.data.data.requests || []);
     } catch (error) {
       console.error('Failed to load requests:', error);
       toast.error('Error loading reschedule requests');
@@ -50,39 +40,26 @@ const MenteeRescheduleRequests = () => {
         toast.error('Please select a new time for the session.');
         return;
       }
-      const response = await fetch(`/api/sessions/reschedule-requests/${requestId}/respond`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          action,
-          newScheduledAt,
-          reason
-        })
+      await api.post(`/sessions/reschedule-requests/${requestId}/respond`, {
+        action,
+        newScheduledAt,
+        reason
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        toast.success(`Reschedule request ${action === 'accept' ? 'approved' : 'declined'} successfully`);
+      toast.success(`Reschedule request ${action === 'accept' ? 'approved' : 'declined'} successfully`);
 
-        // Remove the request from the list
-        setRequests(prev => prev.filter(req => req.id !== requestId));
+      // Remove the request from the list
+      setRequests(prev => prev.filter(req => req.id !== requestId));
 
-        // Refresh the main sessions list if needed
-        if (window.location.pathname.includes('appointments')) {
-          // Trigger a refresh of the parent component
-          window.dispatchEvent(new CustomEvent('refreshSessions'));
-        }
+      // Refresh the main sessions list if needed
+      if (window.location.pathname.includes('appointments')) {
+        // Trigger a refresh of the parent component
+        window.dispatchEvent(new CustomEvent('refreshSessions'));
+      }
 
-        // After successful reschedule, redirect to booking view
-        if (action === 'accept') {
-          navigate('/mentors'); // Redirect to the booking view (mentors page)
-        }
-      } else {
-        const errorData = await response.json();
-        toast.error(errorData.message || 'Failed to respond to request');
+      // After successful reschedule, redirect to booking view
+      if (action === 'accept') {
+        navigate('/mentors'); // Redirect to the booking view (mentors page)
       }
     } catch (error) {
       console.error('Failed to respond to request:', error);

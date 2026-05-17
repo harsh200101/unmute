@@ -5,6 +5,7 @@ import ReviewCard from '../components/ReviewCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import BookingModal from '../components/BookingModal';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const MentorProfile = () => {
   const { mentorId } = useParams();
@@ -65,28 +66,16 @@ const MentorProfile = () => {
         setError(null);
 
         // Load categories first
-        const categoriesResponse = await fetch('/api/mentors/meta/categories');
-        if (categoriesResponse.ok) {
-          const categoriesData = await categoriesResponse.json();
-          const categoriesList = categoriesData.data?.categories || [];
-          setCategories(categoriesList);
-        } else if (categoriesResponse.status >= 500) {
+        try {
+          const categoriesResponse = await api.get('/mentors/meta/categories');
+          setCategories(categoriesResponse.data.data?.categories || []);
+        } catch (catErr) {
           console.warn('Failed to load categories, continuing without them');
         }
 
         // Load mentor profile
-        const mentorResponse = await fetch(`/api/mentors/${mentorId}`);
-        if (!mentorResponse.ok) {
-          if (mentorResponse.status === 404) {
-            throw new Error('Mentor not found');
-          } else if (mentorResponse.status >= 500) {
-            throw new Error('Server error. Please try again later.');
-          } else {
-            throw new Error('Failed to load mentor profile');
-          }
-        }
-        const mentorData = await mentorResponse.json();
-        setMentor(mentorData.data.mentor);
+        const mentorResponse = await api.get(`/mentors/${mentorId}`);
+        setMentor(mentorResponse.data.data.mentor);
 
         // Load reviews
         await loadReviews(1);
@@ -124,11 +113,9 @@ const MentorProfile = () => {
   const loadReviews = async (page = 1) => {
     try {
       setReviewsLoading(true);
-      const response = await fetch(
-        `/api/mentors/${mentorId}/reviews?page=${page}&limit=${reviewsLimit}`
-      );
-      if (response.ok) {
-        const data = await response.json();
+      const response = await api.get(`/mentors/${mentorId}/reviews`, { params: { page, limit: reviewsLimit } });
+      {
+        const data = response.data;
         const transformedReviews = (data.data.reviews || []).map(review => ({
           id: review.id,
           overall_rating: review.rating,
@@ -161,10 +148,7 @@ const MentorProfile = () => {
   // Handle helpful vote on reviews
   const handleHelpfulVote = async (reviewId) => {
     try {
-      await fetch(`/api/reviews/${reviewId}/helpful`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
+      await api.post(`/reviews/${reviewId}/helpful`);
       // Reload reviews to get updated vote counts
       await loadReviews(1);
     } catch (error) {
@@ -176,11 +160,7 @@ const MentorProfile = () => {
   // Handle review reporting
   const handleReportReview = async (reviewId) => {
     try {
-      await fetch(`/api/reviews/${reviewId}/report`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'inappropriate' })
-      });
+      await api.post(`/reviews/${reviewId}/report`, { reason: 'inappropriate' });
       toast.success('Review reported successfully');
     } catch (error) {
       console.error('Report error:', error);

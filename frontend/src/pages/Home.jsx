@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import VideoHero from '../components/VideoHero';
 import ReviewCard from '../components/ReviewCard';
 import LoadingSpinner from '../components/LoadingSpinner';
+import api from '../utils/api';
 
 const Home = () => {
   const { isAuthenticated, user, isMentor } = useAuth();
@@ -20,18 +21,16 @@ const Home = () => {
         setLoading(true);
 
         // Load featured mentors
-        const mentorsResponse = await fetch('/api/mentors/featured?limit=6');
-        if (mentorsResponse.ok) {
-          const data = await mentorsResponse.json();
-          setFeaturedMentors(data.data || []);
-        }
+        try {
+          const mentorsResponse = await api.get('/mentors/featured', { params: { limit: 6 } });
+          setFeaturedMentors(mentorsResponse.data.data || []);
+        } catch (e) { /* non-critical, ignore */ }
 
         // Load testimonials
-        const testimonialsResponse = await fetch('/api/reviews/featured?limit=6');
-        if (testimonialsResponse.ok) {
-          const data = await testimonialsResponse.json();
-          setTestimonials(data.data || []);
-        }
+        try {
+          const testimonialsResponse = await api.get('/reviews/featured', { params: { limit: 6 } });
+          setTestimonials(testimonialsResponse.data.data || []);
+        } catch (e) { /* non-critical, ignore */ }
 
         // Load platform statistics
         setPlatformStats({

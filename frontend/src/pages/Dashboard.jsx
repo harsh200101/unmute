@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate, Navigate, useLocation } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 // Global flag to prevent multiple mentor redirects across component mounts
 let globalMentorRedirected = false;
@@ -28,21 +29,9 @@ const Dashboard = () => {
   const loadUpcomingSessions = useCallback(async () => {
     console.log('🔄 API CALL: loadUpcomingSessions at', new Date().toISOString());
     try {
-      const response = await fetch('/api/sessions/upcoming?limit=5', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Sessions API success:', data);
-        setUpcomingSessions(data.data?.upcomingSessions || []);
-      } else {
-        console.error('❌ Sessions API failed:', response.status, response.statusText);
-        setUpcomingSessions([]);
-      }
+      const response = await api.get('/sessions/upcoming', { params: { limit: 5 } });
+      console.log('✅ Sessions API success:', response.data);
+      setUpcomingSessions(response.data.data?.upcomingSessions || []);
     } catch (error) {
       console.error('❌ Sessions API error:', error.message);
       setUpcomingSessions([]);
@@ -53,21 +42,9 @@ const Dashboard = () => {
   const loadSessionStats = useCallback(async () => {
     console.log('🔄 API CALL: loadSessionStats at', new Date().toISOString());
     try {
-      const response = await fetch('/api/sessions/my-sessions/stats?timeframe=month', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Stats API success:', data);
-        setSessionStats(data.data || {});
-      } else {
-        console.error('❌ Stats API failed:', response.status, response.statusText);
-        setSessionStats({});
-      }
+      const response = await api.get('/sessions/my-sessions/stats', { params: { timeframe: 'month' } });
+      console.log('✅ Stats API success:', response.data);
+      setSessionStats(response.data.data || {});
     } catch (error) {
       console.error('❌ Stats API error:', error.message);
       setSessionStats({});
@@ -80,21 +57,9 @@ const Dashboard = () => {
 
     console.log('🔄 API CALL: loadRecentSessions at', new Date().toISOString());
     try {
-      const response = await fetch('/api/sessions/mentee/recent?limit=3', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Recent sessions API success:', data);
-        setRecentSessions(data.data?.sessions || []);
-      } else {
-        console.error('❌ Recent sessions API failed:', response.status, response.statusText);
-        setRecentSessions([]);
-      }
+      const response = await api.get('/sessions/mentee/recent', { params: { limit: 3 } });
+      console.log('✅ Recent sessions API success:', response.data);
+      setRecentSessions(response.data.data?.sessions || []);
     } catch (error) {
       console.error('❌ Recent sessions API error:', error.message);
       setRecentSessions([]);

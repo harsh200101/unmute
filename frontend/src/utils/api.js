@@ -349,6 +349,10 @@ export const endpoints = {
     availability: (id) => `/mentors/${id}/availability`,
     apply: '/mentors/apply',
     profile: '/mentors/profile',
+    meta: {
+      categories: '/mentors/meta/categories'
+    },
+    availableByDate: '/mentors/available'
   },
 
   // Payment endpoints

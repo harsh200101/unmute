@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const Mentors = () => {
   const navigate = useNavigate();
@@ -51,110 +52,108 @@ const Mentors = () => {
     { value: 'diamond', label: 'Diamond', color: 'text-blue-600' }
   ];
 
-  // Memoized fetch function to prevent infinite loops
-  const fetchMentors = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
+   // Memoized fetch function to prevent infinite loops
+   const fetchMentors = useCallback(async () => {
+     setLoading(true);
+     try {
+       const params = new URLSearchParams();
 
-      if (searchTerm) params.append('search', searchTerm);
-      if (categoryFilter) params.append('category', categoryFilter);
-      if (languageFilter) params.append('languages', languageFilter);
-      if (ratingFilter > 0) params.append('minRating', ratingFilter);
-      if (badgeLevelFilter) params.append('badgeLevel', badgeLevelFilter);
-      params.append('sort', sortOrder);
-      params.append('page', page);
-      params.append('limit', 12);
+       if (searchTerm) params.append('search', searchTerm);
+       if (categoryFilter) params.append('category', categoryFilter);
+       if (languageFilter) params.append('languages', languageFilter);
+       if (ratingFilter > 0) params.append('minRating', ratingFilter);
+       if (badgeLevelFilter) params.append('badgeLevel', badgeLevelFilter);
+       params.append('sort', sortOrder);
+       params.append('page', page);
+       params.append('limit', 12);
 
-      console.log('Fetching mentors with params:', params.toString());
+       console.log('Fetching mentors with params:', params.toString());
 
-      const response = await fetch(`/api/mentors?${params.toString()}`);
+       const response = await api.get(`/mentors?${params.toString()}`);
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('API Response:', data);
+       if (response.data) {
+         console.log('API Response:', response.data);
 
-        // Fix: Access mentors array correctly based on your API structure
-        const mentorsArray = data.data?.mentors || [];
-        console.log('Mentors array:', mentorsArray);
+         // Fix: Access mentors array correctly based on your API structure
+         const mentorsArray = response.data.data?.mentors || [];
+         console.log('Mentors array:', mentorsArray);
 
-        setMentors(mentorsArray);
-        setTotalPages(data.data?.pagination?.totalPages || 1);
-        setTotalItems(data.data?.pagination?.totalMentors || 0);
-      } else {
-        console.error('API response not ok:', response.status);
-        setMentors([]);
-        toast.error('Failed to load mentors');
-      }
-    } catch (error) {
-      console.error('Failed to fetch mentors:', error);
-      setMentors([]);
-      toast.error('Network error. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, [searchTerm, categoryFilter, languageFilter, ratingFilter, badgeLevelFilter, sortOrder, page]);
+         setMentors(mentorsArray);
+         setTotalPages(response.data.data?.pagination?.totalPages || 1);
+         setTotalItems(response.data.data?.pagination?.totalMentors || 0);
+       } else {
+         console.error('API response not ok:', response.status);
+         setMentors([]);
+         toast.error('Failed to load mentors');
+       }
+     } catch (error) {
+       console.error('Failed to fetch mentors:', error);
+       setMentors([]);
+       toast.error('Network error. Please try again.');
+     } finally {
+       setLoading(false);
+     }
+   }, [searchTerm, categoryFilter, languageFilter, ratingFilter, badgeLevelFilter, sortOrder, page]);
 
-  // Fetch availability data
-  const fetchAvailability = useCallback(async (date) => {
-    setAvailabilityLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.append('date', date);
-      params.append('timezone', 'Asia/Kolkata');
+   // Fetch availability data
+   const fetchAvailability = useCallback(async (date) => {
+     setAvailabilityLoading(true);
+     try {
+       const params = new URLSearchParams();
+       params.append('date', date);
+       params.append('timezone', 'Asia/Kolkata');
 
-      console.log('Fetching availability with params:', params.toString());
+       console.log('Fetching availability with params:', params.toString());
 
-      const response = await fetch(`/api/mentors/available?${params.toString()}`);
+       const response = await api.get(`/mentors/available?${params.toString()}`);
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Availability API Response:', data);
-        setAvailabilityData(data.data?.timeSlots || {});
-      } else {
-        console.error('Availability API response not ok:', response.status);
-        setAvailabilityData({});
-        toast.error('Failed to load availability');
-      }
-    } catch (error) {
-      console.error('Failed to fetch availability:', error);
-      setAvailabilityData({});
-      toast.error('Network error. Please try again.');
-    } finally {
-      setAvailabilityLoading(false);
-    }
-  }, []);
+       if (response.data) {
+         const data = response.data;
+         console.log('Availability API Response:', data);
+         setAvailabilityData(data.data?.timeSlots || {});
+       } else {
+         console.error('Availability API response not ok:', response.status);
+         setAvailabilityData({});
+         toast.error('Failed to load availability');
+       }
+     } catch (error) {
+       console.error('Failed to fetch availability:', error);
+       setAvailabilityData({});
+       toast.error('Network error. Please try again.');
+     } finally {
+       setAvailabilityLoading(false);
+     }
+   }, []);
 
-  // Load categories once on mount
-  useEffect(() => {
-    const loadCategories = async () => {
-      try {
-        const response = await fetch('/api/mentors/meta/categories'); // Correct endpoint
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Categories response:', data);
+   // Load categories once on mount
+   useEffect(() => {
+     const loadCategories = async () => {
+       try {
+         const response = await api.get('/mentors/meta/categories'); // Correct endpoint
+         if (response.data) {
+           console.log('Categories response:', response.data);
 
-          // Fix: Handle different response structures
-          if (data.success && Array.isArray(data.data?.categories)) {
-            setCategories(data.data.categories);
-          } else if (Array.isArray(data)) {
-            setCategories(data);
-          } else {
-            console.warn('Categories data is not an array:', data);
-            setCategories([]);
-          }
-        } else {
-          console.error('Failed to fetch categories:', response.status);
-          setCategories([]);
-        }
-      } catch (error) {
-        console.error('Failed to load categories:', error);
-        setCategories([]);
-      }
-    };
+           // Fix: Handle different response structures
+           if (response.data.success && Array.isArray(response.data.data?.categories)) {
+             setCategories(response.data.data.categories);
+           } else if (Array.isArray(response.data)) {
+             setCategories(response.data);
+           } else {
+             console.warn('Categories data is not an array:', response.data);
+             setCategories([]);
+           }
+         } else {
+           console.error('Failed to fetch categories:', response.status);
+           setCategories([]);
+         }
+       } catch (error) {
+         console.error('Failed to load categories:', error);
+         setCategories([]);
+       }
+     };
 
-    loadCategories();
-  }, []); // Empty dependency array - runs once
+     loadCategories();
+   }, []); // Empty dependency array - runs once
 
   // Update URL params when filters or tab change
   useEffect(() => {

@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const MentorProfileForm = () => {
   const { user, isAuthenticated, isMentor } = useAuth();
@@ -69,25 +70,17 @@ const MentorProfileForm = () => {
     setLoading(true);
     try {
       // Load categories first
-      const categoriesResponse = await fetch('/api/mentors/meta/categories');
       let categories = [];
-      if (categoriesResponse.ok) {
-        const categoriesData = await categoriesResponse.json();
-        categories = categoriesData.data.categories || [];
+      try {
+        const categoriesResponse = await api.get('/mentors/meta/categories');
+        categories = categoriesResponse.data.data.categories || [];
         setAvailableCategories(categories);
-      }
+      } catch (e) { /* non-critical */ }
 
       // Load mentor profile
-      const profileResponse = await fetch('/api/mentors/profile', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (profileResponse.ok) {
-        const profileData = await profileResponse.json();
-        const mentor = profileData.data.mentor;
+      const profileResponse = await api.get('/mentors/profile');
+      {
+        const mentor = profileResponse.data.data.mentor;
         setMentorProfile(mentor);
 
         // Convert category names/strings to IDs for form compatibility
@@ -260,28 +253,9 @@ const MentorProfileForm = () => {
         public_profile: formData.publicProfile
       };
 
-      const response = await fetch('/api/mentors/profile', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(submitData)
-      });
-
-      if (response.ok) {
-        toast.success('Profile updated successfully!');
-        // Check if profile is complete for verification request
-        const isProfileComplete = validateForm() === true;
-        if (isProfileComplete) {
-          navigate('/mentor/dashboard');
-        } else {
-          navigate('/mentor/dashboard');
-        }
-      } else {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to update profile');
-      }
+      await api.put('/mentors/profile', submitData);
+      toast.success('Profile updated successfully!');
+      navigate('/mentor/dashboard');
 
     } catch (error) {
       console.error('Profile update error:', error);

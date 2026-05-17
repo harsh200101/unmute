@@ -216,7 +216,7 @@ export const AuthProvider = ({ children }) => {
 
     try {
       console.log('🔄 AUTH: Refreshing access token...');
-      const response = await axios.post('/api/auth/refresh-token', {
+      const response = await apiClient.post('/auth/refresh-token', {
         refreshToken,
       });
 
@@ -385,7 +385,7 @@ export const AuthProvider = ({ children }) => {
     dispatch({ type: ActionTypes.LOGIN_START });
 
     try {
-      const response = await axios.post('/api/auth/register', userData);
+      const response = await apiClient.post('/auth/register', userData);
       const { user, tokens } = response.data.data;
       const { accessToken, refreshToken } = tokens;
 
@@ -417,7 +417,7 @@ export const AuthProvider = ({ children }) => {
     dispatch({ type: ActionTypes.LOGIN_START });
 
     try {
-      const response = await axios.post('/api/auth/login', {
+      const response = await apiClient.post('/auth/login', {
         email,
         password,
       });

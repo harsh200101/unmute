@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const MentorRegistration = () => {
   const { user, isAuthenticated, updateProfile } = useAuth();
@@ -86,11 +87,8 @@ const MentorRegistration = () => {
   useEffect(() => {
     const loadCategories = async () => {
       try {
-        const response = await fetch('/api/mentors/meta/categories');
-        if (response.ok) {
-          const data = await response.json();
-          setAvailableCategories(data.data || []);
-        }
+        const response = await api.get('/mentors/meta/categories');
+        setAvailableCategories(response.data.data || []);
       } catch (error) {
         console.error('Failed to load categories:', error);
       }
@@ -257,26 +255,15 @@ const MentorRegistration = () => {
       });
 
       // Submit mentor application
-      const response = await fetch('/api/mentors/apply', {
-        method: 'POST',
-        body: submitData,
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
+      await api.post('/mentors/apply', submitData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        
-        // Update user profile to reflect mentor application
-        await updateProfile({ role: 'mentor' });
-        
-        toast.success('Mentor application submitted successfully!');
-        navigate('/mentor/application-pending');
-      } else {
-        const error = await response.json();
-        throw new Error(error.message || 'Application submission failed');
-      }
+      // Update user profile to reflect mentor application
+      await updateProfile({ role: 'mentor' });
+
+      toast.success('Mentor application submitted successfully!');
+      navigate('/mentor/application-pending');
       
     } catch (error) {
       console.error('Application submission error:', error);

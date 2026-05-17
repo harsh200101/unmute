@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const UserProfile = () => {
   const { 
@@ -224,21 +225,12 @@ const UserProfile = () => {
         const formData = new FormData();
         formData.append('avatar', avatarFile);
 
-        const uploadResponse = await fetch('/api/auth/upload-avatar', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-          },
-          body: formData
+        const uploadResponse = await api.post('/auth/upload-avatar', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
         });
 
-        if (uploadResponse.ok) {
-          const uploadData = await uploadResponse.json();
-          avatarUrl = uploadData.data.avatar_url;
-          toast.success('Profile picture uploaded successfully!');
-        } else {
-          throw new Error('Failed to upload avatar');
-        }
+        avatarUrl = uploadResponse.data.data.avatar_url;
+        toast.success('Profile picture uploaded successfully!');
       }
 
       // Update profile
@@ -319,15 +311,8 @@ const UserProfile = () => {
   // Handle mentor verification request
   const handleRequestMentorVerification = async () => {
     try {
-      const response = await fetch('/api/mentors/request-verification', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const data = await response.json();
+      const response = await api.post('/mentors/request-verification');
+      const data = response.data;
 
       if (data.success) {
         toast.success('Verification request sent to admin!');

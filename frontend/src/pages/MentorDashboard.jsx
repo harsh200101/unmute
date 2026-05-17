@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import api from '../utils/api';
 
 const MentorDashboard = () => {
   const { user, isAuthenticated, isMentor } = useAuth();
@@ -29,20 +30,9 @@ const MentorDashboard = () => {
   const loadMentorProfile = async () => {
     console.log('🔄 MentorDashboard: Loading mentor profile...');
     try {
-      const response = await fetch('/api/mentors/profile', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ MentorDashboard: Mentor profile loaded:', data.data.mentor);
-        setMentorProfile(data.data.mentor);
-      } else {
-        console.error('❌ MentorDashboard: Failed to load mentor profile, status:', response.status);
-      }
+      const response = await api.get('/mentors/profile');
+      console.log('✅ MentorDashboard: Mentor profile loaded:', response.data.data.mentor);
+      setMentorProfile(response.data.data.mentor);
     } catch (error) {
       console.error('❌ MentorDashboard: Error loading mentor profile:', error);
     }
@@ -51,17 +41,8 @@ const MentorDashboard = () => {
   // Load upcoming sessions
   const loadUpcomingSessions = async () => {
     try {
-      const response = await fetch('/api/sessions/mentor/upcoming?limit=5', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setUpcomingSessions(data.data?.sessions || []);
-      }
+      const response = await api.get('/sessions/mentor/upcoming', { params: { limit: 5 } });
+      setUpcomingSessions(response.data.data?.sessions || []);
     } catch (error) {
       console.error('Failed to load upcoming sessions:', error);
     }
@@ -70,17 +51,8 @@ const MentorDashboard = () => {
   // Load recent sessions
   const loadRecentSessions = async () => {
     try {
-      const response = await fetch('/api/sessions/mentor/recent?limit=3', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setRecentSessions(data.data?.sessions || []);
-      }
+      const response = await api.get('/sessions/mentor/recent', { params: { limit: 3 } });
+      setRecentSessions(response.data.data?.sessions || []);
     } catch (error) {
       console.error('Failed to load recent sessions:', error);
     }
@@ -89,17 +61,8 @@ const MentorDashboard = () => {
   // Load earnings data
   const loadEarnings = async () => {
     try {
-      const response = await fetch('/api/mentors/earnings/summary', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setEarnings(data.data || {});
-      }
+      const response = await api.get('/mentors/earnings/summary');
+      setEarnings(response.data.data || {});
     } catch (error) {
       console.error('Failed to load earnings:', error);
     }
@@ -108,17 +71,8 @@ const MentorDashboard = () => {
   // Load stats
   const loadStats = async () => {
     try {
-      const response = await fetch('/api/mentors/stats', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data.data || {});
-      }
+      const response = await api.get('/mentors/stats');
+      setStats(response.data.data || {});
     } catch (error) {
       console.error('Failed to load stats:', error);
     }
@@ -127,17 +81,8 @@ const MentorDashboard = () => {
   // Load session stats for chart
   const loadSessionStats = async () => {
     try {
-      const response = await fetch('/api/mentors/session-stats', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setSessionStats(data.data?.monthlySessions || []);
-      }
+      const response = await api.get('/mentors/session-stats');
+      setSessionStats(response.data.data?.monthlySessions || []);
     } catch (error) {
       console.error('Failed to load session stats:', error);
     }
