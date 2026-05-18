@@ -2,7 +2,13 @@ import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
 // Environment configuration
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+// Normalize base URL: strip trailing slash, then ensure it ends with /api.
+// This way both "https://host" and "https://host/api" env values resolve correctly.
+const RAW_API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+const API_BASE_URL = (() => {
+  const trimmed = RAW_API_BASE_URL.replace(/\/+$/, '');
+  return /\/api$/i.test(trimmed) ? trimmed : `${trimmed}/api`;
+})();
 const REQUEST_TIMEOUT = 30000; // 30 seconds
 
 // Create axios instance

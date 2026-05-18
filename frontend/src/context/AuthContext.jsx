@@ -2,12 +2,17 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback } 
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
-// API Configuration - Use relative URLs for proxy to work
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
+// API Configuration - Normalize base URL so it always ends with /api,
+// regardless of whether REACT_APP_API_BASE_URL includes the suffix.
+const RAW_API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+const API_BASE_URL = (() => {
+  const trimmed = RAW_API_BASE_URL.replace(/\/+$/, '');
+  return /\/api$/i.test(trimmed) ? trimmed : `${trimmed}/api`;
+})();
 
 // Create axios instance with interceptors
 const apiClient = axios.create({
-  baseURL: API_BASE_URL || '/api', // Use relative URL for proxy
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
