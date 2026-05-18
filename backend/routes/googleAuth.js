@@ -2,6 +2,7 @@ const express = require('express');
 const passport = require('../config/passport');
 const { rateLimit } = require('../middleware/auth');
 const crypto = require('crypto');
+const { getClientUrl } = require('../utils/frontendUrl');
 
 const router = express.Router();
 
@@ -32,7 +33,7 @@ router.get('/google',
 
     } catch (error) {
       console.error('❌ Error initiating Google OAuth:', error);
-      const redirectUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/login?error=oauth_init_failed`;
+      const redirectUrl = `${getClientUrl()}/login?error=oauth_init_failed`;
       res.redirect(redirectUrl);
     }
   }
@@ -54,7 +55,7 @@ router.get('/google/callback',
         ip: req.ip
       });
       
-      return res.redirect(`${process.env.CLIENT_URL || 'http://localhost:3000'}/login?error=csrf_protection`);
+      return res.redirect(`${getClientUrl()}/login?error=csrf_protection`);
     }
 
     // Clear the state from session
@@ -68,7 +69,7 @@ router.get('/google/callback',
   // Passport authentication
   passport.authenticate('google', { 
     session: false,
-    failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:3000'}/login?error=oauth_failed`
+    failureRedirect: `${getClientUrl()}/login?error=oauth_failed`
   }),
   
   // Success handler with multiple redirect strategies
@@ -140,7 +141,7 @@ router.get('/google/callback',
         });
 
         // Redirect without tokens in URL
-        const redirectUrl = `${process.env.CLIENT_URL}/auth/success?method=cookie`;
+        const redirectUrl = `${getClientUrl()}/auth/success?method=cookie`;
         return res.redirect(redirectUrl);
       }
 
@@ -202,13 +203,13 @@ router.get('/google/callback',
                   
                   // Redirect to application
                   setTimeout(() => {
-                    window.location.href = '${process.env.CLIENT_URL}/dashboard';
+                    window.location.href = '${getClientUrl()}/dashboard';
                   }, 2000);
                   
                 } catch (error) {
                   console.error('❌ Error saving authentication data:', error);
                   alert('Authentication successful but failed to save data. Please try logging in again.');
-                  window.location.href = '${process.env.CLIENT_URL}/login?error=storage_failed';
+                  window.location.href = '${getClientUrl()}/login?error=storage_failed';
                 }
               </script>
             </body>
@@ -232,7 +233,7 @@ router.get('/google/callback',
         params.set('state', req.query.state);
       }
 
-      const redirectUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/oauth/callback?${params.toString()}`;
+      const redirectUrl = `${getClientUrl()}/oauth/callback?${params.toString()}`;
 
       // Security: Log token distribution method
       console.log('🔐 Tokens distributed via URL parameters (consider using secure cookies in production)');
@@ -259,7 +260,7 @@ router.get('/google/callback',
         errorCode = 'database_error';
       }
 
-      const redirectUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/login?error=${errorCode}`;
+      const redirectUrl = `${getClientUrl()}/login?error=${errorCode}`;
       res.redirect(redirectUrl);
     }
   }
@@ -374,7 +375,7 @@ router.use((error, req, res, next) => {
   });
 
   // Redirect OAuth errors to frontend with error parameter
-  const redirectUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/login?error=oauth_system_error`;
+  const redirectUrl = `${getClientUrl()}/login?error=oauth_system_error`;
   res.redirect(redirectUrl);
 });
 

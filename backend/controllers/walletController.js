@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const dns = require('dns').promises;
 const { getWalletBalance, getWalletTransactions, creditWallet } = require('../services/walletService');
+const { getClientUrl } = require('../utils/frontendUrl');
 
 // PhonePe UAT Configuration - Production-grade
 const PHONEPE_CONFIG = {
@@ -12,7 +13,12 @@ const PHONEPE_CONFIG = {
   saltKey: '96434309-7796-489d-8924-ab56988a6076',
   saltIndex: 1,
   callbackUrl: process.env.PHONEPE_CALLBACK_URL || 'https://your-ngrok-url.ngrok-free.app/api/payments/callback',
-  frontendRedirectUrl: process.env.FRONTEND_REDIRECT_URL || 'http://localhost:3000/payment/status'
+  // Resolve at call time via getter so the frontend URL helper has the
+  // current env. (Top-level const would freeze at module load before
+  // possible env mutation; getter keeps it dynamic and safe.)
+  get frontendRedirectUrl() {
+    return process.env.FRONTEND_REDIRECT_URL || `${getClientUrl()}/payment/status`;
+  }
 };
 
 /**

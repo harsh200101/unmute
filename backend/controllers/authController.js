@@ -4,6 +4,7 @@ const db = require('../config/database');
 const { validationResult } = require('express-validator');
 const crypto = require('crypto');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/emailService');
+const { getClientUrl } = require('../utils/frontendUrl');
 
 // Enhanced token generation with comprehensive payload
 const generateTokens = (user) => {
@@ -334,7 +335,7 @@ exports.forgotPassword = async (req, res) => {
     console.log('💾 Password reset token stored in database');
 
     // Send email
-    const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${token}&id=${user.id}`;
+    const resetUrl = `${getClientUrl()}/reset-password?token=${token}&id=${user.id}`;
     console.log('📧 Attempting to send password reset email to:', user.email);
     console.log('🔗 Reset URL:', resetUrl);
 
@@ -821,7 +822,7 @@ exports.sendVerificationEmail = async (req, res) => {
     );
 
     // Send verification email
-    const verificationUrl = `${process.env.CLIENT_URL}/verify-email?token=${token}&id=${userId}`;
+    const verificationUrl = `${getClientUrl()}/verify-email?token=${token}&id=${userId}`;
 
     await sendVerificationEmail(user.email, verificationUrl);
 

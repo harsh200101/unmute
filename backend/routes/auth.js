@@ -5,6 +5,7 @@ const authController = require('../controllers/authController');
 const auth = require('../middleware/auth');
 const { rateLimit, authorize, requireEmailVerification } = require('../middleware/auth');
 const passport = require('../config/passport');
+const { getClientUrl } = require('../utils/frontendUrl');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs'); // Import the 'fs' module
@@ -248,7 +249,7 @@ router.get('/google',
 // Google OAuth Callback
 router.get('/google/callback',
   passport.authenticate('google', {
-    failureRedirect: `${process.env.CLIENT_URL}/oauth/callback?error=oauth_failed`,
+    failureRedirect: `${getClientUrl()}/oauth/callback?error=oauth_failed`,
     session: false
   }),
   (req, res) => {
@@ -284,7 +285,7 @@ router.get('/google/callback',
       }
 
       // Redirect to frontend with success
-      const redirectUrl = new URL(`${process.env.CLIENT_URL}/oauth/callback`);
+      const redirectUrl = new URL(`${getClientUrl()}/oauth/callback`);
       redirectUrl.searchParams.set('accessToken', tokens.accessToken);
       redirectUrl.searchParams.set('refreshToken', tokens.refreshToken);
       redirectUrl.searchParams.set('user', encodeURIComponent(JSON.stringify({
@@ -303,7 +304,7 @@ router.get('/google/callback',
 
     } catch (error) {
        console.error('❌ OAuth callback error:', error);
-       res.redirect(`${process.env.CLIENT_URL}/oauth/callback?error=callback_failed`);
+       res.redirect(`${getClientUrl()}/oauth/callback?error=callback_failed`);
      }
   }
 );

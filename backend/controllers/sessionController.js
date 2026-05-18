@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { fromZonedTime } = require('date-fns-tz');
 const agoraService = require('../utils/agora');
 const { sendSessionRescheduledEmail, sendRescheduleRequestEmail, sendSessionCancelledEmail, sendMeetingInviteEmail } = require('../utils/emailService');
+const { getClientUrl } = require('../utils/frontendUrl');
 const walletService = require('../services/walletService');
 const { endSession } = require('../services/billingEngine');
 
@@ -342,9 +343,8 @@ exports.createSession = async (req, res) => {
           ]
         );
 
-        // Set meeting URL using environment variable
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-        const meetingUrl = `${frontendUrl}/meeting/${session.id}`;
+        // Set meeting URL using shared frontend URL resolver
+        const meetingUrl = `${getClientUrl()}/meeting/${session.id}`;
 
         meetingDetails = {
           meeting_platform: 'agora',

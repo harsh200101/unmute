@@ -1,6 +1,7 @@
 const Stripe = require('stripe');
 const db = require('../config/database');
 const { sendPaymentSuccessEmail } = require('./emailService');
+const { getClientUrl } = require('./frontendUrl');
 
 class StripePayments {
   constructor() {
@@ -537,8 +538,7 @@ class StripePayments {
           );
 
           // Update session with meeting URL
-          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-          const meetingUrl = `${frontendUrl}/meeting/${session.id}`;
+          const meetingUrl = `${getClientUrl()}/meeting/${session.id}`;
 
           await client.query(
             `UPDATE sessions

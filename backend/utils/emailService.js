@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { getClientUrl } = require('./frontendUrl');
 
 // Create transporter
 const createTransporter = () => {
@@ -137,7 +138,7 @@ const sendSessionRescheduledEmail = async (to, sessionData) => {
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/sessions"
+          <a href="${getClientUrl()}/sessions"
              style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
             View Session Details
           </a>
@@ -159,7 +160,7 @@ const sendSessionRescheduledEmail = async (to, sessionData) => {
       Session Type: ${sessionData.sessionType}
       ${sessionData.meetingUrl ? `Meeting Link: ${sessionData.meetingUrl}` : ''}
 
-      View your sessions: ${process.env.FRONTEND_URL || 'http://localhost:3000'}/sessions
+      View your sessions: ${getClientUrl()}/sessions
 
       Unmute Platform - Connecting Mentors and Mentees
     `
@@ -198,7 +199,7 @@ const sendRescheduleRequestEmail = async (to, sessionData, requesterName) => {
         <p>You can accept the reschedule request or cancel the session (with full refund) through your dashboard.</p>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/sessions"
+          <a href="${getClientUrl()}/sessions"
              style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
             Review Request
           </a>
@@ -219,7 +220,7 @@ const sendRescheduleRequestEmail = async (to, sessionData, requesterName) => {
       Duration: ${sessionData.durationMinutes} minutes
       Requested by: ${requesterName}
 
-      Review the request: ${process.env.FRONTEND_URL || 'http://localhost:3000'}/sessions
+      Review the request: ${getClientUrl()}/sessions
 
       Unmute Platform - Connecting Mentors and Mentees
     `
@@ -403,7 +404,7 @@ const sendPaymentSuccessEmail = async (to, paymentData) => {
         <p>Your session is now confirmed and the meeting room will be available closer to the session time.</p>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/sessions"
+          <a href="${getClientUrl()}/sessions"
              style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
             View Your Sessions
           </a>
@@ -428,7 +429,7 @@ const sendPaymentSuccessEmail = async (to, paymentData) => {
 
       Your session is now confirmed and the meeting room will be available closer to the session time.
 
-      View your sessions: ${process.env.FRONTEND_URL || 'http://localhost:3000'}/sessions
+      View your sessions: ${getClientUrl()}/sessions
 
       Unmute Platform - Connecting Mentors and Mentees
     `
@@ -572,7 +573,7 @@ const sendMentorVerificationResultEmail = async (mentorData, approved) => {
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/mentor/profile"
+          <a href="${getClientUrl()}/mentor/profile"
              style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
             Go to Mentor Dashboard
           </a>
@@ -589,7 +590,7 @@ const sendMentorVerificationResultEmail = async (mentorData, approved) => {
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/profile"
+          <a href="${getClientUrl()}/profile"
              style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
             Update Your Profile
           </a>
@@ -620,7 +621,7 @@ const sendMentorVerificationResultEmail = async (mentorData, approved) => {
       - Complete your profile to attract more mentees
       - Set up your payment information to receive earnings
 
-      Go to Mentor Dashboard: ${process.env.FRONTEND_URL || 'http://localhost:3000'}/mentor/profile
+      Go to Mentor Dashboard: ${getClientUrl()}/mentor/profile
       ` : `
       What You Can Do:
       - Review and improve your profile information
@@ -628,7 +629,7 @@ const sendMentorVerificationResultEmail = async (mentorData, approved) => {
       - Add more details about your experience and expertise
       - Reapply for verification once you've made improvements
 
-      Update Your Profile: ${process.env.FRONTEND_URL || 'http://localhost:3000'}/profile
+      Update Your Profile: ${getClientUrl()}/profile
       `}
 
       If you have any questions about this decision, please contact our support team.
@@ -678,7 +679,7 @@ const sendSessionBookedEmail = async (to, sessionData, recipientType = 'mentee')
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/sessions"
+          <a href="${getClientUrl()}/sessions"
              style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
             ${actionText}
           </a>
@@ -713,7 +714,7 @@ const sendSessionBookedEmail = async (to, sessionData, recipientType = 'mentee')
 
       Payment Confirmed: Your payment of ₹${sessionData.amount} has been processed successfully.
 
-      View your sessions: ${process.env.FRONTEND_URL || 'http://localhost:3000'}/sessions
+      View your sessions: ${getClientUrl()}/sessions
 
       Next Steps:
       - The meeting room will be available closer to the session time

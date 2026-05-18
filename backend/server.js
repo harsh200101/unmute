@@ -14,6 +14,7 @@ const crypto = require('crypto');
 // Import utilities for health checks
 const stripeUtil = require('./utils/stripe');
 const zoomUtil = require('./utils/zoom');
+const { getClientUrl, assertFrontendUrlConfigured } = require('./utils/frontendUrl');
 
 const app = express();
 
@@ -624,7 +625,7 @@ app.post('/payment/status', async (req, res) => {
       }
 
       // Redirect to frontend with transaction ID and status
-      const frontendUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/status?transactionId=${finalTransactionId}&status=${status}&type=wallet_topup`;
+      const frontendUrl = `${getClientUrl()}/payment/status?transactionId=${finalTransactionId}&status=${status}&type=wallet_topup`;
       console.log(`🔄 [${requestId}] REDIRECTING TO FRONTEND - URL:`, frontendUrl);
       console.log(`📋 [${requestId}] REDIRECT RESPONSE:`, {
         statusCode: 302,
@@ -643,12 +644,12 @@ app.post('/payment/status', async (req, res) => {
     }
 
     // If no transaction ID, redirect to generic payment status page
-    const fallbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/status?status=unknown`;
+    const fallbackUrl = `${getClientUrl()}/payment/status?status=unknown`;
     console.log(`🔄 [${requestId}] No transaction ID found, redirecting to fallback:`, fallbackUrl);
     return res.redirect(302, fallbackUrl);
   } catch (error) {
     console.error(`❌ [${requestId}] Payment status redirect error:`, error);
-    const errorUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/status?status=error`;
+    const errorUrl = `${getClientUrl()}/payment/status?status=error`;
     console.log(`🔄 [${requestId}] Redirecting to error fallback:`, errorUrl);
     return res.redirect(302, errorUrl);
   }
@@ -762,7 +763,8 @@ app.listen(PORT, HOST, async () => {
   console.log(`📚 API Docs: http://${HOST}:${PORT}/api`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
   console.log(`🗄️ Database: PostgreSQL`);
-  console.log(`📱 Client URL: ${process.env.CLIENT_URL || 'http://localhost:3000'}`);
+  console.log(`📱 Client URL: ${getClientUrl()}`);
+  assertFrontendUrlConfigured();
   
   await initializeDatabase();
   console.log('✅ Server initialization complete!');

@@ -4,6 +4,7 @@ const db = require('../config/database');
 const auth = require('../middleware/auth');
 const { rateLimit } = require('../middleware/auth');
 const walletController = require('../controllers/walletController');
+const { getClientUrl } = require('../utils/frontendUrl');
 
 const router = express.Router();
 
@@ -52,12 +53,12 @@ router.post('/payment-status', (req, res) => {
     }
 
     // If no transaction ID, redirect to generic payment status page
-    const fallbackUrl = process.env.FRONTEND_REDIRECT_URL || 'http://localhost:3000/payment-status';
+    const fallbackUrl = process.env.FRONTEND_REDIRECT_URL || `${getClientUrl()}/payment-status`;
     console.log('Redirecting to fallback:', fallbackUrl);
     return res.redirect(302, fallbackUrl);
   } catch (error) {
     console.error('Payment status redirect error:', error);
-    const errorUrl = 'http://localhost:3000/payment-status';
+    const errorUrl = `${getClientUrl()}/payment-status`;
     console.log('Redirecting to error fallback:', errorUrl);
     return res.redirect(302, errorUrl);
   }
