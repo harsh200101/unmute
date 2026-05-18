@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const stripeUtil = require('./utils/stripe');
 const zoomUtil = require('./utils/zoom');
 const { getClientUrl, assertFrontendUrlConfigured } = require('./utils/frontendUrl');
+const sessionLifecycleJob = require('./services/sessionLifecycleJob');
 
 const app = express();
 
@@ -767,6 +768,7 @@ app.listen(PORT, HOST, async () => {
   assertFrontendUrlConfigured();
   
   await initializeDatabase();
+  sessionLifecycleJob.start();
   console.log('✅ Server initialization complete!');
 });
 
