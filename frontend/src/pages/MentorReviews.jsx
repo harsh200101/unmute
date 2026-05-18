@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const MentorReviews = () => {
   const { user, isAuthenticated, isMentor } = useAuth();
@@ -21,24 +22,13 @@ const MentorReviews = () => {
       params.append('page', page);
       params.append('limit', 10);
 
-      const response = await fetch(`/api/mentors/my-reviews?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setReviews(data.data.reviews || []);
-        setPagination(data.data.pagination || {});
-      } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to load reviews');
-      }
+      const response = await api.get(`/mentors/my-reviews?${params.toString()}`);
+      const data = response.data;
+      setReviews(data.data.reviews || []);
+      setPagination(data.data.pagination || {});
     } catch (error) {
       console.error('Failed to load reviews:', error);
-      toast.error('Failed to load reviews');
+      toast.error(error.response?.data?.message || 'Failed to load reviews');
     } finally {
       setLoading(false);
     }

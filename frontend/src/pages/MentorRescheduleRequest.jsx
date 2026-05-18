@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const MentorRescheduleRequest = () => {
   const { user, isAuthenticated, isMentor } = useAuth();
@@ -23,28 +24,16 @@ const MentorRescheduleRequest = () => {
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/sessions/details/${sessionId}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
+      const response = await api.get(`/sessions/details/${sessionId}`);
+      setSession(response.data.data.session);
+
+      // Initialize form data
+      setFormData({
+        reason: ''
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        setSession(data.data.session);
-
-        // Initialize form data
-        setFormData({
-          reason: ''
-        });
-      } else {
-        toast.error('Failed to load session details');
-        navigate('/mentor/sessions');
-      }
     } catch (error) {
       console.error('Failed to load session:', error);
-      toast.error('Error loading session details');
+      toast.error(error.response?.data?.message || 'Error loading session details');
       navigate('/mentor/sessions');
     } finally {
       setLoading(false);
@@ -62,27 +51,14 @@ const MentorRescheduleRequest = () => {
 
     setSubmitting(true);
     try {
-      const response = await fetch(`/api/sessions/details/${sessionId}/reschedule-request`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          reason: formData.reason
-        })
+      await api.post(`/sessions/details/${sessionId}/reschedule-request`, {
+        reason: formData.reason
       });
-
-      if (response.ok) {
-        toast.success('Reschedule request sent successfully! The mentee will choose a new time.');
-        navigate('/mentor/sessions');
-      } else {
-        const errorData = await response.json();
-        toast.error(errorData.message || 'Failed to send reschedule request');
-      }
+      toast.success('Reschedule request sent successfully! The mentee will choose a new time.');
+      navigate('/mentor/sessions');
     } catch (error) {
       console.error('Failed to submit reschedule request:', error);
-      toast.error('Error sending reschedule request');
+      toast.error(error.response?.data?.message || 'Error sending reschedule request');
     } finally {
       setSubmitting(false);
     }

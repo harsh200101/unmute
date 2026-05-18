@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import { toast } from 'react-hot-toast'; // Assuming you use this for notifications (from App.js)
 
 export default function ForgotPassword() {
@@ -10,10 +10,10 @@ export default function ForgotPassword() {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.post('/api/auth/forgot-password', { email });
+      const response = await api.post('/auth/forgot-password', { email });
       toast.success(response.data.message || 'If email exists, a reset link was sent.');
     } catch (error) {
-      toast.error('An error occurred. Please try again.');
+      toast.error(error.response?.data?.message || 'An error occurred. Please try again.');
     } finally {
       setLoading(false);
     }

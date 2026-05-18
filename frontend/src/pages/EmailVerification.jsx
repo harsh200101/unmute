@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
+import api from '../utils/api';
 
 const EmailVerification = () => {
   const [searchParams] = useSearchParams();
@@ -21,16 +22,10 @@ const EmailVerification = () => {
       }
 
       try {
-        const response = await fetch(`/api/auth/verify-email/${token}?id=${userId}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
+        const response = await api.get(`/auth/verify-email/${token}?id=${userId}`);
+        const data = response.data;
 
-        const data = await response.json();
-
-        if (response.ok && data.success) {
+        if (data.success) {
           setStatus('success');
           setMessage('Email verified successfully! You can now access all features.');
           toast.success('Email verified successfully!');
@@ -46,9 +41,10 @@ const EmailVerification = () => {
         }
       } catch (error) {
         console.error('Verification error:', error);
+        const message = error.response?.data?.message || 'Network error. Please try again later.';
         setStatus('error');
-        setMessage('Network error. Please try again later.');
-        toast.error('Network error during verification');
+        setMessage(message);
+        toast.error(message);
       }
     };
 

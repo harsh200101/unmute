@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import sessionController from '../controllers/sessionController';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const PaymentResult = () => {
   const [searchParams] = useSearchParams();
@@ -35,18 +36,13 @@ const PaymentResult = () => {
         }
 
         // Check payment status with backend
-        const statusResponse = await fetch(`/api/payments/status/${transactionId}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-          }
-        });
-
-        if (!statusResponse.ok) {
+        let statusResult;
+        try {
+          const statusResponse = await api.get(`/payments/status/${transactionId}`);
+          statusResult = statusResponse.data;
+        } catch (err) {
           throw new Error('Payment status check failed');
         }
-
-        const statusResult = await statusResponse.json();
 
         // Normalize status for frontend
         const normalizedStatus = statusResult.status === 'completed' ? 'succeeded' : statusResult.status;
@@ -54,15 +50,9 @@ const PaymentResult = () => {
 
         // If payment succeeded, fetch session details
         if (normalizedStatus === 'succeeded' && sessionId) {
-          const sessionResponse = await fetch(`/api/sessions/${sessionId}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-            }
-          });
-
-          if (sessionResponse.ok) {
-            const sessionResult = await sessionResponse.json();
+          try {
+            const sessionResponse = await api.get(`/sessions/${sessionId}`);
+            const sessionResult = sessionResponse.data;
             if (sessionResult.success) {
               // Transform session data to match expected format
               const session = sessionResult.data.session;
@@ -80,6 +70,8 @@ const PaymentResult = () => {
               console.log('Transformed session data:', transformedSession);
               setSessionData(transformedSession);
             }
+          } catch (sessionErr) {
+            console.warn('Failed to fetch session details:', sessionErr);
           }
         }
 

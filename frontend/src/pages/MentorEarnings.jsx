@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const MentorEarnings = () => {
   const { user, isAuthenticated, isMentor } = useAuth();
@@ -24,25 +25,14 @@ const MentorEarnings = () => {
       params.append('page', page);
       params.append('limit', 20);
 
-      const response = await fetch(`/api/mentors/earnings?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setEarnings(data.data.earnings || []);
-        setSummary(data.data.summary || {});
-        setPagination(data.data.pagination || {});
-      } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to load earnings');
-      }
+      const response = await api.get(`/mentors/earnings?${params.toString()}`);
+      const data = response.data;
+      setEarnings(data.data.earnings || []);
+      setSummary(data.data.summary || {});
+      setPagination(data.data.pagination || {});
     } catch (error) {
       console.error('Failed to load earnings:', error);
-      toast.error('Failed to load earnings');
+      toast.error(error.response?.data?.message || 'Failed to load earnings');
     } finally {
       setLoading(false);
     }

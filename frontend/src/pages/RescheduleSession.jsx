@@ -4,6 +4,7 @@ import sessionController from '../controllers/sessionController';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import api from '../utils/api';
 
 const RescheduleSession = () => {
   const { sessionId } = useParams();
@@ -69,24 +70,14 @@ const RescheduleSession = () => {
     try {
       // Use the direct API endpoint for mentor availability
       const dateParam = date ? `?date=${date.toISOString().split('T')[0]}` : '';
-      const response = await fetch(`/api/mentors/${mentorId}/availability${dateParam}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('🔍 Availability response:', data);
-        setAvailability(data.data?.availability || []);
-        setExistingBookings(data.data?.existingBookings || []);
-      } else {
-        throw new Error('Failed to load availability');
-      }
+      const response = await api.get(`/mentors/${mentorId}/availability${dateParam}`);
+      const data = response.data;
+      console.log('🔍 Availability response:', data);
+      setAvailability(data.data?.availability || []);
+      setExistingBookings(data.data?.existingBookings || []);
     } catch (error) {
       console.error('Failed to load availability:', error);
-      toast.error('Failed to load mentor availability');
+      toast.error(error.response?.data?.message || 'Failed to load mentor availability');
     } finally {
       setLoadingAvailability(false);
     }

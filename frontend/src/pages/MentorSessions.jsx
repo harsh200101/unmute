@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import SessionCard from '../components/SessionCard';
 import { toast } from 'react-hot-toast';
+import api from '../utils/api';
 
 const MentorSessions = () => {
   const { user, isAuthenticated, isMentor } = useAuth();
@@ -73,29 +74,18 @@ const MentorSessions = () => {
         params.append('past', true);
       }
 
-      const response = await fetch(`/api/sessions/mentor/all?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Don't filter sessions on frontend - let backend handle status filtering
-        setSessions(data.data?.sessions || []);
-        setTotalPages(data.data?.pagination?.totalPages || 1);
-        const total = data.data?.sessions?.length || 0;
-        setTotalItems(total);
-        setSummary(data.data?.summary || null);
-      } else {
-        setSessions([]);
-        toast.error('Failed to load sessions');
-      }
+      const response = await api.get(`/sessions/mentor/all?${params}`);
+      const data = response.data;
+      // Don't filter sessions on frontend - let backend handle status filtering
+      setSessions(data.data?.sessions || []);
+      setTotalPages(data.data?.pagination?.totalPages || 1);
+      const total = data.data?.sessions?.length || 0;
+      setTotalItems(total);
+      setSummary(data.data?.summary || null);
     } catch (error) {
       console.error('Failed to load sessions:', error);
       setSessions([]);
-      toast.error('Error loading sessions');
+      toast.error(error.response?.data?.message || 'Error loading sessions');
     } finally {
       setLoading(false);
     }
@@ -128,24 +118,14 @@ const MentorSessions = () => {
     if (window.confirm('Are you sure you want to cancel this session?')) {
       try {
         // Use the API to cancel session
-        const response = await fetch(`/api/sessions/details/${sessionId}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ reason: 'Cancelled by mentor' })
+        await api.delete(`/sessions/details/${sessionId}`, {
+          data: { reason: 'Cancelled by mentor' }
         });
-
-        if (response.ok) {
-          toast.success('Session cancelled successfully');
-          await loadSessions(); // Refresh list
-        } else {
-          toast.error('Failed to cancel session');
-        }
+        toast.success('Session cancelled successfully');
+        await loadSessions(); // Refresh list
       } catch (error) {
         console.error('Cancel session error:', error);
-        toast.error('Error cancelling session');
+        toast.error(error.response?.data?.message || 'Error cancelling session');
       }
     }
   };
@@ -157,46 +137,23 @@ const MentorSessions = () => {
 
   const handleStartSession = async (sessionId) => {
     try {
-      const response = await fetch(`/api/sessions/details/${sessionId}/start`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        toast.success('Session started!');
-        await loadSessions(); // Refresh list
-      } else {
-        toast.error('Failed to start session');
-      }
+      await api.post(`/sessions/details/${sessionId}/start`);
+      toast.success('Session started!');
+      await loadSessions(); // Refresh list
     } catch (error) {
       console.error('Start session error:', error);
-      toast.error('Error starting session');
+      toast.error(error.response?.data?.message || 'Error starting session');
     }
   };
 
   const handleCompleteSession = async (sessionId) => {
     try {
-      const response = await fetch(`/api/sessions/details/${sessionId}/complete`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ notes: 'Session completed by mentor' })
-      });
-
-      if (response.ok) {
-        toast.success('Session completed successfully!');
-        await loadSessions(); // Refresh list
-      } else {
-        toast.error('Failed to complete session');
-      }
+      await api.post(`/sessions/details/${sessionId}/complete`, { notes: 'Session completed by mentor' });
+      toast.success('Session completed successfully!');
+      await loadSessions(); // Refresh list
     } catch (error) {
       console.error('Complete session error:', error);
-      toast.error('Error completing session');
+      toast.error(error.response?.data?.message || 'Error completing session');
     }
   };
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../utils/api';
 import { toast } from 'react-hot-toast';
 
 export default function ResetPassword() {
@@ -21,11 +21,11 @@ export default function ResetPassword() {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.post('/api/auth/reset-password', { token, id, newPassword });
+      const response = await api.post('/auth/reset-password', { token, id, newPassword });
       toast.success(response.data.message || 'Password reset successful!');
       setTimeout(() => navigate('/login'), 2000); // Redirect to login after 2s
     } catch (error) {
-      toast.error('Invalid or expired link. Please try again.');
+      toast.error(error.response?.data?.message || 'Invalid or expired link. Please try again.');
     } finally {
       setLoading(false);
     }
