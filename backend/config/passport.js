@@ -4,11 +4,45 @@ const db = require('./database');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
+// Resolve the Google OAuth callback URL.
+// Priority: explicit GOOGLE_CALLBACK_URL > derived from BACKEND_URL or
+// RENDER_EXTERNAL_URL (auto-injected by Render) > localhost fallback for dev.
+// In production we never want a localhost URL leaking into the redirect_uri,
+// so we ignore any localhost value coming from env when NODE_ENV=production.
+function resolveGoogleCallbackUrl() {
+  const explicit = process.env.GOOGLE_CALLBACK_URL;
+  const isProd = process.env.NODE_ENV === 'production';
+  const looksLikeLocalhost = (u) => /localhost|127\.0\.0\.1/i.test(u || '');
+
+  if (explicit && !(isProd && looksLikeLocalhost(explicit))) {
+    return explicit;
+  }
+
+  const host =
+    process.env.BACKEND_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    (isProd ? null : 'http://localhost:5000');
+
+  if (!host) {
+    console.warn('⚠️  GOOGLE_CALLBACK_URL not set and no backend host could be derived');
+    return undefined;
+  }
+
+  const derived = `${host.replace(/\/+$/, '')}/api/auth/google/callback`;
+  if (isProd && looksLikeLocalhost(explicit)) {
+    console.warn(`⚠️  Ignoring localhost GOOGLE_CALLBACK_URL in production; using ${derived}`);
+  }
+  return derived;
+}
+
+const GOOGLE_CALLBACK_URL = resolveGoogleCallbackUrl();
+console.log('🔐 Google OAuth callback URL:', GOOGLE_CALLBACK_URL);
+
 // Enhanced Google OAuth Strategy with your optimized schema
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.GOOGLE_CALLBACK_URL,
+  callbackURL: GOOGLE_CALLBACK_URL,
   scope: ['profile', 'email'],
   passReqToCallback: true
 }, async (req, accessToken, refreshToken, profile, done) => {
