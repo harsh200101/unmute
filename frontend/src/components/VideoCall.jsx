@@ -50,6 +50,10 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
 
   // Refs for video containers
   const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  // Track the uid currently being played in remoteVideoRef so a participant
+  // swap (uid change) triggers a fresh play() call.
+  const playedRemoteVideoUidRef = useRef(null);
 
   // Timer for meeting duration
   const timerRef = useRef(null);
@@ -883,6 +887,36 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
     }
   }, [timeRemaining, handleMeetingEnd]);
 
+  // Drive remote video playback from React state. This effect fires AFTER
+  // the JSX commit, so the container ref is guaranteed to exist when we
+  // call .play(). Previously this was done via setTimeout + getElementById
+  // which raced with React's render and silently dropped the remote video
+  // for the second joiner (whose user-published events arrive before the
+  // remote container has been committed).
+  const remoteParticipantForEffect = participants.find(p => !p.isLocal);
+  const remoteVideoTrack = remoteParticipantForEffect?.videoTrack || null;
+  const remoteParticipantUid = remoteParticipantForEffect?.uid || null;
+
+  useEffect(() => {
+    const container = remoteVideoRef.current;
+    if (!container || !remoteVideoTrack || !remoteParticipantUid) {
+      playedRemoteVideoUidRef.current = null;
+      return;
+    }
+
+    // Avoid replaying the same track on every render.
+    if (playedRemoteVideoUidRef.current === remoteParticipantUid) return;
+
+    try {
+      remoteVideoTrack.play(container);
+      playedRemoteVideoUidRef.current = remoteParticipantUid;
+      console.log('🎥 Remote video playing via ref for uid:', remoteParticipantUid);
+    } catch (err) {
+      console.error('🎥 Failed to play remote video track:', err);
+      playedRemoteVideoUidRef.current = null;
+    }
+  }, [remoteVideoTrack, remoteParticipantUid]);
+
   // ENHANCED: Main initialization logic with comprehensive state dumps and logging
   const initializeMeeting = useCallback(async () => {
     const debugLog = (message, data = null, level = 'info') => {
@@ -1403,31 +1437,14 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
 
       if (mediaType === 'video' && user.videoTrack) {
         console.log('🎥 Video track published for user:', user.uid);
-        setParticipants(prev => [...prev]); // Force re-render
-
-        setTimeout(() => {
-          const container = document.getElementById(`remote-video-${user.uid}`);
-          console.log('🎥 Playing remote video for user:', user.uid, 'container found:', !!container);
-          if (container) {
-            user.videoTrack.play(container);
-            console.log('🎥 Remote video playing for user:', user.uid);
-            setParticipants(prev => prev.map(p =>
-              p.uid === user.uid.toString() ? { ...p, videoTrack: user.videoTrack } : p
-            ));
-          } else {
-            console.log('🎥 Remote video container not found for user:', user.uid, 'retrying...');
-            setTimeout(() => {
-              const retryContainer = document.getElementById(`remote-video-${user.uid}`);
-              if (retryContainer && user.videoTrack) {
-                user.videoTrack.play(retryContainer);
-                console.log('🎥 Remote video playing for user (retry):', user.uid);
-                setParticipants(prev => prev.map(p =>
-                  p.uid === user.uid.toString() ? { ...p, videoTrack: user.videoTrack } : p
-                ));
-              }
-            }, 1000);
-          }
-        }, 200);
+        // Ensure videoTrack is set on the participant; a dedicated useEffect
+        // below will call .play() once the ref container has mounted. This
+        // removes the previous fragile getElementById+setTimeout race that
+        // silently dropped the remote video for the second joiner when
+        // events fired before React had committed the remote container.
+        setParticipants(prev => prev.map(p =>
+          p.uid === user.uid.toString() ? { ...p, videoTrack: user.videoTrack } : p
+        ));
       }
 
       if (mediaType === 'audio' && user.audioTrack) {
@@ -1462,7 +1479,10 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
     console.log('🎥 User joined:', user.uid, 'Local user:', localId, 'Current participants count:', participants.length);
     if (user.uid) {
       setParticipants(prev => {
-        const existing = prev.find(p => p.uid === user.uid);
+        // user.uid from Agora is typically a number; participant state stores
+        // it as a string via .toString(). Compare against the string form to
+        // avoid adding a duplicate "ghost" participant.
+        const existing = prev.find(p => p.uid === user.uid.toString());
         if (!existing) {
           const newParticipant = {
             uid: user.uid.toString(),
@@ -1996,6 +2016,7 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
           <div className="relative w-full h-full">
             {/* CSS Grid wrapper for Remote Video to ensure it fills space */}
             <div
+              ref={remoteVideoRef}
               id={`remote-video-${remoteParticipant.uid}`}
               className="w-full h-full [&>video]:object-cover [&>video]:w-full [&>video]:h-full"
             ></div>
