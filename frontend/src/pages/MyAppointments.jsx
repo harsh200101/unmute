@@ -49,9 +49,11 @@ const MyAppointments = () => {
     { value: 'chat', label: 'Chat Session' }
   ];
 
-  // Load sessions
-  const loadSessions = async () => {
-    setLoading(true);
+  // Load sessions.
+  // `silent` skips the loading-spinner state so background polls / focus
+  // refreshes do not visually flash the whole page every 10 seconds.
+  const loadSessions = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const filters = {
         page,
@@ -80,9 +82,11 @@ const MyAppointments = () => {
       }
     } catch (error) {
       console.error('Failed to load sessions:', error);
-      toast.error('Failed to load sessions');
+      // Suppress error toast on background polls so a transient network blip
+      // doesn't spam the user every 10 seconds.
+      if (!silent) toast.error('Failed to load sessions');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -97,9 +101,10 @@ const MyAppointments = () => {
     const hasActiveMeetings = sessions.some(session => session.status === 'in_progress');
 
     if (hasActiveMeetings) {
-      // Refresh every 10 seconds when there are active meetings
+      // Refresh every 10 seconds when there are active meetings.
+      // Silent mode keeps the data fresh without flashing the loading spinner.
       const refreshInterval = setInterval(() => {
-        loadSessions();
+        loadSessions({ silent: true });
       }, 10000); // 10 seconds
 
       return () => clearInterval(refreshInterval);
@@ -109,7 +114,7 @@ const MyAppointments = () => {
   // Refresh when window regains focus (user might be returning from meeting)
   useEffect(() => {
     const handleFocus = () => {
-      loadSessions();
+      loadSessions({ silent: true });
     };
 
     window.addEventListener('focus', handleFocus);
