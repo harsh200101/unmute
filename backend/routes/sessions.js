@@ -120,9 +120,11 @@ router.post('/',
 
 
 // GET /api/sessions/my-sessions - Get user's sessions with comprehensive details
+// Listing endpoint hit by dashboard polling (~30s when an active meeting exists),
+// initial loads, focus refreshes, and direct navigation. 600/15min = 40/min headroom.
 router.get('/my-sessions',
   auth,
-  rateLimit(100, 15 * 60 * 1000), // 100 requests per 15 minutes
+  rateLimit(600, 15 * 60 * 1000),
   sessionQueryValidation,
   sessionController.getUserSessions
 );

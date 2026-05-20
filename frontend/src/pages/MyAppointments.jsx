@@ -101,11 +101,14 @@ const MyAppointments = () => {
     const hasActiveMeetings = sessions.some(session => session.status === 'in_progress');
 
     if (hasActiveMeetings) {
-      // Refresh every 10 seconds when there are active meetings.
+      // Refresh every 30 seconds when there are active meetings.
       // Silent mode keeps the data fresh without flashing the loading spinner.
+      // 30s strikes a balance between fresh status updates and not breaching
+      // the backend rate limit for /my-sessions when the user keeps the
+      // dashboard open for long stretches.
       const refreshInterval = setInterval(() => {
         loadSessions({ silent: true });
-      }, 10000); // 10 seconds
+      }, 30000); // 30 seconds
 
       return () => clearInterval(refreshInterval);
     }
