@@ -225,7 +225,18 @@ export const AuthProvider = ({ children }) => {
         refreshToken,
       });
 
-      const { accessToken: newAccessToken, refreshToken: newRefreshToken } = response.data.data;
+      // Backend wraps tokens as { success, data: { tokens: { accessToken, refreshToken } } }.
+      // Accept both shapes defensively so a backend response shape change does not silently
+      // store `undefined` and force a logout loop.
+      const tokenPayload =
+        response.data?.data?.tokens ||
+        response.data?.data ||
+        {};
+      const { accessToken: newAccessToken, refreshToken: newRefreshToken } = tokenPayload;
+
+      if (!newAccessToken) {
+        throw new Error('Refresh response did not contain an access token');
+      }
 
       setTokens(newAccessToken, newRefreshToken);
 
