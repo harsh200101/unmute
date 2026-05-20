@@ -101,7 +101,18 @@ api.interceptors.response.use(
                   refreshToken,
                 });
 
-                const { accessToken: newAccessToken, refreshToken: newRefreshToken } = refreshResponse.data.data;
+                // Backend wraps tokens as { success, data: { tokens: { accessToken, refreshToken } } }.
+                // Accept both shapes defensively so a future backend tweak does not silently
+                // corrupt localStorage and log the user out.
+                const tokenPayload =
+                  refreshResponse.data?.data?.tokens ||
+                  refreshResponse.data?.data ||
+                  {};
+                const { accessToken: newAccessToken, refreshToken: newRefreshToken } = tokenPayload;
+
+                if (!newAccessToken) {
+                  throw new Error('Refresh response did not contain an access token');
+                }
                 
                 // Update stored tokens
                 localStorage.setItem('accessToken', newAccessToken);

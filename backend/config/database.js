@@ -10,7 +10,11 @@ const pool = new Pool({
   min: parseInt(process.env.DB_POOL_MIN, 10) || 5,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
-  acquireTimeoutMillis: 60000,
+  // Cap server-side query duration so a runaway query cannot hold a pool slot
+  // for longer than the HTTP request would care about. Tunable via env.
+  statement_timeout: parseInt(process.env.DB_STATEMENT_TIMEOUT_MS, 10) || 25000,
+  // Cap the time a single query can wait for a free connection on the client.
+  query_timeout: parseInt(process.env.DB_QUERY_TIMEOUT_MS, 10) || 30000,
   keepAlive: true,
   keepAliveInitialDelayMillis: 0,
 });
