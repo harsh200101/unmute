@@ -105,8 +105,23 @@ async function listAuditLog(req, res, next) {
   } catch (e) { next(e); }
 }
 
+async function getStats(_req, res, next) {
+  try {
+    const stats = await svc.getStats();
+    res.json(stats);
+  } catch (e) { next(e); }
+}
+
+async function getRecentActivity(req, res, next) {
+  try {
+    const result = await svc.getRecentActivity({ limit: req.query.limit });
+    res.json(result);
+  } catch (e) { next(e); }
+}
+
 module.exports = {
   listUsers, patchUser,
   listMentorApplications, approveMentor, rejectMentor,
   listActiveMeetings, forceEndMeeting, refundBooking, listAuditLog,
+  getStats, getRecentActivity,
 };

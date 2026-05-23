@@ -197,3 +197,47 @@ describe('Mentor application approval flow', () => {
     expect(audit.rowCount).toBe(1);
   });
 });
+
+describe('GET /api/admin/stats + /recent-activity', () => {
+  test('stats returns user/booking/money breakdowns', async () => {
+    const { access_token } = await createAdminWithToken();
+    await createUserWithToken({ email: 'a@t.com', full_name: 'Alice' });
+    await createUserWithToken({ email: 'b@t.com', full_name: 'Bob' });
+
+    const res = await request(app)
+      .get('/api/admin/stats')
+      .set('Authorization', `Bearer ${access_token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.users.total).toBeGreaterThanOrEqual(2);
+    expect(typeof res.body.bookings.total).toBe('number');
+    expect(typeof res.body.meetings.live_now).toBe('number');
+    expect(res.body.money).toHaveProperty('platform_revenue_paise');
+    expect(typeof res.body.kyc_pending).toBe('number');
+    expect(typeof res.body.mentor_apps_pending).toBe('number');
+  });
+
+  test('recent-activity returns mixed timeline ordered newest first', async () => {
+    const { access_token } = await createAdminWithToken();
+    await createUserWithToken({ email: 'x@t.com', full_name: 'X' });
+    await createUserWithToken({ email: 'y@t.com', full_name: 'Y' });
+
+    const res = await request(app)
+      .get('/api/admin/recent-activity?limit=5')
+      .set('Authorization', `Bearer ${access_token}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    // At least two signups should be in the feed
+    expect(res.body.items.some((it) => it.kind === 'user_signup' && it.title === 'X')).toBe(true);
+    // Ordered newest-first
+    const ts = res.body.items.map((it) => new Date(it.at).getTime());
+    for (let i = 1; i < ts.length; i++) expect(ts[i] <= ts[i - 1]).toBe(true);
+  });
+
+  test('non-admin gets 403 on stats', async () => {
+    const { access_token } = await createUserWithToken();
+    const res = await request(app)
+      .get('/api/admin/stats')
+      .set('Authorization', `Bearer ${access_token}`);
+    expect(res.status).toBe(403);
+  });
+});

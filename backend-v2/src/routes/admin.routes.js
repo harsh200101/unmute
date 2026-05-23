@@ -37,4 +37,8 @@ router.post('/meetings/:id/force-end',              c.forceEndMeeting);
 router.post('/bookings/:id/refund',                 c.refundBooking);
 router.get('/audit-log',                            c.listAuditLog);
 
+// Platform-wide stats + cross-table recent-activity feed.
+router.get('/stats',                                c.getStats);
+router.get('/recent-activity',                      c.getRecentActivity);
+
 module.exports = router;

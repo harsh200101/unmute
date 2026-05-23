@@ -128,6 +128,9 @@ export const admin = {
   hideReview: (id, reason) => api.post(`/admin/reviews/${id}/hide`, { reason }).then((r) => r.data),
   // Audit log
   auditLog: (params) => api.get('/admin/audit-log', { params }).then((r) => r.data),
+  // Stats + recent activity
+  stats:          () => api.get('/admin/stats').then((r) => r.data),
+  recentActivity: (params) => api.get('/admin/recent-activity', { params }).then((r) => r.data),
 };
 
 export const catalog = {

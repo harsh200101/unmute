@@ -368,9 +368,150 @@ function publicUser(u) {
   };
 }
 
+// --- Platform-wide stats + recent activity ---------------------------------
+//
+// One round-trip per "panel" of the admin dashboard. Each query is cheap
+// (COUNT(*) FILTER + small ORDER BY LIMIT) so we can run them all in
+// parallel via Promise.all for a single API hit.
+
+async function getStats() {
+  const [users, bookings, meetings, money, kyc, mentorApps, withdrawals] =
+    await Promise.all([
+      // Users by role
+      query(`
+        SELECT
+          COUNT(*)::int                                                   AS total,
+          COUNT(*) FILTER (WHERE role = 'mentee')::int                    AS mentees,
+          COUNT(*) FILTER (WHERE role = 'mentor')::int                    AS mentors,
+          COUNT(*) FILTER (WHERE role = 'admin'  AND email <> 'system@unmute.internal')::int AS admins,
+          COUNT(*) FILTER (WHERE email_verified_at IS NOT NULL)::int      AS verified,
+          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int AS new_last_7d,
+          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days')::int AS new_last_30d
+        FROM users
+        WHERE email <> 'system@unmute.internal'`),
+      // Bookings by status (lifetime + today)
+      query(`
+        SELECT
+          COUNT(*)::int                                                          AS total,
+          COUNT(*) FILTER (WHERE status = 'scheduled')::int                      AS scheduled,
+          COUNT(*) FILTER (WHERE status = 'in_call')::int                        AS in_call,
+          COUNT(*) FILTER (WHERE status = 'completed')::int                      AS completed,
+          COUNT(*) FILTER (WHERE status = 'no_show')::int                        AS no_show,
+          COUNT(*) FILTER (WHERE status LIKE 'cancelled%')::int                  AS cancelled,
+          COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::int                AS today_created,
+          COUNT(*) FILTER (WHERE slot_start_at >= CURRENT_DATE
+                              AND slot_start_at <  CURRENT_DATE + INTERVAL '1 day')::int AS today_scheduled
+        FROM bookings`),
+      // Meeting durations + live count
+      query(`
+        SELECT
+          COUNT(*) FILTER (WHERE billing_state IN ('active','paused','low_balance_grace'))::int AS live_now,
+          COALESCE(SUM(billed_seconds), 0)::bigint                              AS total_billed_seconds,
+          COUNT(*) FILTER (WHERE finalized_at IS NOT NULL)::int                 AS finalized
+        FROM meetings`),
+      // Money: lifetime platform revenue + mentor payouts + wallet floats
+      query(`
+        SELECT
+          COALESCE((SELECT SUM(amount_paise)::bigint FROM wallet_transactions
+                     WHERE reason = 'platform_fee'      AND direction = 'credit'), 0) AS platform_revenue_paise,
+          COALESCE((SELECT SUM(amount_paise)::bigint FROM wallet_transactions
+                     WHERE reason = 'session_payout'    AND direction = 'credit'), 0) AS mentor_payouts_paise,
+          COALESCE((SELECT SUM(amount_paise)::bigint FROM wallet_transactions
+                     WHERE reason = 'topup_completed'   AND direction = 'credit'), 0) AS topups_paise,
+          COALESCE((SELECT SUM(balance_paise)::bigint  FROM wallets WHERE kind = 'mentee'),  0) AS mentee_wallets_paise,
+          COALESCE((SELECT SUM(balance_paise)::bigint  FROM wallets WHERE kind = 'mentor'),  0) AS mentor_wallets_paise,
+          COALESCE((SELECT SUM(balance_paise)::bigint  FROM wallets WHERE kind = 'platform'),0) AS platform_wallet_paise
+      `),
+      // KYC pending
+      query(`SELECT COUNT(*)::int AS pending FROM mentor_kyc WHERE status = 'pending'`),
+      // Mentor applications pending
+      query(`SELECT COUNT(*)::int AS pending FROM mentor_profiles WHERE verification_status = 'pending'`),
+      // Withdrawals
+      query(`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'pending')::int                       AS pending,
+          COUNT(*) FILTER (WHERE status = 'processing')::int                    AS processing,
+          COALESCE(SUM(amount_paise) FILTER (WHERE status = 'pending'), 0)::bigint AS pending_paise
+        FROM withdrawals`),
+    ]);
+
+  return {
+    users:      users.rows[0],
+    bookings:   bookings.rows[0],
+    meetings:   meetings.rows[0],
+    money:      money.rows[0],
+    kyc_pending:           kyc.rows[0].pending,
+    mentor_apps_pending:   mentorApps.rows[0].pending,
+    withdrawals: withdrawals.rows[0],
+  };
+}
+
+// Recent activity feed — mixes the 4 most useful tables into a single,
+// chronologically-ordered list capped at `limit`. Helps admins see "what's
+// happening RIGHT NOW" without flipping between tabs.
+async function getRecentActivity({ limit = 20 } = {}) {
+  const limitN = Math.min(Math.max(Number(limit) || 20, 1), 100);
+
+  // We union 4 streams. Each stream emits the same {kind, at, title, ...}
+  // shape so the frontend can render a single timeline.
+  const r = await query(`
+    SELECT * FROM (
+      -- New signups
+      SELECT
+        'user_signup'                       AS kind,
+        u.created_at                        AS at,
+        u.id                                AS ref_id,
+        u.full_name                         AS title,
+        u.email                             AS subtitle,
+        u.role                              AS extra
+      FROM users u
+      WHERE u.email <> 'system@unmute.internal'
+      UNION ALL
+      -- New bookings
+      SELECT
+        'booking_created'                   AS kind,
+        b.created_at                        AS at,
+        b.id                                AS ref_id,
+        cu.full_name || ' → ' || mu.full_name AS title,
+        b.status                            AS subtitle,
+        b.uuid::text                        AS extra
+      FROM bookings b
+        JOIN users cu ON cu.id = b.mentee_user_id
+        JOIN users mu ON mu.id = b.mentor_user_id
+      UNION ALL
+      -- Withdrawal requests
+      SELECT
+        'withdrawal'                        AS kind,
+        w.requested_at                      AS at,
+        w.id                                AS ref_id,
+        mu.full_name                        AS title,
+        w.status                            AS subtitle,
+        (w.amount_paise::text)              AS extra
+      FROM withdrawals w
+        JOIN users mu ON mu.id = w.mentor_user_id
+      UNION ALL
+      -- KYC submissions
+      SELECT
+        'kyc_submitted'                     AS kind,
+        k.submitted_at                      AS at,
+        k.id                                AS ref_id,
+        mu.full_name                        AS title,
+        k.status                            AS subtitle,
+        NULL                                AS extra
+      FROM mentor_kyc k
+        JOIN users mu ON mu.id = k.mentor_user_id
+    ) AS feed
+    ORDER BY at DESC
+    LIMIT ${limitN}
+  `);
+
+  return { items: r.rows };
+}
+
 module.exports = {
   listUsers, patchUser,
   listMentorApplications, approveMentor, rejectMentor,
   listActiveMeetings, forceEndMeeting,
   refundBooking, listAuditLog,
+  getStats, getRecentActivity,
 };

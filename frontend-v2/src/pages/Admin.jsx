@@ -10,6 +10,7 @@ import { PageSpinner } from '../components/ui/Spinner.jsx';
 import { formatDate, formatINR, relativeTime } from '../lib/format.js';
 
 const TABS = [
+  { id: 'overview',    label: 'Overview' },
   { id: 'apps',        label: 'Mentor apps' },
   { id: 'kyc',         label: 'KYC' },
   { id: 'withdrawals', label: 'Withdrawals' },
@@ -20,7 +21,7 @@ const TABS = [
 
 export default function Admin() {
   const [params, setParams] = useSearchParams();
-  const active = params.get('tab') || 'apps';
+  const active = params.get('tab') || 'overview';
 
   function setTab(id) {
     const next = new URLSearchParams(params); next.set('tab', id);
@@ -51,6 +52,7 @@ export default function Admin() {
       </div>
 
       <div className="mt-6">
+        {active === 'overview' && <Overview setTab={setTab} />}
         {active === 'apps' && <MentorApps />}
         {active === 'kyc' && <KYC />}
         {active === 'withdrawals' && <Withdrawals />}
@@ -63,6 +65,185 @@ export default function Admin() {
 }
 
 // --- Tabs ---------------------------------------------------------------
+
+// Platform-wide read-only overview. Stats + recent activity + quick-jumps
+// into the action tabs.
+function Overview({ setTab }) {
+  const [stats, setStats] = useState(null);
+  const [activity, setActivity] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      adminApi.stats().catch(() => null),
+      adminApi.recentActivity({ limit: 25 }).catch(() => ({ items: [] })),
+    ]).then(([s, a]) => {
+      if (cancelled) return;
+      setStats(s); setActivity(a.items || []);
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return <PageSpinner />;
+  if (!stats) {
+    return <p className="text-sm text-rose-600">Failed to load stats. Refresh to try again.</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Top: action queue — bright, demands attention */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <ActionTile
+          tone="amber"
+          label="Mentor apps"   value={stats.mentor_apps_pending}
+          sub="awaiting review"
+          onClick={() => setTab('apps')}
+        />
+        <ActionTile
+          tone="amber"
+          label="KYC"           value={stats.kyc_pending}
+          sub="awaiting review"
+          onClick={() => setTab('kyc')}
+        />
+        <ActionTile
+          tone="amber"
+          label="Withdrawals"   value={stats.withdrawals.pending}
+          sub={`₹${(stats.withdrawals.pending_paise / 100).toFixed(0)} pending`}
+          onClick={() => setTab('withdrawals')}
+        />
+        <ActionTile
+          tone={stats.meetings.live_now > 0 ? 'emerald' : 'slate'}
+          label="Live meetings" value={stats.meetings.live_now}
+          sub="happening now"
+          onClick={() => setTab('meetings')}
+        />
+      </div>
+
+      {/* Users + bookings + money rows */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        <Section title="People">
+          <Row label="Total users"      value={stats.users.total} />
+          <Row label="Mentees"          value={stats.users.mentees} />
+          <Row label="Mentors"          value={stats.users.mentors} />
+          <Row label="Verified emails"  value={stats.users.verified} />
+          <Row label="New (last 7 d)"   value={stats.users.new_last_7d} tone="emerald" />
+          <Row label="New (last 30 d)"  value={stats.users.new_last_30d} />
+        </Section>
+        <Section title="Bookings (lifetime)">
+          <Row label="Total"       value={stats.bookings.total} />
+          <Row label="Completed"   value={stats.bookings.completed} tone="emerald" />
+          <Row label="Scheduled"   value={stats.bookings.scheduled} tone="sky" />
+          <Row label="In call"     value={stats.bookings.in_call} />
+          <Row label="No-show"     value={stats.bookings.no_show} tone="amber" />
+          <Row label="Cancelled"   value={stats.bookings.cancelled} tone="rose" />
+          <Row label="Created today"   value={stats.bookings.today_created} />
+          <Row label="Scheduled today" value={stats.bookings.today_scheduled} />
+        </Section>
+        <Section title="Money (lifetime)">
+          <Row label="Platform revenue" value={formatINR(stats.money.platform_revenue_paise)} tone="emerald" />
+          <Row label="Mentor payouts"   value={formatINR(stats.money.mentor_payouts_paise)} />
+          <Row label="Top-ups"          value={formatINR(stats.money.topups_paise)} />
+          <Row label="Mentee wallets"   value={formatINR(stats.money.mentee_wallets_paise)} />
+          <Row label="Mentor wallets"   value={formatINR(stats.money.mentor_wallets_paise)} />
+          <Row label="Platform wallet"  value={formatINR(stats.money.platform_wallet_paise)} />
+          <Row label="Total talk time"  value={fmtSeconds(stats.meetings.total_billed_seconds)} />
+          <Row label="Finalized meets"  value={stats.meetings.finalized} />
+        </Section>
+      </div>
+
+      {/* Recent activity feed */}
+      <Card>
+        <div className="px-5 sm:px-6 pt-5 pb-3 flex items-center justify-between">
+          <h2 className="font-semibold text-slate-900">Recent activity</h2>
+          <span className="text-xs text-slate-500">Last 25 events across the platform</span>
+        </div>
+        {activity.length === 0 ? (
+          <CardBody className="text-sm text-slate-500 text-center py-8">Nothing yet.</CardBody>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {activity.map((it, idx) => <ActivityRow key={`${it.kind}-${it.ref_id}-${idx}`} it={it} />)}
+          </ul>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <Card>
+      <CardHeader><h3 className="font-semibold text-slate-900">{title}</h3></CardHeader>
+      <CardBody className="space-y-1.5">{children}</CardBody>
+    </Card>
+  );
+}
+
+function Row({ label, value, tone = 'slate' }) {
+  const tones = {
+    slate:   'text-slate-900',
+    emerald: 'text-emerald-700',
+    sky:     'text-sky-700',
+    amber:   'text-amber-700',
+    rose:    'text-rose-700',
+  };
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-slate-600">{label}</span>
+      <span className={`font-semibold tabular-nums ${tones[tone] || tones.slate}`}>{value}</span>
+    </div>
+  );
+}
+
+function ActionTile({ label, value, sub, tone = 'slate', onClick }) {
+  const tones = {
+    slate:   'bg-slate-50 border-slate-200 text-slate-700',
+    emerald: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+    amber:   'bg-amber-50 border-amber-200 text-amber-900',
+  };
+  return (
+    <button
+      onClick={onClick}
+      className={`text-left rounded-2xl border p-4 transition-all hover:shadow-elev ${tones[tone] || tones.slate}`}
+    >
+      <p className="text-[11px] uppercase tracking-wide font-semibold opacity-80">{label}</p>
+      <p className="text-2xl sm:text-3xl font-bold tabular-nums mt-1">{value}</p>
+      <p className="text-[11px] opacity-75 mt-0.5">{sub}</p>
+    </button>
+  );
+}
+
+const ACTIVITY_TONES = {
+  user_signup:     { dot: 'bg-sky-500',     label: 'New user' },
+  booking_created: { dot: 'bg-emerald-500', label: 'Booking' },
+  withdrawal:      { dot: 'bg-amber-500',   label: 'Withdrawal' },
+  kyc_submitted:   { dot: 'bg-violet-500',  label: 'KYC' },
+};
+
+function ActivityRow({ it }) {
+  const t = ACTIVITY_TONES[it.kind] || { dot: 'bg-slate-400', label: it.kind };
+  return (
+    <li className="flex items-center gap-3 px-5 sm:px-6 py-3">
+      <span className={`h-2 w-2 rounded-full ${t.dot} shrink-0`} />
+      <span className="text-[11px] uppercase tracking-wide font-semibold text-slate-500 w-20 sm:w-24 shrink-0">
+        {t.label}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-slate-900 truncate">{it.title}</p>
+        <p className="text-xs text-slate-500 truncate">{it.subtitle}</p>
+      </div>
+      <span className="text-xs text-slate-400 shrink-0">{relativeTime(it.at)}</span>
+    </li>
+  );
+}
+
+function fmtSeconds(s) {
+  const n = Number(s || 0);
+  if (n < 60)       return `${n}s`;
+  if (n < 3600)     return `${Math.round(n / 60)} min`;
+  if (n < 86400)    return `${(n / 3600).toFixed(1)} hr`;
+  return `${Math.round(n / 3600)} hr`;
+}
 
 function useDecisionList(loader, deps = []) {
   const [items, setItems] = useState([]);

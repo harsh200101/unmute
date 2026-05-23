@@ -10,6 +10,7 @@ import {
   wallet as walletApi,
   notifications as notifsApi,
   reviews as reviewsApi,
+  admin as adminApi,
 } from '../api/endpoints.js';
 import Card, { CardBody } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -454,16 +455,53 @@ function BecomeMentorCTA() {
 }
 
 function AdminCTA() {
+  const [stats, setStats] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    adminApi.stats().then((s) => { if (!cancelled) setStats(s); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const queue = (stats?.mentor_apps_pending || 0)
+              + (stats?.kyc_pending || 0)
+              + (stats?.withdrawals?.pending || 0);
+
   return (
-    <Card>
+    <Card className="overflow-hidden">
+      <div className="px-5 sm:px-6 py-2 text-xs font-medium bg-slate-900 text-amber-300">
+        ● Admin overview
+      </div>
       <CardBody>
-        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Admin</h2>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Mentor approvals, KYC, refunds, audit log.</p>
-        <Link to="/admin" className="block mt-3">
-          <Button className="w-full">Open admin panel</Button>
+        {stats ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Mini label="Users"    value={stats.users.total} sub={`${stats.users.mentees}m · ${stats.users.mentors}g`} />
+            <Mini label="Bookings" value={stats.bookings.total} sub={`${stats.bookings.completed} done · ${stats.bookings.scheduled} upcoming`} />
+            <Mini label="Live now" value={stats.meetings.live_now} sub="active calls" tone={stats.meetings.live_now > 0 ? 'emerald' : 'slate'} />
+            <Mini label="Queue"    value={queue} sub={`${stats.mentor_apps_pending} apps · ${stats.kyc_pending} KYC · ${stats.withdrawals.pending} payouts`} tone={queue > 0 ? 'amber' : 'slate'} />
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500 dark:text-slate-400">Loading platform stats…</p>
+        )}
+        <Link to="/admin" className="block mt-4">
+          <Button className="w-full">Open admin panel <ArrowRight size={14} /></Button>
         </Link>
       </CardBody>
     </Card>
+  );
+}
+
+function Mini({ label, value, sub, tone = 'slate' }) {
+  const tones = {
+    slate:   'text-slate-900 dark:text-slate-100',
+    emerald: 'text-emerald-700 dark:text-emerald-300',
+    amber:   'text-amber-700 dark:text-amber-300',
+  };
+  return (
+    <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3">
+      <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 font-semibold">{label}</p>
+      <p className={`mt-1 text-xl font-bold tabular-nums ${tones[tone] || tones.slate}`}>{value}</p>
+      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{sub}</p>
+    </div>
   );
 }
 
