@@ -42,11 +42,11 @@ export default function Header() {
   ] : [];
 
   return (
-    <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
+    <header className="glass border-b border-slate-200/70 sticky top-0 z-30">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
-        <Link to="/" className="flex items-center gap-2 shrink-0">
-          <span className="inline-block h-6 w-6 rounded-md bg-slate-900" />
-          <span className="font-semibold text-slate-900">unmute</span>
+        <Link to="/" className="flex items-center gap-2 shrink-0 group">
+          <span className="inline-block h-7 w-7 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 shadow-soft group-hover:shadow-elev transition-shadow" />
+          <span className="font-semibold text-slate-900 tracking-tight">unmute</span>
         </Link>
 
         {/* Desktop nav (≥640px) */}
@@ -150,8 +150,8 @@ function NavItem({ to, children }) {
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `px-3 py-1.5 rounded-md text-sm font-medium ${
-          isActive ? 'text-slate-900 bg-slate-100' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+        `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+          isActive ? 'text-brand-700 bg-brand-50' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
         }`
       }
     >
@@ -165,8 +165,8 @@ function MobileNavItem({ to, children }) {
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `px-3 py-2.5 rounded-lg text-sm font-medium ${
-          isActive ? 'text-slate-900 bg-slate-100' : 'text-slate-700 hover:bg-slate-50'
+        `px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+          isActive ? 'text-brand-700 bg-brand-50' : 'text-slate-700 hover:bg-slate-100'
         }`
       }
     >
