@@ -255,7 +255,7 @@ export default function MeetingRoom() {
 
       <Modal open={endingModal} onClose={() => setEndingModal(false)} title="End the session?">
         <p className="text-sm text-slate-700">
-          You'll be charged for billed time so far (subject to the 5-min minimum if both joined).
+          You'll be charged for billed time so far (subject to the 15-min minimum if both joined).
         </p>
         {billing && (
           <p className="mt-2 text-sm text-slate-700">

@@ -7,7 +7,7 @@
 //      auto-ended). Called from meetingService.recordPresence/endMeeting
 //      and from the cron worker.
 //
-//   2. Finalize a meeting: apply the 5-minute minimum (if both parties
+//   2. Finalize a meeting: apply the 15-minute minimum (if both parties
 //      ever joined), split into mentor (70%) + platform (30%) shares, and
 //      write three wallet_transactions in a single DB transaction. If the
 //      mentee's wallet is short, we charge what's available — the hard
@@ -24,7 +24,10 @@
 const { query, withTransaction } = require('../config/db');
 const { notFound, forbidden, bad } = require('../utils/errors');
 
-const FIVE_MIN_SECONDS = 5 * 60;
+// Minimum billable session length once both parties joined the call.
+// If the call ends before this, the mentee is still charged for this many
+// seconds. Keeps short "hellos" from being unpaid work for the mentor.
+const MIN_BILLABLE_SECONDS = 15 * 60;
 const PLATFORM_FEE_BPS = 3000; // 30% in basis points
 const MENTOR_SHARE_BPS = 10000 - PLATFORM_FEE_BPS;
 const GRACE_PERIOD_SECONDS = 60;       // 60s in-call top-up window when wallet hits 0
@@ -157,7 +160,7 @@ async function startActiveClock(client, meeting_id, when) {
 
 // Finalize a meeting:
 //  - Rolls any active interval into billed.
-//  - Applies 5-min minimum if both parties ever joined (billed_seconds < 300).
+//  - Applies 15-min minimum if both parties ever joined (billed_seconds < MIN_BILLABLE_SECONDS).
 //  - Computes mentor 70% + platform 30%.
 //  - Writes 3 ledger entries in one transaction (mentee debit, mentor credit,
 //    platform credit). If mentee wallet has less than total, we charge what
@@ -179,21 +182,21 @@ async function finalizeMeeting({ meeting_id, end_reason, by_user_id }) {
     const booking = (await client.query(`SELECT * FROM bookings WHERE id = $1 FOR UPDATE`, [m.booking_id])).rows[0];
     const rate = booking.per_minute_paise_snapshot;
 
-    // 3. Apply 5-min minimum if both parties ever joined
+    // 3. Apply 15-min minimum if both parties ever joined
     const bothJoined = !!m.mentor_first_joined_at && !!m.mentee_first_joined_at;
     let billed_seconds = m.billed_seconds;
     let billed_paise = m.billed_paise;
     let applied_minimum = false;
-    if (bothJoined && billed_seconds < FIVE_MIN_SECONDS) {
-      const min_paise = calcPaise({ seconds: FIVE_MIN_SECONDS, per_minute_paise: rate });
+    if (bothJoined && billed_seconds < MIN_BILLABLE_SECONDS) {
+      const min_paise = calcPaise({ seconds: MIN_BILLABLE_SECONDS, per_minute_paise: rate });
       if (min_paise > billed_paise) {
         billed_paise = min_paise;
-        billed_seconds = FIVE_MIN_SECONDS;
+        billed_seconds = MIN_BILLABLE_SECONDS;
         applied_minimum = true;
       }
     }
 
-    // Apply 5-min minimum to billed_paise (already done above) — now settle
+    // Apply 15-min minimum to billed_paise (already done above) — now settle
     // the remaining unsettled portion. settleNow handles mentee/mentor/platform
     // ledger writes idempotently and respects mentee balance.
     let total_paise = 0;
@@ -541,7 +544,9 @@ module.exports = {
   tickBilling,
   billingSnapshot,
   calcPaise,
-  FIVE_MIN_SECONDS,
+  MIN_BILLABLE_SECONDS,
+  // Back-compat export so existing imports keep working — same value as MIN_BILLABLE_SECONDS.
+  FIVE_MIN_SECONDS: MIN_BILLABLE_SECONDS,
   PLATFORM_FEE_BPS,
   MENTOR_SHARE_BPS,
   GRACE_PERIOD_SECONDS,

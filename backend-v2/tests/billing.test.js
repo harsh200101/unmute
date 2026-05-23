@@ -154,7 +154,7 @@ describe('finalizeMeeting', () => {
     expect(bk.rows[0].status).toBe('completed');
   });
 
-  test('5-minute minimum: 90s actual billed → charged for 5 min', async () => {
+  test('15-minute minimum: 90s actual billed → charged for 15 min', async () => {
     const mentor = await makeApprovedMentor('standard'); // ₹10/min
     const mentee = await makeMenteeWithBalance(100000);
     const b = await makeBooking({
@@ -173,8 +173,8 @@ describe('finalizeMeeting', () => {
       .post(`/api/meetings/${b.uuid}/end`)
       .set('Authorization', `Bearer ${mentee.access_token}`)
       .send();
-    expect(r.body.meeting.finalized_total_paise).toBe(5000); // ₹50 (5 min × ₹10)
-    expect(r.body.meeting.billed_seconds).toBe(300);
+    expect(r.body.meeting.finalized_total_paise).toBe(15000); // ₹150 (15 min × ₹10)
+    expect(r.body.meeting.billed_seconds).toBe(900);
   });
 
   test('no-show: nobody joined → 0 charge, no wallet movement', async () => {
@@ -207,9 +207,11 @@ describe('finalizeMeeting', () => {
       mentor_user_id: mentor.user.id, mentee_user_id: mentee.user.id,
       slot_start_at: minutesFromNow(2), per_minute_paise: 1000,
     });
+    // 20 min session so we stay above the 15-min minimum and the test is
+    // about idempotency, not the minimum kicking in.
     await joinBoth({
       booking_uuid: b.uuid, mentor_tok: mentor.access_token, mentee_tok: mentee.access_token,
-      secondsAgo: 600,
+      secondsAgo: 1200,
     });
     await request(app).post(`/api/meetings/${b.uuid}/end`).set('Authorization', `Bearer ${mentor.access_token}`).send();
     const r2 = await request(app).post(`/api/meetings/${b.uuid}/end`).set('Authorization', `Bearer ${mentor.access_token}`).send();
@@ -217,7 +219,7 @@ describe('finalizeMeeting', () => {
     expect(r2.body.meeting.finalized_total_paise).toBeGreaterThan(0);
 
     const mwb = await query(`SELECT balance_paise FROM wallets WHERE user_id=$1 AND kind='mentee'`, [mentee.user.id]);
-    expect(mwb.rows[0].balance_paise).toBe(100000 - 10000); // 10 min × 1000 = 10000 charged
+    expect(mwb.rows[0].balance_paise).toBe(100000 - 20000); // 20 min × 1000 = 20000 charged
   });
 
   test('mentee with insufficient balance is charged what is available (no negative balance)', async () => {
@@ -254,17 +256,18 @@ describe('finalizeMeeting', () => {
       slot_start_at: minutesFromNow(2), per_minute_paise: 1000,
     });
 
-    // Join both, rewind 600s, leave mentee, rejoin, then end
+    // Join both, rewind 1200s (20 min) so we sit above the 15-min minimum,
+    // leave mentee, rejoin, then end.
     await joinBoth({
       booking_uuid: b.uuid, mentor_tok: mentor.access_token, mentee_tok: mentee.access_token,
-      secondsAgo: 600, // 10 minutes
+      secondsAgo: 1200, // 20 minutes
     });
     await request(app).post(`/api/meetings/${b.uuid}/events/left`).set('Authorization', `Bearer ${mentee.access_token}`);
 
-    // After the leave: 10 min got rolled into billed_seconds, state=paused.
+    // After the leave: 20 min got rolled into billed_seconds, state=paused.
     let m = await query(`SELECT billed_seconds, billed_paise, billing_state FROM meetings WHERE booking_id = $1`, [b.id]);
-    expect(m.rows[0].billed_seconds).toBeGreaterThanOrEqual(600);
-    expect(m.rows[0].billed_paise).toBeGreaterThanOrEqual(10000);
+    expect(m.rows[0].billed_seconds).toBeGreaterThanOrEqual(1200);
+    expect(m.rows[0].billed_paise).toBeGreaterThanOrEqual(20000);
     expect(m.rows[0].billing_state).toBe('paused');
 
     // Rejoin and end immediately (negligible extra time)
@@ -272,9 +275,9 @@ describe('finalizeMeeting', () => {
     await request(app).post(`/api/meetings/${b.uuid}/end`).set('Authorization', `Bearer ${mentor.access_token}`).send();
 
     const mwb = await query(`SELECT balance_paise FROM wallets WHERE user_id=$1 AND kind='mentee'`, [mentee.user.id]);
-    // Around ₹100 charged (10 min). Allow small fudge from the brief rejoin window.
-    expect(100000 - mwb.rows[0].balance_paise).toBeGreaterThanOrEqual(10000);
-    expect(100000 - mwb.rows[0].balance_paise).toBeLessThan(11000);
+    // Around ₹200 charged (20 min). Allow small fudge from the brief rejoin window.
+    expect(100000 - mwb.rows[0].balance_paise).toBeGreaterThanOrEqual(20000);
+    expect(100000 - mwb.rows[0].balance_paise).toBeLessThan(21000);
   });
 });
 

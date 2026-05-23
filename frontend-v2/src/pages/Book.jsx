@@ -103,7 +103,7 @@ export default function Book() {
           <p className="text-sm text-slate-500">Book a session with</p>
           <h1 className="text-2xl font-bold text-slate-900">{mentor.user.full_name}</h1>
           <p className="text-sm text-slate-600">
-            {formatPerMinute(mentor.pricing_tier?.per_minute_paise)} · 5-min minimum charge once both joined
+            {formatPerMinute(mentor.pricing_tier?.per_minute_paise)} · 15-min minimum charge once both joined
           </p>
           {Array.isArray(mentor.languages) && mentor.languages.length > 0 && (
             <p className="text-xs text-slate-500 mt-0.5">
@@ -199,7 +199,7 @@ export default function Book() {
             </Field>
             <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3">
               <strong>How billing works:</strong> Booking is free. We only charge while you and your mentor
-              are both on the call — by the minute. 5-min minimum once both join. Sessions cap at 60 minutes.
+              are both on the call — by the minute. 15-min minimum once both join. Sessions cap at 60 minutes.
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setPicked(null)}>Pick another</Button>
