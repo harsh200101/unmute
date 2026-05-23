@@ -173,8 +173,8 @@ export default function BookingDetail() {
         </span>
       </header>
 
-      {/* Join CTA when in window */}
-      {inJoinWindow && booking.status !== 'completed' && booking.status !== 'no_show' && (
+      {/* Join CTA when in window — only live bookings, never cancelled / completed / no-show */}
+      {inJoinWindow && (booking.status === 'scheduled' || booking.status === 'in_call') && (
         <Card className="border-emerald-300">
           <CardBody className="flex items-center justify-between flex-wrap gap-3">
             <div>
