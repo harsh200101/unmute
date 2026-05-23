@@ -13,6 +13,9 @@ const cookieParser = require('cookie-parser');
 
 const env = require('./config/env');
 const { pool } = require('./config/db');
+const authRoutes = require('./routes/auth.routes');
+const meRoutes = require('./routes/me.routes');
+const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
@@ -44,21 +47,20 @@ app.get('/readyz', async (_req, res) => {
   }
 });
 
-// Placeholder for everything else until phase 1 starts adding routes.
+// --- Phase 1: auth + me ---
+app.use('/api/auth', authRoutes);
+app.use('/api/me',   meRoutes);
+
+// Anything else under /api is not implemented yet.
 app.use('/api', (_req, res) => {
-  res.status(501).json({ error: 'Not implemented yet — phase 0 scaffold only' });
+  res.status(501).json({ error: 'Not implemented yet', code: 'not_implemented' });
 });
 
 // 404
-app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
+app.use((_req, res) => res.status(404).json({ error: 'Not found', code: 'not_found' }));
 
 // Error handler (last)
-// eslint-disable-next-line no-unused-vars
-app.use((err, _req, res, _next) => {
-  // eslint-disable-next-line no-console
-  console.error('[server] unhandled', err);
-  res.status(err.status || 500).json({ error: err.message || 'Internal error' });
-});
+app.use(errorHandler);
 
 if (require.main === module) {
   app.listen(env.PORT, () => {
