@@ -97,6 +97,9 @@ export const reviews = {
   getNotes: (booking_uuid) => api.get(`/bookings/${booking_uuid}/notes`).then((r) => r.data),
   putNotes: (booking_uuid, body) => api.put(`/bookings/${booking_uuid}/notes`, body).then((r) => r.data),
   notesHistory: (params) => api.get('/me/notes-history', { params }).then((r) => r.data),
+  // Mentor view: see this mentee's notes from past sessions with any mentor.
+  menteeHistory: (booking_uuid) =>
+    api.get(`/bookings/${booking_uuid}/mentee-history`).then((r) => r.data),
 };
 
 export const admin = {

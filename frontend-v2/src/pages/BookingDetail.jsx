@@ -240,6 +240,17 @@ export default function BookingDetail() {
         </div>
       )}
 
+      {/* Mentor-only context panels: profile, history, notes editor */}
+      {youAreMentor && (
+        <MenteeProfileCard mentee={booking.mentee} />
+      )}
+      {youAreMentor && (
+        <MenteeHistoryCard bookingUuid={booking.uuid} menteeName={booking.mentee.full_name} />
+      )}
+      {youAreMentor && (booking.status === 'completed' || booking.status === 'in_call') && (
+        <SessionNotesEditor bookingUuid={booking.uuid} />
+      )}
+
       {booking.status === 'completed' && (
         <ReviewSection
           booking={booking}
@@ -448,4 +459,242 @@ function StarRow({ value }) {
       ))}
     </div>
   );
+}
+
+// --- Mentor-only sections --------------------------------------------------
+
+function MenteeProfileCard({ mentee }) {
+  // Compute age from DOB if available; everything is optional.
+  const age = calcAge(mentee.date_of_birth);
+  const items = [
+    age !== null && { label: 'Age', value: `${age}` },
+    mentee.gender && { label: 'Gender', value: humanizeGender(mentee.gender) },
+    mentee.marital_status && { label: 'Marital status', value: humanizeMarital(mentee.marital_status) },
+    mentee.location_city && { label: 'City', value: mentee.location_city },
+  ].filter(Boolean);
+
+  return (
+    <Card>
+      <CardHeader>
+        <h2 className="font-semibold text-slate-900">About your mentee</h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Self-reported by {mentee.full_name.split(' ')[0]}. Visible only to you.
+        </p>
+      </CardHeader>
+      <CardBody>
+        {items.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            {mentee.full_name.split(' ')[0]} hasn't filled in any personal details yet.
+          </p>
+        ) : (
+          <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            {items.map((it) => (
+              <div key={it.label}>
+                <dt className="text-xs text-slate-500">{it.label}</dt>
+                <dd className="font-medium text-slate-900 mt-0.5">{it.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function MenteeHistoryCard({ bookingUuid, menteeName }) {
+  const [items, setItems] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    reviewsApi.menteeHistory(bookingUuid)
+      .then((r) => { if (!cancelled) setItems(r.items || []); })
+      .catch(() => { if (!cancelled) setItems([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [bookingUuid]);
+
+  if (loading) {
+    return (
+      <Card><CardBody className="text-sm text-slate-500">Loading {menteeName.split(' ')[0]}'s session history…</CardBody></Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <h2 className="font-semibold text-slate-900">Session history</h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Past completed sessions {menteeName.split(' ')[0]} has had with any mentor on unmute.
+        </p>
+      </CardHeader>
+      <CardBody>
+        {items.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No prior sessions yet. This is {menteeName.split(' ')[0]}'s first booking with us.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {items.map((it) => {
+              const isOpen = !!expanded[it.uuid];
+              return (
+                <li key={it.uuid} className="rounded-lg border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setExpanded((e) => ({ ...e, [it.uuid]: !isOpen }))}
+                    className="w-full text-left px-3 py-2 flex items-center justify-between gap-3 hover:bg-slate-50"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-900 truncate">
+                        with {it.mentor.is_you ? 'you' : it.mentor.full_name}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {formatDate(it.slot_start_at)} · {relativeTime(it.slot_start_at)}
+                      </p>
+                    </div>
+                    <span className="text-xs text-slate-500">{isOpen ? 'Hide' : 'Show notes'}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="border-t border-slate-200 px-3 py-3 space-y-2 text-sm">
+                      <NotesBlock label="Discussion summary" value={it.discussion_summary} />
+                      <NotesBlock label="Key takeaways" value={it.key_takeaways} />
+                      <NotesBlock label="Action items" value={it.action_items} />
+                      <NotesBlock label="Additional notes" value={it.additional_notes} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function NotesBlock({ label, value }) {
+  if (!value) return null;
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">{label}</p>
+      <p className="text-slate-900 whitespace-pre-wrap">{value}</p>
+    </div>
+  );
+}
+
+function SessionNotesEditor({ bookingUuid }) {
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [summary, setSummary] = useState('');
+  const [takeaways, setTakeaways] = useState('');
+  const [actions, setActions] = useState('');
+  const [additional, setAdditional] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    reviewsApi.getNotes(bookingUuid)
+      .then((r) => {
+        if (cancelled) return;
+        const n = r.notes || {};
+        setSummary(n.discussion_summary || '');
+        setTakeaways(n.key_takeaways || '');
+        setActions(n.action_items || '');
+        setAdditional(n.additional_notes || '');
+        setSaved(!!r.notes);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [bookingUuid]);
+
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await reviewsApi.putNotes(bookingUuid, {
+        discussion_summary: summary,
+        key_takeaways: takeaways,
+        action_items: actions,
+        additional_notes: additional,
+      });
+      toast.success('Notes saved');
+      setSaved(true);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to save notes');
+    } finally { setBusy(false); }
+  }
+
+  if (loading) {
+    return <Card><CardBody className="text-sm text-slate-500">Loading session notes…</CardBody></Card>;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <h2 className="font-semibold text-slate-900">Your session notes</h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Private to you and shared with future mentors this person sees on unmute.
+          The mentee can also read them in their own history.
+        </p>
+      </CardHeader>
+      <CardBody>
+        <form onSubmit={save} className="space-y-3 text-sm">
+          <NoteField label="Discussion summary" value={summary} onChange={setSummary}
+            placeholder="What did you talk about today?" />
+          <NoteField label="Key takeaways" value={takeaways} onChange={setTakeaways}
+            placeholder="The most important things to remember from this session." />
+          <NoteField label="Action items" value={actions} onChange={setActions}
+            placeholder="1. ..." />
+          <NoteField label="Additional notes (private clinical)" value={additional} onChange={setAdditional}
+            placeholder="Anything else worth recording." />
+          <div className="flex justify-end items-center gap-3">
+            {saved && <span className="text-xs text-emerald-700">Saved</span>}
+            <Button type="submit" loading={busy}>Save notes</Button>
+          </div>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+function NoteField({ label, value, onChange, placeholder }) {
+  return (
+    <div>
+      <label className="block text-xs uppercase tracking-wide text-slate-500 mb-1">{label}</label>
+      <textarea
+        rows={3}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
+      />
+    </div>
+  );
+}
+
+// --- Formatting helpers ----------------------------------------------------
+
+function calcAge(dob) {
+  if (!dob) return null;
+  const d = new Date(dob);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
+  return age;
+}
+
+function humanizeGender(g) {
+  return { female: 'Female', male: 'Male', non_binary: 'Non-binary',
+           other: 'Other', prefer_not_to_say: 'Prefers not to say' }[g] || g;
+}
+function humanizeMarital(m) {
+  return { single: 'Single', in_relationship: 'In a relationship',
+           married: 'Married', separated: 'Separated', divorced: 'Divorced',
+           widowed: 'Widowed', prefer_not_to_say: 'Prefers not to say' }[m] || m;
 }

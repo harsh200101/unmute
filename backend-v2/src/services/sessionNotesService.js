@@ -108,4 +108,60 @@ function publicNotes(n) {
   };
 }
 
-module.exports = { get, upsert, listMyHistory };
+// Cross-mentor mentee history.
+//
+// When the current mentor opens a booking they have with a mentee, they
+// can see all prior session notes that *any* mentor has written about
+// that same mentee. This gives continuity of care.
+//
+// Authorization: only the mentor of the CURRENT booking can call this.
+// We never expose notes the current mentor isn't entitled to see; the
+// mentee is the unifying party, and they've effectively consented to this
+// continuity model by booking with us.
+async function listMenteeHistoryForMentor({ mentor_user_id, booking_uuid }) {
+  // Verify the caller is the mentor on this booking + resolve the mentee.
+  const cur = (await query(
+    `SELECT id, mentor_user_id, mentee_user_id
+       FROM bookings WHERE uuid = $1`,
+    [booking_uuid]
+  )).rows[0];
+  if (!cur) throw notFound('booking_not_found');
+  if (cur.mentor_user_id !== mentor_user_id) {
+    throw forbidden('mentor_only', 'Only the mentor on this booking can read mentee history');
+  }
+
+  // All past completed bookings for this mentee with notes — exclude the
+  // current booking, sorted newest first.
+  const r = await query(
+    `SELECT sn.*, b.uuid AS booking_uuid, b.slot_start_at, b.slot_end_at,
+            mu.id   AS mentor_id,
+            mu.full_name AS mentor_name,
+            mu.avatar_url AS mentor_avatar
+       FROM session_notes sn
+       JOIN bookings b ON b.id = sn.booking_id
+       JOIN users    mu ON mu.id = b.mentor_user_id
+      WHERE b.mentee_user_id = $1
+        AND b.id <> $2
+        AND b.status = 'completed'
+      ORDER BY b.slot_start_at DESC
+      LIMIT 50`,
+    [cur.mentee_user_id, cur.id]
+  );
+
+  return {
+    items: r.rows.map((row) => ({
+      ...publicNotes(row),
+      booking_uuid: row.booking_uuid,
+      slot_start_at: row.slot_start_at,
+      slot_end_at: row.slot_end_at,
+      mentor: {
+        id: row.mentor_id,
+        full_name: row.mentor_name,
+        avatar_url: row.mentor_avatar,
+        is_you: row.mentor_id === mentor_user_id,
+      },
+    })),
+  };
+}
+
+module.exports = { get, upsert, listMyHistory, listMenteeHistoryForMentor };

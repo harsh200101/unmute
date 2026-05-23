@@ -98,6 +98,19 @@ async function myNotesHistory(req, res, next) {
   } catch (e) { next(e); }
 }
 
+// As a mentor on the given booking, see the mentee's notes from past
+// sessions with any mentor (continuity of care). 403 if caller isn't the
+// mentor on the booking.
+async function menteeHistoryForMentor(req, res, next) {
+  try {
+    const result = await notes.listMenteeHistoryForMentor({
+      mentor_user_id: req.user.id,
+      booking_uuid: req.params.uuid,
+    });
+    res.json(result);
+  } catch (e) { next(e); }
+}
+
 // --- Admin ----------------------------------------------------------------
 
 async function adminHide(req, res, next) {
@@ -113,6 +126,6 @@ async function adminHide(req, res, next) {
 
 module.exports = {
   submit, listForMentor, listMyGiven, listAboutMe,
-  getNotes, putNotes, myNotesHistory,
+  getNotes, putNotes, myNotesHistory, menteeHistoryForMentor,
   adminHide,
 };

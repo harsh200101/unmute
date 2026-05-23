@@ -88,9 +88,10 @@ export default function UserProfile() {
               <select id="gender" value={profile.gender || ''} onChange={(e) => patch('gender', e.target.value || null)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
                 <option value="">—</option>
-                <option value="male">Male</option>
                 <option value="female">Female</option>
+                <option value="male">Male</option>
                 <option value="non_binary">Non-binary</option>
+                <option value="other">Other / self-describe</option>
                 <option value="prefer_not_to_say">Prefer not to say</option>
               </select>
             </Field>
@@ -99,7 +100,9 @@ export default function UserProfile() {
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
                 <option value="">—</option>
                 <option value="single">Single</option>
+                <option value="in_relationship">In a relationship</option>
                 <option value="married">Married</option>
+                <option value="separated">Separated</option>
                 <option value="divorced">Divorced</option>
                 <option value="widowed">Widowed</option>
                 <option value="prefer_not_to_say">Prefer not to say</option>

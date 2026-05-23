@@ -12,8 +12,9 @@ router.get('/mentors/:uuid/reviews', general, c.listForMentor);
 
 // Authenticated: submit + history
 router.post('/bookings/:uuid/review',   general, authJwt, c.submit);
-router.get('/bookings/:uuid/notes',     general, authJwt, c.getNotes);
-router.put('/bookings/:uuid/notes',     general, authJwt, c.putNotes);
+router.get('/bookings/:uuid/notes',           general, authJwt, c.getNotes);
+router.put('/bookings/:uuid/notes',           general, authJwt, c.putNotes);
+router.get('/bookings/:uuid/mentee-history',  general, authJwt, c.menteeHistoryForMentor);
 
 router.get('/me/reviews/given',         general, authJwt, c.listMyGiven);
 router.get('/me/reviews/received',      general, authJwt, c.listAboutMe);
