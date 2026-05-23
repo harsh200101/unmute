@@ -8,6 +8,11 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       port: 5173,
+      // host: true binds 0.0.0.0 so devices on the same LAN can hit this
+      // (e.g. testing a meeting between two laptops). Cookies + the /api
+      // proxy continue to work because the browser still sees a single
+      // origin (the Vite host:5173) for both UI and API.
+      host: true,
       proxy: {
         '/api': {
           target: apiTarget,
