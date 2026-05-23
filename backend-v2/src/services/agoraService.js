@@ -22,6 +22,7 @@ try {
 const TOKEN_TTL_SECONDS = 60 * 60; // 1h — matches max slot length
 
 function isConfigured() {
+  if (env.NODE_ENV === 'test') return false;
   return !!(env.AGORA_APP_ID && env.AGORA_APP_CERTIFICATE && agoraToken);
 }
 

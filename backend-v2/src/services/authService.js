@@ -293,6 +293,7 @@ async function changePassword({ user_id, current_password, new_password }) {
 // --- Google OAuth (feature-gated) -------------------------------------------
 
 function googleConfigured() {
+  if (env.NODE_ENV === 'test') return false;
   return !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REDIRECT_URI);
 }
 

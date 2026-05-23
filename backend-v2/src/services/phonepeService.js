@@ -14,6 +14,9 @@ const env = require('../config/env');
 const { unauthorized, bad } = require('../utils/errors');
 
 function isConfigured() {
+  // In the test environment, always pretend PhonePe isn't configured so
+  // unit tests get deterministic stub responses regardless of what's in .env.
+  if (env.NODE_ENV === 'test') return false;
   return !!(env.PHONEPE_MERCHANT_ID && env.PHONEPE_SALT_KEY && env.PHONEPE_HOST);
 }
 

@@ -32,7 +32,47 @@ async function sendEmail({ to, subject, text, html, attachments }) {
     return { provider: 'stub', id: `stub-${Date.now()}` };
   }
 
-  throw new Error(`Email provider '${env.EMAIL_PROVIDER}' is not wired yet (phase 1.x will add Resend/SMTP)`);
+  if (env.EMAIL_PROVIDER === 'smtp') {
+    return sendViaSmtp({ to, subject, text, html, attachments });
+  }
+
+  throw new Error(`Email provider '${env.EMAIL_PROVIDER}' is not wired yet`);
+}
+
+// --- SMTP (nodemailer) ------------------------------------------------------
+
+let _smtpTransport = null;
+function getSmtpTransport() {
+  if (_smtpTransport) return _smtpTransport;
+  // eslint-disable-next-line global-require
+  const nodemailer = require('nodemailer');
+  _smtpTransport = nodemailer.createTransport({
+    host: env.SMTP_HOST,
+    port: env.SMTP_PORT,
+    secure: env.SMTP_PORT === 465, // false for 587 (STARTTLS), true for 465 (TLS)
+    auth: env.SMTP_USER
+      ? { user: env.SMTP_USER, pass: env.SMTP_PASS }
+      : undefined,
+  });
+  return _smtpTransport;
+}
+
+async function sendViaSmtp({ to, subject, text, html, attachments }) {
+  if (!env.SMTP_HOST) throw new Error('SMTP_HOST is required when EMAIL_PROVIDER=smtp');
+  const t = getSmtpTransport();
+  const info = await t.sendMail({
+    from: env.EMAIL_FROM,
+    to,
+    subject,
+    text,
+    html,
+    attachments: attachments?.map((a) => ({
+      filename: a.filename,
+      content: a.content,
+      contentType: a.contentType,
+    })),
+  });
+  return { provider: 'smtp', id: info.messageId };
 }
 
 // --- Convenience builders ---------------------------------------------------
