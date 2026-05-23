@@ -12,9 +12,9 @@
 //     mentee3@test.com   / Password1!  — ₹0 wallet (test top-up flow)
 //
 //   Approved mentors:
-//     priya@test.com     / Password1!  — Anxiety / Adults · Standard · ₹10/min
-//     arjun@test.com     / Password1!  — Career stress / Working pros · Expert · ₹20/min
-//     meera@test.com     / Password1!  — Couples · Premium · ₹40/min
+//     priya@test.com     / Password1!  — Stress / Adults · Standard · ₹10/min
+//     arjun@test.com     / Password1!  — Burnout / Working pros · Expert · ₹20/min
+//     meera@test.com     / Password1!  — Relationships · Premium · ₹40/min
 //     rohan@test.com     / Password1!  — Teens / LGBTQ+ · Starter · ₹5/min
 //
 //   Admin queue:
@@ -64,11 +64,11 @@ async function main() {
 
     log('creating approved mentors…');
     const priya = await createApprovedMentor({
-      email: 'priya@test.com', name: 'Dr. Priya Sharma',
+      email: 'priya@test.com', name: 'Priya Sharma',
       tier: 'standard',
-      headline: 'Clinical psychologist — anxiety, sleep, and life transitions',
-      bio: 'I help adults work through anxiety, sleep difficulties, and major life changes. ' +
-           'My approach blends CBT with mindfulness — practical tools you can use the same day.',
+      headline: 'Mentor for adults — stress, sleep, and life transitions',
+      bio: 'I help adults work through everyday stress, sleep habits, and major life changes. ' +
+           'Practical, mindfulness-based tools you can use the same day. (Peer mentorship, not licensed care.)',
       years: 7, city: 'Bengaluru',
       tagSlugs: ['anxiety', 'sleep-issues', 'life-transitions', 'adults', 'working-professionals'],
     });
@@ -84,17 +84,17 @@ async function main() {
     const meera = await createApprovedMentor({
       email: 'meera@test.com', name: 'Meera Iyer',
       tier: 'premium',
-      headline: 'Couples therapist — communication and trust repair',
-      bio: 'Licensed marriage and family therapist. I work with couples on ' +
-           'communication patterns, conflict styles, and rebuilding trust after rupture.',
+      headline: 'Relationships mentor — communication and trust',
+      bio: 'I work with couples on communication patterns, conflict styles, and ' +
+           'rebuilding trust after rupture. Peer guidance — not couples therapy.',
       years: 14, city: 'Pune',
       tagSlugs: ['relationships', 'family-conflict', 'couples'],
     });
     const rohan = await createApprovedMentor({
       email: 'rohan@test.com', name: 'Rohan Das',
       tier: 'starter',
-      headline: 'Peer counsellor for teens and young adults',
-      bio: 'Trained peer counsellor focused on identity, self-esteem, and the LGBTQ+ ' +
+      headline: 'Peer mentor for teens and young adults',
+      bio: 'Trained peer mentor focused on identity, self-esteem, and the LGBTQ+ ' +
            'experience. A safe space if you want to think out loud without judgment.',
       years: 3, city: 'Bengaluru',
       tagSlugs: ['identity-and-self', 'self-esteem', 'loneliness', 'teens', 'young-adults', 'lgbtq-plus'],
@@ -114,8 +114,8 @@ async function main() {
        VALUES ($1, $2, $3, $4, $5, $6, 'Asia/Kolkata', 'pending')
        RETURNING *`,
       [pendingApp.id, tierStandard.id,
-       'Counsellor specialising in addiction recovery',
-       'M.Phil in Clinical Psychology. I support clients in early recovery — ' +
+       'Mentor specialising in habit & lifestyle change',
+       'Coach with 6 years of peer-mentoring experience. I support people in early recovery — ' +
        'building daily structure, working through cravings, and repairing relationships.',
        ['en', 'hi'], 6]
     );
@@ -131,8 +131,8 @@ async function main() {
     const pendingKyc = await createApprovedMentor({
       email: 'pending_kyc@test.com', name: 'Naina Reddy',
       tier: 'standard',
-      headline: 'Trauma-informed counsellor',
-      bio: 'EMDR-trained therapist working with adults processing childhood trauma and PTSD.',
+      headline: 'Mentor for processing difficult experiences',
+      bio: 'Trained peer mentor working with adults who want to talk through tough past experiences in a safe, non-clinical space.',
       years: 9, city: 'Hyderabad',
       tagSlugs: ['trauma-ptsd', 'grief-and-loss', 'adults'],
     });
@@ -293,16 +293,24 @@ async function runCanonicalSeed() {
   // We don't re-seed tags — they survive truncation since pricing_tiers and tags
   // weren't included in the TRUNCATE list. Wait — they were? Let me check.
   // Actually they WERE truncated. So re-seed tags too:
+  // KEEP IN SYNC with src/seed.js EXPERTISE list. Mentorship-framed names.
   const EXPERTISE = [
-    ['anxiety','Anxiety'], ['depression','Depression'], ['stress-burnout','Stress & Burnout'],
-    ['relationships','Relationships'], ['self-esteem','Self-Esteem & Confidence'],
-    ['grief-and-loss','Grief & Loss'], ['trauma-ptsd','Trauma & PTSD'],
-    ['anger-management','Anger Management'], ['sleep-issues','Sleep Issues'],
+    ['anxiety','Stress & Worry'], ['depression','Low Mood & Motivation'],
+    ['stress-burnout','Stress & Burnout'], ['relationships','Relationships'],
+    ['self-esteem','Self-Esteem & Confidence'], ['grief-and-loss','Grief & Loss'],
+    ['trauma-ptsd','Processing Difficult Experiences'],
+    ['anger-management','Managing Anger'], ['sleep-issues','Sleep & Rest Habits'],
     ['life-transitions','Life Transitions'], ['career-stress','Career Stress'],
     ['family-conflict','Family Conflict'], ['loneliness','Loneliness & Isolation'],
-    ['mindfulness','Mindfulness & Meditation'], ['addiction-recovery','Addiction & Recovery'],
-    ['identity-and-self','Identity & Self-Discovery'], ['parenting-support','Parenting Support'],
-    ['body-image','Body Image & Eating'],
+    ['mindfulness','Mindfulness & Reflection'],
+    ['addiction-recovery','Habit & Lifestyle Change'],
+    ['identity-and-self','Identity & Self-Discovery'],
+    ['parenting-support','Parenting Guidance'],
+    ['body-image','Body Image & Confidence'],
+    ['career-mentorship','Career Mentorship'],
+    ['communication-skills','Communication Skills'],
+    ['leadership','Leadership & Decision-Making'],
+    ['study-focus','Study, Focus & Productivity'],
   ];
   const AUDIENCE = [
     ['teens','Teens (13-17)'], ['young-adults','Young Adults (18-25)'], ['adults','Adults'],
@@ -425,9 +433,9 @@ function printSummary() {
      mentee3@test.com    ₹0       (test top-up flow)
 
    Approved mentors:
-     priya@test.com     ₹10/min  Anxiety / Sleep
-     arjun@test.com     ₹20/min  Burnout / Career stress
-     meera@test.com     ₹40/min  Couples
+     priya@test.com     ₹10/min  Stress & Worry / Sleep
+     arjun@test.com     ₹20/min  Burnout / Career
+     meera@test.com     ₹40/min  Relationships
      rohan@test.com     ₹5/min   Teens / LGBTQ+
 
    Admin queue:

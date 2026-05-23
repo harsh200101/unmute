@@ -163,11 +163,11 @@ export default function MentorSettings() {
           <CardBody className="space-y-4">
             <Field label="Headline" htmlFor="hd">
               <Input id="hd" value={headline} onChange={(e) => setHeadline(e.target.value)} required
-                placeholder="Licensed counsellor — anxiety, life transitions, self-esteem" />
+                placeholder="Career mentor — transitions, confidence, public speaking" />
             </Field>
             <Field label="Bio" htmlFor="bio">
               <textarea id="bio" rows={6} value={bio} onChange={(e) => setBio(e.target.value)} required
-                placeholder="Share your training, the issues you specialise in, your approach…"
+                placeholder="Share your background, what you mentor on, your approach…"
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40" />
             </Field>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -16,14 +16,14 @@ export default function Landing() {
             {/* Copy */}
             <div className="text-center lg:text-left">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white dark:bg-slate-800 border border-brand-200/70 dark:border-brand-700/40 px-3 py-1 text-xs font-medium text-brand-700 dark:text-brand-300 shadow-soft">
-                <Heart size={12} /> Mental health support, on your terms
+                <Heart size={12} /> Guidance &amp; mentorship, on your terms
               </span>
               <h1 className="mt-5 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-[1.05]">
                 Talk to someone <br className="hidden sm:block" />
                 <span className="bg-gradient-to-br from-brand-600 to-brand-800 dark:from-brand-400 dark:to-brand-200 bg-clip-text text-transparent">who gets it.</span>
               </h1>
               <p className="mt-5 text-base sm:text-lg text-slate-600 dark:text-slate-300 max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                Book a 1-on-1 video session with a verified counsellor or coach.
+                Book a 1-on-1 video session with a verified mentor or guide.
                 Pay only for the minutes you talk — no minimums, no commitment.
               </p>
               <div className="mt-7 flex flex-col sm:flex-row gap-3 sm:gap-3 justify-center lg:justify-start">
@@ -93,7 +93,7 @@ export default function Landing() {
             icon={<Shield />}
             tone="emerald"
             title="Verified mentors, real people"
-            body="Every counsellor and coach passes admin review. Identity, training, and approach — all checked before they appear here."
+            body="Every mentor and guide passes admin review. Identity, experience, and approach — all checked before they appear here."
           />
           <Feature
             icon={<Heart />}
@@ -111,7 +111,7 @@ export default function Landing() {
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Three steps. Sixty seconds.</h2>
           </div>
           <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-            <Step n="1" title="Find someone you vibe with" body="Browse verified counsellors, peer coaches, and therapists. Filter by topic, language, or audience." />
+            <Step n="1" title="Find someone you vibe with" body="Browse verified mentors, coaches, and peer guides. Filter by topic, language, or audience." />
             <Step n="2" title="Pick a time, top up" body="Open slots show in your timezone. Top up your wallet — pay only for the minutes you talk." />
             <Step n="3" title="Show up & talk" body="Join the video room 5 min before. End anytime. Bills stop the second the call ends." />
           </div>

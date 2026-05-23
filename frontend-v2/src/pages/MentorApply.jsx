@@ -157,7 +157,7 @@ export default function MentorApply() {
           <CardBody className="space-y-4">
             <Field label="Headline" htmlFor="headline">
               <Input id="headline" value={headline} onChange={(e) => setHeadline(e.target.value)}
-                placeholder="Licensed counsellor — anxiety, life transitions, and self-esteem" required />
+                placeholder="Career mentor — transitions, confidence, public speaking" required />
             </Field>
             <Field label="Bio" htmlFor="bio">
               <textarea
@@ -165,7 +165,7 @@ export default function MentorApply() {
                 rows={6}
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                placeholder="Share your training, the issues you specialise in, your approach, and who you’ve worked with..."
+                placeholder="Share your background, what you mentor on, your approach, and who you’ve worked with..."
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
                 required
               />

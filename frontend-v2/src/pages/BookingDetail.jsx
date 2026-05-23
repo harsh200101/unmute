@@ -649,7 +649,7 @@ function SessionNotesEditor({ bookingUuid }) {
             placeholder="The most important things to remember from this session." />
           <NoteField label="Action items" value={actions} onChange={setActions}
             placeholder="1. ..." />
-          <NoteField label="Additional notes (private clinical)" value={additional} onChange={setAdditional}
+          <NoteField label="Additional private notes" value={additional} onChange={setAdditional}
             placeholder="Anything else worth recording." />
           <div className="flex justify-end items-center gap-3">
             {saved && <span className="text-xs text-emerald-700">Saved</span>}

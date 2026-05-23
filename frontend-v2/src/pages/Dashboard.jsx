@@ -173,8 +173,8 @@ function HeroGreeting({ user, firstName }) {
           ) : (
             <p className="mt-2 text-white/90 text-sm sm:text-base max-w-md">
               {user.role === 'mentor'
-                ? "Here's how your practice is doing today."
-                : "Whatever you're feeling, you don't have to feel it alone."}
+                ? "Here's how your mentorship is doing today."
+                : "Whatever's on your mind, you don't have to figure it out alone."}
             </p>
           )}
         </div>
@@ -286,7 +286,7 @@ function EmptyNextSessionCard({ role }) {
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-300 max-w-sm mx-auto">
           {role === 'mentor'
             ? 'When a mentee books with you, it will show up here.'
-            : 'Find a counsellor or coach you vibe with. Pay only for the minutes you talk.'}
+            : 'Find a mentor or guide you vibe with. Pay only for the minutes you talk.'}
         </p>
         {role !== 'mentor' && (
           <Link to="/mentors" className="inline-block mt-4">

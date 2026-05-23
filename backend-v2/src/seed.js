@@ -19,27 +19,39 @@ const TIERS = [
   { name: 'premium',  display_name: 'Premium',  per_minute_paise: 4000, sort_order: 4 },
 ];
 
-// unmute = 1:1 mental health support platform.
-// Topics the mentor helps with ↓
+// unmute = 1:1 guidance & mentorship platform.
+//
+// Tag display names are deliberately framed in everyday language — NOT
+// clinical terminology. unmute is not licensed care; mentors are peer
+// guides + coaches, not therapists. Avoid words like "treatment", "patient",
+// "therapy", "diagnosis", "disorder", "PTSD", "depression", "anxiety
+// disorder", etc. in any user-facing copy.
+//
+// Topics the mentor offers guidance on ↓
 const EXPERTISE = [
-  ['anxiety',              'Anxiety'],
-  ['depression',           'Depression'],
+  ['anxiety',              'Stress & Worry'],
+  ['depression',           'Low Mood & Motivation'],
   ['stress-burnout',       'Stress & Burnout'],
   ['relationships',        'Relationships'],
   ['self-esteem',          'Self-Esteem & Confidence'],
   ['grief-and-loss',       'Grief & Loss'],
-  ['trauma-ptsd',          'Trauma & PTSD'],
-  ['anger-management',     'Anger Management'],
-  ['sleep-issues',         'Sleep Issues'],
+  ['trauma-ptsd',          'Processing Difficult Experiences'],
+  ['anger-management',     'Managing Anger'],
+  ['sleep-issues',         'Sleep & Rest Habits'],
   ['life-transitions',     'Life Transitions'],
   ['career-stress',        'Career Stress'],
   ['family-conflict',      'Family Conflict'],
   ['loneliness',           'Loneliness & Isolation'],
-  ['mindfulness',          'Mindfulness & Meditation'],
-  ['addiction-recovery',   'Addiction & Recovery'],
+  ['mindfulness',          'Mindfulness & Reflection'],
+  ['addiction-recovery',   'Habit & Lifestyle Change'],
   ['identity-and-self',    'Identity & Self-Discovery'],
-  ['parenting-support',    'Parenting Support'],
-  ['body-image',           'Body Image & Eating'],
+  ['parenting-support',    'Parenting Guidance'],
+  ['body-image',           'Body Image & Confidence'],
+  // New mentorship-flavored topics
+  ['career-mentorship',    'Career Mentorship'],
+  ['communication-skills', 'Communication Skills'],
+  ['leadership',           'Leadership & Decision-Making'],
+  ['study-focus',          'Study, Focus & Productivity'],
 ];
 
 // Who the mentor primarily serves ↓
