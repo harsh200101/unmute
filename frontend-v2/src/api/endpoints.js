@@ -90,6 +90,43 @@ export const payouts = {
   listMine: (params) => api.get('/payouts/me', { params }).then((r) => r.data),
 };
 
+export const reviews = {
+  given: (params) => api.get('/me/reviews/given', { params }).then((r) => r.data),
+  received: (params) => api.get('/me/reviews/received', { params }).then((r) => r.data),
+  submit: (booking_uuid, body) => api.post(`/bookings/${booking_uuid}/review`, body).then((r) => r.data),
+  getNotes: (booking_uuid) => api.get(`/bookings/${booking_uuid}/notes`).then((r) => r.data),
+  putNotes: (booking_uuid, body) => api.put(`/bookings/${booking_uuid}/notes`, body).then((r) => r.data),
+  notesHistory: (params) => api.get('/me/notes-history', { params }).then((r) => r.data),
+};
+
+export const admin = {
+  // Users
+  listUsers: (params) => api.get('/admin/users', { params }).then((r) => r.data),
+  patchUser: (id, body) => api.patch(`/admin/users/${id}`, body).then((r) => r.data),
+  // Mentor applications
+  listMentorApplications: (params) => api.get('/admin/mentor-applications', { params }).then((r) => r.data),
+  approveMentor: (id, notes) => api.post(`/admin/mentor-applications/${id}/approve`, { notes }).then((r) => r.data),
+  rejectMentor: (id, notes) => api.post(`/admin/mentor-applications/${id}/reject`, { notes }).then((r) => r.data),
+  // KYC
+  listKyc: (params) => api.get('/admin/kyc', { params }).then((r) => r.data),
+  approveKyc: (id, notes) => api.post(`/admin/kyc/${id}/approve`, { notes }).then((r) => r.data),
+  rejectKyc: (id, notes) => api.post(`/admin/kyc/${id}/reject`, { notes }).then((r) => r.data),
+  // Withdrawals
+  listWithdrawals: (params) => api.get('/admin/withdrawals', { params }).then((r) => r.data),
+  processWithdrawal: (id, body) => api.post(`/admin/withdrawals/${id}/process`, body).then((r) => r.data),
+  completeWithdrawal: (id, body) => api.post(`/admin/withdrawals/${id}/complete`, body).then((r) => r.data),
+  failWithdrawal: (id, body) => api.post(`/admin/withdrawals/${id}/fail`, body).then((r) => r.data),
+  // Meetings
+  listActiveMeetings: (params) => api.get('/admin/meetings/active', { params }).then((r) => r.data),
+  forceEndMeeting: (id, reason) => api.post(`/admin/meetings/${id}/force-end`, { reason }).then((r) => r.data),
+  // Refunds
+  refundBooking: (id, body) => api.post(`/admin/bookings/${id}/refund`, body).then((r) => r.data),
+  // Reviews
+  hideReview: (id, reason) => api.post(`/admin/reviews/${id}/hide`, { reason }).then((r) => r.data),
+  // Audit log
+  auditLog: (params) => api.get('/admin/audit-log', { params }).then((r) => r.data),
+};
+
 export const catalog = {
   tags: (kind) => api.get('/tags', { params: kind ? { kind } : {} }).then((r) => r.data),
   tiers: () => api.get('/pricing-tiers').then((r) => r.data),

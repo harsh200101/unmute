@@ -84,7 +84,12 @@ async function adminList({ status, limit = 50, offset = 0 }) {
     params
   );
   return {
-    items: r.rows.map((row) => ({ ...publicWithdrawal(row), email: row.email, full_name: row.full_name })),
+    items: r.rows.map((row) => ({
+      ...publicWithdrawal(row),
+      id: row.id,              // admin needs numeric id to call action endpoints
+      email: row.email,
+      full_name: row.full_name,
+    })),
     limit: limitN, offset: offsetN,
   };
 }

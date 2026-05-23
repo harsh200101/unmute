@@ -32,7 +32,12 @@ export default function Header() {
           {user && (
             <div className="flex items-center gap-2">
               <NotificationBell />
-              <span className="text-sm text-slate-600 hidden sm:inline ml-1">{user.full_name}</span>
+              <Link
+                to="/me/profile"
+                className="text-sm text-slate-600 hover:text-slate-900 hidden sm:inline ml-1"
+              >
+                {user.full_name}
+              </Link>
               <Button variant="secondary" size="sm" onClick={async () => { await logout(); navigate('/'); }}>
                 Sign out
               </Button>
