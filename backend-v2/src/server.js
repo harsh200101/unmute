@@ -23,6 +23,7 @@ const bookingRoutes = require('./routes/bookings.routes');
 const walletRoutes = require('./routes/wallet.routes');
 const paymentsRoutes = require('./routes/payments.routes');
 const webhookRoutes = require('./routes/webhooks.routes');
+const meetingRoutes = require('./routes/meetings.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -74,6 +75,9 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/wallet',   walletRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/webhooks', webhookRoutes);
+
+// --- Phase 6: meeting room ---
+app.use('/api/meetings', meetingRoutes);
 
 // Anything else under /api is not implemented yet.
 app.use('/api', (_req, res) => {
