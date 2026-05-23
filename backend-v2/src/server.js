@@ -94,6 +94,9 @@ if (require.main === module) {
   app.listen(env.PORT, () => {
     // eslint-disable-next-line no-console
     console.log(`[server] listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
+    // Start the background billing scheduler (no-op in test env)
+    // eslint-disable-next-line global-require
+    require('./jobs/scheduler').start();
   });
 }
 

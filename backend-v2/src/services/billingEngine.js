@@ -27,6 +27,8 @@ const { notFound, forbidden, bad } = require('../utils/errors');
 const FIVE_MIN_SECONDS = 5 * 60;
 const PLATFORM_FEE_BPS = 3000; // 30% in basis points
 const MENTOR_SHARE_BPS = 10000 - PLATFORM_FEE_BPS;
+const GRACE_PERIOD_SECONDS = 60;       // 60s in-call top-up window when wallet hits 0
+const WARNING_THRESHOLD_SECONDS = 300;  // 5 min low-balance warning
 
 // --- helpers ----------------------------------------------------------------
 
@@ -46,6 +48,67 @@ async function getWalletIdLocked(client, user_id, kind) {
 async function getPlatformWalletIdLocked(client) {
   const r = await client.query(`SELECT id FROM wallets WHERE kind = 'platform' LIMIT 1 FOR UPDATE`);
   return r.rows[0]?.id || null;
+}
+
+// Settle the currently-unsettled portion of a meeting's billed_paise.
+// Used both mid-call (when entering grace) and at finalize. Idempotency keys
+// include settled_paise so each cycle gets a distinct key.
+//
+// Returns { settled_now, mentor_share, platform_share } — the amounts moved
+// in THIS call (zero if nothing to settle, or if mentee wallet is empty).
+async function settleNow(client, meeting_id, { description } = {}) {
+  const m = (await client.query(`SELECT * FROM meetings WHERE id = $1 FOR UPDATE`, [meeting_id])).rows[0];
+  const unsettled = m.billed_paise - m.settled_paise;
+  if (unsettled <= 0) return { settled_now: 0, mentor_share: 0, platform_share: 0 };
+
+  const booking = (await client.query(`SELECT * FROM bookings WHERE id = $1`, [m.booking_id])).rows[0];
+  const menteeWalletId = await getWalletIdLocked(client, booking.mentee_user_id, 'mentee');
+  if (!menteeWalletId) return { settled_now: 0, mentor_share: 0, platform_share: 0 };
+
+  const bal = (await client.query(`SELECT balance_paise FROM wallets WHERE id = $1`, [menteeWalletId])).rows[0].balance_paise;
+  const debit = Math.min(bal, unsettled);
+  if (debit === 0) return { settled_now: 0, mentor_share: 0, platform_share: 0 };
+
+  const cycleId = m.settled_paise; // distinct per settlement cycle
+
+  await client.query(
+    `INSERT INTO wallet_transactions
+       (wallet_id, direction, amount_paise, reason,
+        reference_table, reference_id, idempotency_key, description, balance_after_paise)
+     VALUES ($1, 'debit', $2, 'session_charge', 'meetings', $3, $4, $5, 0)`,
+    [menteeWalletId, debit, meeting_id, `meeting:${m.uuid}:charge:${cycleId}`,
+     description || `Session charge cycle for meeting ${m.uuid}`]
+  );
+
+  const mentor_share = Math.floor((debit * MENTOR_SHARE_BPS) / 10000);
+  const platform_share = debit - mentor_share;
+
+  const mentorWalletId = await getWalletIdLocked(client, booking.mentor_user_id, 'mentor');
+  if (mentorWalletId && mentor_share > 0) {
+    await client.query(
+      `INSERT INTO wallet_transactions
+         (wallet_id, direction, amount_paise, reason,
+          reference_table, reference_id, idempotency_key, description, balance_after_paise)
+       VALUES ($1, 'credit', $2, 'session_payout', 'meetings', $3, $4, $5, 0)`,
+      [mentorWalletId, mentor_share, meeting_id, `meeting:${m.uuid}:payout:${cycleId}`,
+       `Session earnings cycle for meeting ${m.uuid}`]
+    );
+  }
+
+  const platformWalletId = await getPlatformWalletIdLocked(client);
+  if (platformWalletId && platform_share > 0) {
+    await client.query(
+      `INSERT INTO wallet_transactions
+         (wallet_id, direction, amount_paise, reason,
+          reference_table, reference_id, idempotency_key, description, balance_after_paise)
+       VALUES ($1, 'credit', $2, 'platform_fee', 'meetings', $3, $4, $5, 0)`,
+      [platformWalletId, platform_share, meeting_id, `meeting:${m.uuid}:platform_fee:${cycleId}`,
+       `Platform fee cycle for meeting ${m.uuid}`]
+    );
+  }
+
+  await client.query(`UPDATE meetings SET settled_paise = settled_paise + $1 WHERE id = $2`, [debit, meeting_id]);
+  return { settled_now: debit, mentor_share, platform_share };
 }
 
 // Roll any currently-running active interval into the meeting's accumulator.
@@ -130,65 +193,39 @@ async function finalizeMeeting({ meeting_id, end_reason, by_user_id }) {
       }
     }
 
-    // No-show / never-billed path
-    let total_paise = bothJoined ? billed_paise : 0;
+    // Apply 5-min minimum to billed_paise (already done above) — now settle
+    // the remaining unsettled portion. settleNow handles mentee/mentor/platform
+    // ledger writes idempotently and respects mentee balance.
+    let total_paise = 0;
     let mentor_paise = 0;
     let platform_paise = 0;
 
+    if (bothJoined && billed_paise > m.settled_paise) {
+      // Ensure billed_paise in DB reflects post-minimum value before we settle
+      await client.query(
+        `UPDATE meetings SET billed_paise = $1, billed_seconds = $2 WHERE id = $3`,
+        [billed_paise, billed_seconds, meeting_id]
+      );
+      await settleNow(client, meeting_id, { description: `Final session settle for meeting ${m.uuid}` });
+    }
+
+    // Read back the totals from the meeting + ledger
+    const after = (await client.query(`SELECT settled_paise FROM meetings WHERE id = $1`, [meeting_id])).rows[0];
+    total_paise = after.settled_paise;
+
     if (total_paise > 0) {
-      // 4. Try to debit mentee wallet by total_paise. If short, debit only
-      //    what's available (deficit absorbed by platform — the hard-cutoff
-      //    cron should prevent this case in practice).
-      const menteeWalletId = await getWalletIdLocked(client, booking.mentee_user_id, 'mentee');
-      if (!menteeWalletId) throw new Error('Mentee wallet missing');
-      const menteeBal = (await client.query(`SELECT balance_paise FROM wallets WHERE id = $1`, [menteeWalletId])).rows[0].balance_paise;
-      const debit = Math.min(menteeBal, total_paise);
-
-      mentor_paise = Math.floor((total_paise * MENTOR_SHARE_BPS) / 10000);
+      const mentorAggr = await client.query(
+        `SELECT COALESCE(SUM(wt.amount_paise), 0)::int AS sum
+           FROM wallet_transactions wt
+           JOIN wallets w ON w.id = wt.wallet_id
+          WHERE wt.reference_table = 'meetings'
+            AND wt.reference_id = $1
+            AND wt.direction = 'credit'
+            AND w.kind = 'mentor'`,
+        [meeting_id]
+      );
+      mentor_paise = mentorAggr.rows[0].sum;
       platform_paise = total_paise - mentor_paise;
-
-      // If we couldn't debit the full total, scale shares down proportionally
-      // so the books balance. mentor share keeps 70%; platform absorbs the gap.
-      const adjusted_mentor = Math.floor((debit * MENTOR_SHARE_BPS) / 10000);
-      const adjusted_platform = debit - adjusted_mentor;
-
-      // (a) debit mentee `debit` paise
-      if (debit > 0) {
-        await client.query(
-          `INSERT INTO wallet_transactions
-             (wallet_id, direction, amount_paise, reason,
-              reference_table, reference_id, idempotency_key, description, balance_after_paise)
-           VALUES ($1, 'debit', $2, 'session_charge', 'meetings', $3, $4, $5, 0)`,
-          [menteeWalletId, debit, m.id, `meeting:${m.uuid}:charge`, `Session charge for meeting ${m.uuid}`]
-        );
-      }
-
-      // (b) credit mentor wallet adjusted_mentor paise
-      const mentorWalletId = await getWalletIdLocked(client, booking.mentor_user_id, 'mentor');
-      if (mentorWalletId && adjusted_mentor > 0) {
-        await client.query(
-          `INSERT INTO wallet_transactions
-             (wallet_id, direction, amount_paise, reason,
-              reference_table, reference_id, idempotency_key, description, balance_after_paise)
-           VALUES ($1, 'credit', $2, 'session_payout', 'meetings', $3, $4, $5, 0)`,
-          [mentorWalletId, adjusted_mentor, m.id, `meeting:${m.uuid}:payout`, `Session earnings for meeting ${m.uuid}`]
-        );
-      }
-      mentor_paise = adjusted_mentor;
-
-      // (c) credit platform wallet adjusted_platform paise
-      const platformWalletId = await getPlatformWalletIdLocked(client);
-      if (platformWalletId && adjusted_platform > 0) {
-        await client.query(
-          `INSERT INTO wallet_transactions
-             (wallet_id, direction, amount_paise, reason,
-              reference_table, reference_id, idempotency_key, description, balance_after_paise)
-           VALUES ($1, 'credit', $2, 'platform_fee', 'meetings', $3, $4, $5, 0)`,
-          [platformWalletId, adjusted_platform, m.id, `meeting:${m.uuid}:platform_fee`, `Platform fee for meeting ${m.uuid}`]
-        );
-      }
-      platform_paise = adjusted_platform;
-      total_paise = debit; // what we actually billed
     }
 
     // 5. Write final state on meeting
@@ -291,7 +328,152 @@ async function billingSnapshot({ meeting_id, user_id }) {
     billed_paise,
     mentee_balance_paise,
     est_seconds_remaining,
+    low_balance_warned_at: m.low_balance_warned_at,
+    grace_started_at: m.grace_started_at,
+    grace_seconds_remaining: m.grace_started_at
+      ? Math.max(0, GRACE_PERIOD_SECONDS - Math.floor((now - new Date(m.grace_started_at).getTime()) / 1000))
+      : null,
   };
+}
+
+// --- Phase 8: warn + grace transitions --------------------------------------
+//
+// `tickBilling` is the periodic worker that drives low-balance UX. Runs every
+// ~5–10 seconds. Three jobs:
+//
+//   1. For each `active` meeting where mentee balance < 5 min of runway AND
+//      we haven't warned yet → set low_balance_warned_at, emit warning event.
+//
+//   2. For each `active` meeting where balance has hit 0 → roll the open
+//      interval into billed_*, transition to `low_balance_grace`, set
+//      grace_started_at = now, emit grace_start event.
+//
+//   3. For each `low_balance_grace` meeting:
+//        - If balance > 0 (user topped up) → back to `active`, emit grace_end.
+//        - If grace_started_at older than GRACE_PERIOD_SECONDS → finalize with
+//          end_reason='balance_depleted'.
+
+async function tickBilling({ now = new Date() } = {}) {
+  const result = { warned: [], entered_grace: [], exited_grace: [], finalized: [] };
+
+  // 1. Warnings
+  const warnCandidates = await query(
+    `SELECT m.id,
+            (SELECT balance_paise FROM wallets WHERE user_id = b.mentee_user_id AND kind = 'mentee') AS bal,
+            m.billed_paise, m.billing_active_since, b.per_minute_paise_snapshot
+       FROM meetings m
+       JOIN bookings b ON b.id = m.booking_id
+      WHERE m.billing_state = 'active'
+        AND m.low_balance_warned_at IS NULL`
+  );
+  for (const row of warnCandidates.rows) {
+    const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(row.billing_active_since).getTime()) / 1000));
+    const projected = row.billed_paise + calcPaise({ seconds: elapsed, per_minute_paise: row.per_minute_paise_snapshot });
+    const remaining_paise = (row.bal || 0) - projected;
+    const remaining_sec = row.per_minute_paise_snapshot > 0
+      ? Math.floor((remaining_paise * 60) / row.per_minute_paise_snapshot)
+      : null;
+    if (remaining_sec !== null && remaining_sec <= WARNING_THRESHOLD_SECONDS && remaining_sec > 0) {
+      try {
+        await withTransaction(async (client) => {
+          await client.query(`UPDATE meetings SET low_balance_warned_at = $1 WHERE id = $2 AND low_balance_warned_at IS NULL`, [now, row.id]);
+          await client.query(
+            `INSERT INTO meeting_events (meeting_id, kind, payload)
+             VALUES ($1, 'low_balance_warning', $2)`,
+            [row.id, { ts: now.toISOString(), remaining_seconds: remaining_sec, remaining_paise }]
+          );
+        });
+        result.warned.push(row.id);
+      } catch (e) { /* keep ticking */ }
+    }
+  }
+
+  // 2. Active → grace (when depleted)
+  const depleteCandidates = await query(
+    `SELECT m.id,
+            (SELECT balance_paise FROM wallets WHERE user_id = b.mentee_user_id AND kind = 'mentee') AS bal,
+            m.billed_paise, m.billing_active_since, b.per_minute_paise_snapshot
+       FROM meetings m
+       JOIN bookings b ON b.id = m.booking_id
+      WHERE m.billing_state = 'active'`
+  );
+  for (const row of depleteCandidates.rows) {
+    const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(row.billing_active_since).getTime()) / 1000));
+    const projected = row.billed_paise + calcPaise({ seconds: elapsed, per_minute_paise: row.per_minute_paise_snapshot });
+    if (projected >= (row.bal || 0)) {
+      try {
+        await withTransaction(async (client) => {
+          // Roll the active interval into billed_*, then settle the unsettled
+          // portion (drains mentee wallet to 0), then transition to grace.
+          await rollIntoBilled(client, row.id);
+          await settleNow(client, row.id, { description: 'Mid-call settlement (entering grace)' });
+          await client.query(
+            `UPDATE meetings
+                SET billing_state = 'low_balance_grace',
+                    grace_started_at = $1,
+                    billing_active_since = NULL
+              WHERE id = $2 AND billing_state = 'active'`,
+            [now, row.id]
+          );
+          await client.query(
+            `INSERT INTO meeting_events (meeting_id, kind, payload)
+             VALUES ($1, 'grace_start', $2)`,
+            [row.id, { ts: now.toISOString(), grace_seconds: GRACE_PERIOD_SECONDS }]
+          );
+        });
+        result.entered_grace.push(row.id);
+      } catch (e) { /* keep ticking */ }
+    }
+  }
+
+  // 3. Grace handling. Mid-call settlement (in section 2) drained the wallet
+  // to 0, so `bal > 0` now correctly means a top-up has arrived.
+  const graceMeetings = await query(
+    `SELECT m.id, m.grace_started_at, m.mentor_present, m.mentee_present,
+            (SELECT balance_paise FROM wallets WHERE user_id = b.mentee_user_id AND kind = 'mentee') AS bal
+       FROM meetings m
+       JOIN bookings b ON b.id = m.booking_id
+      WHERE m.billing_state = 'low_balance_grace'`
+  );
+  for (const row of graceMeetings.rows) {
+    const bal = row.bal || 0;
+    const graceAge = Math.floor((now.getTime() - new Date(row.grace_started_at).getTime()) / 1000);
+
+    if (bal > 0) {
+      // Recovery: topup arrived during grace
+      try {
+        await withTransaction(async (client) => {
+          // Only re-arm the clock if BOTH parties are still present
+          const bothPresent = row.mentor_present && row.mentee_present;
+          await client.query(
+            `UPDATE meetings
+                SET billing_state = $1,
+                    grace_started_at = NULL,
+                    billing_active_since = CASE WHEN $1 = 'active' THEN $2::timestamptz ELSE NULL END
+              WHERE id = $3 AND billing_state = 'low_balance_grace'`,
+            [bothPresent ? 'active' : 'paused', now, row.id]
+          );
+          await client.query(
+            `INSERT INTO meeting_events (meeting_id, kind, payload)
+             VALUES ($1, 'grace_end', $2)`,
+            [row.id, { ts: now.toISOString(), reason: 'topup_recovered', new_balance_paise: bal }]
+          );
+        });
+        result.exited_grace.push(row.id);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('[billing] grace recovery failed:', e.message);
+      }
+    } else if (graceAge >= GRACE_PERIOD_SECONDS) {
+      // Grace expired with no topup → finalize
+      try {
+        await finalizeMeeting({ meeting_id: row.id, end_reason: 'balance_depleted' });
+        result.finalized.push(row.id);
+      } catch (e) { /* keep ticking */ }
+    }
+  }
+
+  return result;
 }
 
 // --- Cron workers -----------------------------------------------------------
@@ -356,9 +538,12 @@ module.exports = {
   finalizeMeeting,
   finalizeExpiredMeetings,
   enforceBalanceLimits,
+  tickBilling,
   billingSnapshot,
   calcPaise,
   FIVE_MIN_SECONDS,
   PLATFORM_FEE_BPS,
   MENTOR_SHARE_BPS,
+  GRACE_PERIOD_SECONDS,
+  WARNING_THRESHOLD_SECONDS,
 };
