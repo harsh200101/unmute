@@ -4,38 +4,52 @@ const { query, withTransaction } = require('../config/db');
 const { bad, conflict, notFound, forbidden } = require('../utils/errors');
 const notify = require('./notificationService');
 
-// Indian PAN: 5 uppercase letters + 4 digits + 1 uppercase letter (e.g. ABCDE1234F)
+// Aadhaar: exactly 12 digits. This is the only required identity proof.
+const AADHAAR_RE = /^[0-9]{12}$/;
+// PAN: 5 uppercase letters + 4 digits + 1 uppercase letter (e.g. ABCDE1234F). Optional.
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
-// IFSC: 4 letters + '0' + 6 alphanumeric (e.g. HDFC0001234)
+// IFSC: 4 letters + '0' + 6 alphanumeric (e.g. HDFC0001234). Optional.
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-// Bank account: 9–18 digits (covers most Indian bank account formats)
+// Bank account: 9–18 digits. Optional at submit time, required before withdrawal.
 const ACCOUNT_RE = /^[0-9]{9,18}$/;
 
+function maskAadhaar(aadhaar) {
+  if (!aadhaar || aadhaar.length < 4) return aadhaar;
+  return 'X'.repeat(aadhaar.length - 4) + aadhaar.slice(-4);
+}
 function maskPan(pan) {
-  if (!pan || pan.length < 10) return pan;
+  if (!pan) return null;
+  if (pan.length < 10) return pan;
   return pan.slice(0, 2) + 'XXXX' + pan.slice(6);
 }
 function maskAccount(acc) {
-  if (!acc || acc.length < 4) return acc;
+  if (!acc) return null;
+  if (acc.length < 4) return acc;
   return 'X'.repeat(acc.length - 4) + acc.slice(-4);
 }
 
 // --- Mentor: submit / resubmit ---------------------------------------------
 
 async function submit({ user_id, payload }) {
-  const pan = (payload?.pan_number || '').toUpperCase().trim();
-  const ifsc = (payload?.bank_ifsc || '').toUpperCase().trim();
-  const account = (payload?.bank_account_number || '').trim();
-  const full_name = (payload?.full_name_as_per_pan || '').trim();
-  const holder = (payload?.bank_account_holder || '').trim();
+  // Aadhaar is the only required field. PAN + bank info are accepted at
+  // submit time if the mentor wants to fill them, but they can also be added
+  // later (before the first withdrawal).
+  const aadhaar    = (payload?.aadhaar_number    || '').replace(/\s+/g, '');
+  const pan        = (payload?.pan_number        || '').toUpperCase().trim();
+  const ifsc       = (payload?.bank_ifsc         || '').toUpperCase().trim();
+  const account    = (payload?.bank_account_number || '').trim();
+  const full_name  = (payload?.full_name_as_per_pan || '').trim();
+  const holder     = (payload?.bank_account_holder || '').trim();
 
-  if (!PAN_RE.test(pan)) throw bad('invalid_pan', 'PAN must match ABCDE1234F format');
-  if (!IFSC_RE.test(ifsc)) throw bad('invalid_ifsc', 'IFSC must match HDFC0001234 format');
-  if (!ACCOUNT_RE.test(account)) throw bad('invalid_account', 'Bank account must be 9–18 digits');
-  if (!full_name) throw bad('missing_pan_name', 'full_name_as_per_pan is required');
-  if (!holder) throw bad('missing_holder', 'bank_account_holder is required');
+  if (!AADHAAR_RE.test(aadhaar)) {
+    throw bad('invalid_aadhaar', 'Aadhaar must be exactly 12 digits');
+  }
+  // Each optional field: validate format only if supplied.
+  if (pan     && !PAN_RE.test(pan))         throw bad('invalid_pan',     'PAN must match ABCDE1234F format');
+  if (ifsc    && !IFSC_RE.test(ifsc))       throw bad('invalid_ifsc',    'IFSC must match HDFC0001234 format');
+  if (account && !ACCOUNT_RE.test(account)) throw bad('invalid_account', 'Bank account must be 9–18 digits');
 
-  // Caller must be a mentor (verified)
+  // Caller must be a mentor.
   const u = await query(`SELECT role FROM users WHERE id = $1`, [user_id]);
   if (!u.rows[0] || u.rows[0].role !== 'mentor') {
     throw forbidden('mentor_only', 'Only mentors can submit KYC');
@@ -56,29 +70,31 @@ async function submit({ user_id, payload }) {
       // 'rejected' → allow resubmit (UPDATE)
       const r = await client.query(
         `UPDATE mentor_kyc
-            SET pan_number = $1,
-                full_name_as_per_pan = $2,
-                bank_account_number = $3,
-                bank_ifsc = $4,
-                bank_account_holder = $5,
+            SET aadhaar_number = $1,
+                pan_number = NULLIF($2, ''),
+                full_name_as_per_pan = NULLIF($3, ''),
+                bank_account_number = NULLIF($4, ''),
+                bank_ifsc = NULLIF($5, ''),
+                bank_account_holder = NULLIF($6, ''),
                 status = 'pending',
                 reviewer_user_id = NULL,
                 reviewer_notes = NULL,
                 submitted_at = NOW(),
                 reviewed_at = NULL
-          WHERE id = $6
+          WHERE id = $7
           RETURNING *`,
-        [pan, full_name, account, ifsc, holder, existing.rows[0].id]
+        [aadhaar, pan, full_name, account, ifsc, holder, existing.rows[0].id]
       );
       return publicKyc(r.rows[0]);
     }
     const r = await client.query(
       `INSERT INTO mentor_kyc
-         (mentor_user_id, pan_number, full_name_as_per_pan,
+         (mentor_user_id, aadhaar_number, pan_number, full_name_as_per_pan,
           bank_account_number, bank_ifsc, bank_account_holder)
-       VALUES ($1, $2, $3, $4, $5, $6)
+       VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''),
+               NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''))
        RETURNING *`,
-      [user_id, pan, full_name, account, ifsc, holder]
+      [user_id, aadhaar, pan, full_name, account, ifsc, holder]
     );
     return publicKyc(r.rows[0]);
   });
@@ -167,11 +183,13 @@ function publicKyc(k) {
   return {
     id: k.id,
     mentor_user_id: k.mentor_user_id,
+    aadhaar_number_masked: maskAadhaar(k.aadhaar_number),
     pan_number_masked: maskPan(k.pan_number),
     full_name_as_per_pan: k.full_name_as_per_pan,
     bank_account_number_masked: maskAccount(k.bank_account_number),
     bank_ifsc: k.bank_ifsc,
     bank_account_holder: k.bank_account_holder,
+    has_bank_details: !!(k.bank_account_number && k.bank_ifsc && k.bank_account_holder),
     status: k.status,
     reviewer_notes: k.reviewer_notes,
     submitted_at: k.submitted_at,

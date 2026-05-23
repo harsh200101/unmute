@@ -22,12 +22,10 @@ async function makeMentor() {
   return { user, access_token };
 }
 
+// Aadhaar is the only required field now. PAN + bank are still accepted
+// but optional; mentors can fill them later.
 const VALID = {
-  pan_number: 'ABCDE1234F',
-  full_name_as_per_pan: 'Test User',
-  bank_account_number: '123456789012',
-  bank_ifsc: 'HDFC0001234',
-  bank_account_holder: 'Test User',
+  aadhaar_number: '123412341234',
 };
 
 beforeEach(async () => {
@@ -40,7 +38,7 @@ afterAll(async () => {
 });
 
 describe('POST /api/mentors/kyc', () => {
-  test('happy path: submits KYC in pending state with masked fields', async () => {
+  test('happy path: aadhaar-only submission lands in pending with masked aadhaar', async () => {
     const m = await makeMentor();
     const r = await request(app)
       .post('/api/mentors/kyc')
@@ -48,12 +46,51 @@ describe('POST /api/mentors/kyc', () => {
       .send(VALID);
     expect(r.status).toBe(201);
     expect(r.body.kyc.status).toBe('pending');
-    expect(r.body.kyc.pan_number_masked).toBe('ABXXXX234F');
-    expect(r.body.kyc.bank_account_number_masked).toBe('XXXXXXXX9012');
-    expect(r.body.kyc.bank_ifsc).toBe('HDFC0001234');
+    expect(r.body.kyc.aadhaar_number_masked).toBe('XXXXXXXX1234');
+    expect(r.body.kyc.pan_number_masked).toBeNull();
+    expect(r.body.kyc.has_bank_details).toBe(false);
   });
 
-  test('rejects invalid PAN format', async () => {
+  test('accepts optional PAN + bank fields when supplied', async () => {
+    const m = await makeMentor();
+    const r = await request(app)
+      .post('/api/mentors/kyc')
+      .set('Authorization', `Bearer ${m.access_token}`)
+      .send({
+        ...VALID,
+        pan_number: 'ABCDE1234F',
+        full_name_as_per_pan: 'Test User',
+        bank_account_number: '123456789012',
+        bank_ifsc: 'HDFC0001234',
+        bank_account_holder: 'Test User',
+      });
+    expect(r.status).toBe(201);
+    expect(r.body.kyc.pan_number_masked).toBe('ABXXXX234F');
+    expect(r.body.kyc.bank_account_number_masked).toBe('XXXXXXXX9012');
+    expect(r.body.kyc.has_bank_details).toBe(true);
+  });
+
+  test('rejects missing aadhaar', async () => {
+    const m = await makeMentor();
+    const r = await request(app)
+      .post('/api/mentors/kyc')
+      .set('Authorization', `Bearer ${m.access_token}`)
+      .send({});
+    expect(r.status).toBe(400);
+    expect(r.body.code).toBe('invalid_aadhaar');
+  });
+
+  test('rejects invalid aadhaar (not 12 digits)', async () => {
+    const m = await makeMentor();
+    const r = await request(app)
+      .post('/api/mentors/kyc')
+      .set('Authorization', `Bearer ${m.access_token}`)
+      .send({ aadhaar_number: '12345' });
+    expect(r.status).toBe(400);
+    expect(r.body.code).toBe('invalid_aadhaar');
+  });
+
+  test('rejects invalid PAN format when PAN is supplied', async () => {
     const m = await makeMentor();
     const r = await request(app)
       .post('/api/mentors/kyc')
@@ -63,7 +100,7 @@ describe('POST /api/mentors/kyc', () => {
     expect(r.body.code).toBe('invalid_pan');
   });
 
-  test('rejects invalid IFSC format', async () => {
+  test('rejects invalid IFSC when IFSC is supplied', async () => {
     const m = await makeMentor();
     const r = await request(app)
       .post('/api/mentors/kyc')
@@ -73,7 +110,7 @@ describe('POST /api/mentors/kyc', () => {
     expect(r.body.code).toBe('invalid_ifsc');
   });
 
-  test('rejects too-short bank account', async () => {
+  test('rejects too-short bank account when account is supplied', async () => {
     const m = await makeMentor();
     const r = await request(app)
       .post('/api/mentors/kyc')
@@ -114,10 +151,10 @@ describe('POST /api/mentors/kyc', () => {
     const r = await request(app)
       .post('/api/mentors/kyc')
       .set('Authorization', `Bearer ${m.access_token}`)
-      .send({ ...VALID, pan_number: 'XYZAB9999Z' });
+      .send({ aadhaar_number: '999988887777' });
     expect(r.status).toBe(201);
     expect(r.body.kyc.status).toBe('pending');
-    expect(r.body.kyc.pan_number_masked).toBe('XYXXXX999Z');
+    expect(r.body.kyc.aadhaar_number_masked).toBe('XXXXXXXX7777');
   });
 });
 
