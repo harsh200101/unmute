@@ -2,6 +2,7 @@
 
 const express = require('express');
 const c = require('../controllers/adminController');
+const reviewC = require('../controllers/reviewController');
 const { authJwt } = require('../middleware/authJwt');
 const { requireRole } = require('../middleware/requireRole');
 const { general } = require('../middleware/rateLimit');
@@ -16,5 +17,7 @@ router.patch('/users/:id',                          c.patchUser);
 router.get('/mentor-applications',                  c.listMentorApplications);
 router.post('/mentor-applications/:id/approve',     c.approveMentor);
 router.post('/mentor-applications/:id/reject',      c.rejectMentor);
+
+router.post('/reviews/:id/hide',                    reviewC.adminHide);
 
 module.exports = router;
