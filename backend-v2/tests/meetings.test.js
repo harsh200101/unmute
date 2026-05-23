@@ -22,6 +22,12 @@ async function makeApprovedMentor() {
      RETURNING *`,
     [user.id, tier.id]
   );
+  // Mentor wallet so finalize can credit
+  await query(
+    `INSERT INTO wallets (user_id, kind, balance_paise) VALUES ($1, 'mentor', 0)
+     ON CONFLICT (user_id, kind) DO NOTHING`,
+    [user.id]
+  );
   return { user, access_token, profile: mp.rows[0] };
 }
 
@@ -31,7 +37,27 @@ async function makeMentee(overrides = {}) {
     email: `mentee-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@t.local`,
     ...overrides,
   });
+  // Mentee wallet so finalize can debit
+  await query(
+    `INSERT INTO wallets (user_id, kind, balance_paise) VALUES ($1, 'mentee', 100000)
+     ON CONFLICT (user_id, kind) DO NOTHING`,
+    [user.id]
+  );
   return { user, access_token };
+}
+
+async function setupPlatformWallet() {
+  const sys = await query(
+    `INSERT INTO users (email, full_name, role, is_active, email_verified_at)
+     VALUES ('system@unmute.internal', 'unmute Platform', 'admin', TRUE, NOW())
+     ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name
+     RETURNING id`
+  );
+  await query(
+    `INSERT INTO wallets (user_id, kind, balance_paise) VALUES ($1, 'platform', 0)
+     ON CONFLICT (user_id, kind) DO NOTHING`,
+    [sys.rows[0].id]
+  );
 }
 
 // Insert a booking directly so we can control slot_start_at precisely
@@ -57,6 +83,7 @@ function minutesFromNow(m) {
 beforeEach(async () => {
   await truncateAll();
   await seedReferenceData();
+  await setupPlatformWallet();
 });
 
 afterAll(async () => {

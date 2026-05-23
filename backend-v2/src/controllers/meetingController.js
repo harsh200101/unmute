@@ -1,6 +1,9 @@
 'use strict';
 
 const svc = require('../services/meetingService');
+const billing = require('../services/billingEngine');
+const { query } = require('../config/db');
+const { notFound } = require('../utils/errors');
 
 async function credentials(req, res, next) {
   try {
@@ -55,4 +58,17 @@ async function get(req, res, next) {
   } catch (e) { next(e); }
 }
 
-module.exports = { credentials, joined, left, end, get };
+async function billingHud(req, res, next) {
+  try {
+    const m = (await query(
+      `SELECT m.id FROM meetings m JOIN bookings b ON b.id = m.booking_id WHERE b.uuid = $1`,
+      [req.params.booking_uuid]
+    )).rows[0];
+    if (!m) throw notFound('meeting_not_found');
+    const snap = await billing.billingSnapshot({ meeting_id: m.id, user_id: req.user.id });
+    res.json(snap);
+  } catch (e) { next(e); }
+}
+
+module.exports = { credentials, joined, left, end, get, billingHud };
+

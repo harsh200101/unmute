@@ -7,6 +7,7 @@
 const { query, withTransaction } = require('../config/db');
 const { bad, notFound, forbidden } = require('../utils/errors');
 const agora = require('./agoraService');
+const billing = require('./billingEngine');
 
 const JOIN_WINDOW_BEFORE_MS = 5 * 60 * 1000; // 5 minutes before slot_start
 
@@ -140,7 +141,10 @@ async function recordPresence({ booking_uuid, user_id, kind }) {
         [meeting.id, { ts: now.toISOString() }]
       );
     } else if (!bothPresent && m.billing_state === 'active') {
+      // Roll the open active interval into billed_* before pausing.
+      await billing.rollIntoBilled(client, meeting.id);
       newBillingState = 'paused';
+      billing_active_since = null;
       await client.query(
         `INSERT INTO meeting_events (meeting_id, kind, payload)
          VALUES ($1, 'billing_pause', $2)`,
@@ -168,48 +172,40 @@ async function recordPresence({ booking_uuid, user_id, kind }) {
 // --- End meeting (manual) --------------------------------------------------
 
 async function endMeeting({ booking_uuid, user_id, reason }) {
-  return withTransaction(async (client) => {
-    const { booking, role } = await loadBookingForUser(client, { booking_uuid, user_id });
-    const meeting = await getOrCreateMeeting(client, booking);
-
-    if (meeting.billing_state === 'finalized') {
-      return publicMeeting(meeting); // idempotent
-    }
-
-    const now = new Date();
-    const end_reason = reason || (role === 'mentor' ? 'mentor_ended' : 'mentee_ended');
-
-    // Phase 7 will compute billed amount + finalize money flows. For phase 6
-    // we just stop the clock + mark the booking completed if billing started.
-    await client.query(
-      `UPDATE meetings
-          SET billing_state = 'finalized',
-              ended_at = $1,
-              end_reason = $2,
-              mentor_present = FALSE,
-              mentee_present = FALSE
-        WHERE id = $3`,
-      [now, end_reason, meeting.id]
+  // Delegate to the billing engine — it handles roll-in, minimum, split,
+  // ledger writes, and booking status updates atomically.
+  const { booking, role } = await (async () => {
+    const r = await query(
+      `SELECT b.id, b.mentor_user_id, b.mentee_user_id
+         FROM bookings b WHERE b.uuid = $1`,
+      [booking_uuid]
     );
+    if (!r.rows[0]) throw notFound('booking_not_found');
+    const b = r.rows[0];
+    const r2 = b.mentor_user_id === user_id ? 'mentor'
+            : b.mentee_user_id === user_id ? 'mentee' : null;
+    if (!r2) throw forbidden('not_a_party');
+    return { booking: b, role: r2 };
+  })();
 
-    await client.query(
-      `INSERT INTO meeting_events (meeting_id, kind, payload)
-       VALUES ($1, 'session_end', $2),
-              ($1, 'finalize',    $3)`,
-      [meeting.id, { ts: now.toISOString(), end_reason, by: role },
-                   { ts: now.toISOString(), note: 'phase6 stub finalize — money flows in phase 7' }]
-    );
-
-    // Move booking to completed if it had reached in_call; otherwise no_show.
-    if (booking.status === 'in_call') {
-      await client.query(`UPDATE bookings SET status = 'completed' WHERE id = $1`, [booking.id]);
-    } else if (booking.status === 'scheduled') {
-      await client.query(`UPDATE bookings SET status = 'no_show' WHERE id = $1`, [booking.id]);
+  // Ensure a meeting row exists (covers the "end before anyone joined" path)
+  await withTransaction(async (client) => {
+    const exists = (await client.query(`SELECT id FROM meetings WHERE booking_id = $1`, [booking.id])).rows[0];
+    if (!exists) {
+      await client.query(
+        `INSERT INTO meetings (booking_id, agora_channel_name) VALUES ($1, $2)`,
+        [booking.id, agora.channelName(booking_uuid)]
+      );
     }
-
-    const final = (await client.query(`SELECT * FROM meetings WHERE id = $1`, [meeting.id])).rows[0];
-    return publicMeeting(final);
   });
+
+  const m = (await query(`SELECT id, billing_state FROM meetings WHERE booking_id = $1`, [booking.id])).rows[0];
+  if (m.billing_state === 'finalized') {
+    return publicMeeting((await query(`SELECT * FROM meetings WHERE id = $1`, [m.id])).rows[0]);
+  }
+  const end_reason = reason || (role === 'mentor' ? 'mentor_ended' : 'mentee_ended');
+  const finalized = await billing.finalizeMeeting({ meeting_id: m.id, end_reason, by_user_id: user_id });
+  return publicMeeting(finalized);
 }
 
 // --- Read ------------------------------------------------------------------
