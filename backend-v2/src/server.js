@@ -20,6 +20,9 @@ const tagsRoutes = require('./routes/tags.routes');
 const adminRoutes = require('./routes/admin.routes');
 const availabilityRoutes = require('./routes/availability.routes');
 const bookingRoutes = require('./routes/bookings.routes');
+const walletRoutes = require('./routes/wallet.routes');
+const paymentsRoutes = require('./routes/payments.routes');
+const webhookRoutes = require('./routes/webhooks.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -66,6 +69,11 @@ app.use('/api/availability', availabilityRoutes);
 
 // --- Phase 4: bookings ---
 app.use('/api/bookings', bookingRoutes);
+
+// --- Phase 5: wallet + payments + webhooks ---
+app.use('/api/wallet',   walletRoutes);
+app.use('/api/payments', paymentsRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // Anything else under /api is not implemented yet.
 app.use('/api', (_req, res) => {
