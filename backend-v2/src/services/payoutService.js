@@ -137,6 +137,7 @@ async function complete({ admin_user_id, withdrawal_id, gateway_txn_id }) {
       title: `Withdrawal of ₹${(before.amount_paise / 100).toFixed(2)} sent to your bank`,
       body: gateway_txn_id ? `Transaction ID: ${gateway_txn_id}` : null,
       link_url: '/mentor/earnings',
+      send_email: true,
       reference_table: 'withdrawals',
       reference_id: withdrawal_id,
     });
@@ -188,6 +189,7 @@ async function fail({ admin_user_id, withdrawal_id, failure_reason }) {
       title: 'Withdrawal failed — funds returned to your wallet',
       body: failure_reason || null,
       link_url: '/mentor/earnings',
+      send_email: true,
       reference_table: 'withdrawals',
       reference_id: withdrawal_id,
     });

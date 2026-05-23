@@ -2,14 +2,26 @@
 
 const { query } = require('../config/db');
 const { notFound, forbidden } = require('../utils/errors');
+const env = require('../config/env');
+const emailService = require('./emailService');
 
 // Centralised notification creator. Other services call notify(...).
 // All inserts are best-effort: failures are logged but never bubble up
 // (notifications failing must not break the originating action).
+//
+// Pass `send_email: true` to also email the user a plain-text version of the
+// notification (subject = title, body = title + body + link). The email send
+// is best-effort too — if SMTP is misconfigured the in-app row still lands.
 
-async function notify({ user_id, kind, title, body, link_url, reference_table, reference_id, client }) {
+async function notify({
+  user_id, kind, title, body, link_url,
+  reference_table, reference_id,
+  client,
+  send_email = false,
+}) {
   if (!user_id || !kind || !title) return null;
   const exec = client ? client.query.bind(client) : query;
+  let inserted = null;
   try {
     const r = await exec(
       `INSERT INTO notifications
@@ -18,12 +30,44 @@ async function notify({ user_id, kind, title, body, link_url, reference_table, r
        RETURNING *`,
       [user_id, kind, title, body || null, link_url || null, reference_table || null, reference_id || null]
     );
-    return r.rows[0];
+    inserted = r.rows[0];
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[notify] failed:', err.message, { user_id, kind });
     return null;
   }
+
+  if (send_email) {
+    try {
+      const u = await exec(
+        `SELECT email, full_name FROM users WHERE id = $1`,
+        [user_id]
+      );
+      const to = u.rows[0]?.email;
+      if (to) {
+        const full_name = u.rows[0].full_name || '';
+        const linkLine = link_url ? `View details: ${env.FRONTEND_URL}${link_url}` : '';
+        await emailService.sendEmail({
+          to,
+          subject: title,
+          text: [
+            full_name ? `Hi ${full_name},` : 'Hi,',
+            '',
+            title,
+            body || '',
+            linkLine,
+            '',
+            '— unmute',
+          ].filter((l) => l !== null).join('\n'),
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[notify] email send failed:', err.message, { user_id, kind });
+    }
+  }
+
+  return inserted;
 }
 
 // --- Read API --------------------------------------------------------------

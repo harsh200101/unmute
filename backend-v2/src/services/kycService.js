@@ -171,6 +171,7 @@ async function decide({ admin_user_id, kyc_id, decision, notes }) {
       link_url: '/mentor/earnings',
       reference_table: 'mentor_kyc',
       reference_id: kyc_id,
+      send_email: true,
     });
 
     return publicKyc(after);

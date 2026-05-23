@@ -190,6 +190,7 @@ async function handleWebhook({ headers, body }) {
       kind: 'topup_succeeded',
       title: `Top-up of ₹${(payment.amount_paise / 100).toFixed(2)} added to your wallet`,
       link_url: '/wallet',
+      send_email: true,
       reference_table: 'payments',
       reference_id: payment.id,
     });

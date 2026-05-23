@@ -135,6 +135,7 @@ async function approveMentor({ admin_user_id, mentor_id, notes }) {
       link_url: '/mentor/dashboard',
       reference_table: 'mentor_profiles',
       reference_id: mentor_id,
+      send_email: true,
     });
 
     return after.rows[0];
@@ -185,6 +186,7 @@ async function rejectMentor({ admin_user_id, mentor_id, notes }) {
       link_url: '/mentor/apply',
       reference_table: 'mentor_profiles',
       reference_id: mentor_id,
+      send_email: true,
     });
 
     return after.rows[0];
@@ -311,6 +313,7 @@ async function refundBooking({ admin_user_id, booking_id, amount_paise, reason }
       title: `Refund of ₹${(amt / 100).toFixed(2)} credited to your wallet`,
       body: reason || null,
       link_url: '/wallet',
+      send_email: true,
       reference_table: 'bookings',
       reference_id: b.id,
     });
