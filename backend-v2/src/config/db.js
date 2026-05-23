@@ -1,7 +1,14 @@
 'use strict';
 
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const env = require('./env');
+
+// pg returns BIGINT (OID 20) as strings by default to avoid precision loss
+// past 2^53. Our IDs are BIGSERIALs that will never approach that limit,
+// and we rely on `===` between req.user.id (number from JWT.sub) and
+// booking.mentor_user_id (DB-returned BIGINT) in service code. Coerce to
+// number once here so the rest of the app can use === safely.
+types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10)));
 
 // Single pool, lazily created. Tests can override DATABASE_URL.
 const pool = new Pool({

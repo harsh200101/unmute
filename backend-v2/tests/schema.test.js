@@ -74,14 +74,16 @@ describe('Schema integrity (after 001_init applied)', () => {
     await query(`DELETE FROM users WHERE id = $1`, [a.rows[0].id]);
   });
 
-  test('bookings has UNIQUE(mentor_user_id, slot_start_at)', async () => {
+  test('bookings has partial UNIQUE index on (mentor_user_id, slot_start_at)', async () => {
+    // After migration 002 this is a partial unique INDEX (not CONSTRAINT) so
+    // cancelled bookings free the slot for re-booking.
     const res = await query(
-      `SELECT conname FROM pg_constraint
-       WHERE conrelid = 'bookings'::regclass
-         AND contype = 'u'
-         AND conname = 'bookings_no_double_book'`
+      `SELECT indexname, indexdef FROM pg_indexes
+        WHERE tablename = 'bookings' AND indexname = 'bookings_no_double_book'`
     );
     expect(res.rowCount).toBe(1);
+    expect(res.rows[0].indexdef).toMatch(/CREATE UNIQUE INDEX/);
+    expect(res.rows[0].indexdef).toMatch(/WHERE/);
   });
 
   test('wallets.balance_paise has CHECK (>= 0)', async () => {

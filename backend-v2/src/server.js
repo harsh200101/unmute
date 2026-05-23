@@ -19,6 +19,7 @@ const mentorRoutes = require('./routes/mentors.routes');
 const tagsRoutes = require('./routes/tags.routes');
 const adminRoutes = require('./routes/admin.routes');
 const availabilityRoutes = require('./routes/availability.routes');
+const bookingRoutes = require('./routes/bookings.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -62,6 +63,9 @@ app.use('/api/admin',   adminRoutes);
 
 // --- Phase 3: availability ---
 app.use('/api/availability', availabilityRoutes);
+
+// --- Phase 4: bookings ---
+app.use('/api/bookings', bookingRoutes);
 
 // Anything else under /api is not implemented yet.
 app.use('/api', (_req, res) => {
