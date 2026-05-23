@@ -9,6 +9,9 @@ import VerifyEmail from './pages/VerifyEmail.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import MentorList from './pages/MentorList.jsx';
+import MentorProfile from './pages/MentorProfile.jsx';
+import MentorApply from './pages/MentorApply.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -23,6 +26,10 @@ export default function App() {
         <Route path="/reset-password" element={<PublicOnly><ResetPassword /></PublicOnly>} />
 
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+
+        <Route path="/mentors" element={<MentorList />} />
+        <Route path="/mentors/:uuid" element={<MentorProfile />} />
+        <Route path="/mentor/apply" element={<ProtectedRoute><MentorApply /></ProtectedRoute>} />
 
         <Route path="*" element={<NotFound />} />
       </Route>

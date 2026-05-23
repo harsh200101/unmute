@@ -87,6 +87,18 @@ export default function Dashboard() {
         </div>
       )}
 
+      {user.role === 'mentee' && (
+        <div className="mt-10 bg-slate-900 text-white rounded-2xl p-6 sm:p-8">
+          <h2 className="text-xl font-semibold">Want to mentor on unmute?</h2>
+          <p className="mt-1 text-slate-300 max-w-2xl">
+            Share what you know, set your per-minute rate, and earn 70% of every minute. Admin reviews applications within 1-2 business days.
+          </p>
+          <Link to="/mentor/apply" className="inline-block mt-4">
+            <Button className="!bg-white !text-slate-900 hover:!bg-slate-100">Apply to mentor</Button>
+          </Link>
+        </div>
+      )}
+
       {user.role === 'admin' && (
         <div className="mt-10">
           <h2 className="text-xl font-semibold text-slate-900">Admin</h2>

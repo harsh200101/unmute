@@ -21,4 +21,19 @@ export const me = {
   patch: (body)  => api.patch('/me', body).then((r) => r.data),
 };
 
-export default { auth, me };
+export const mentors = {
+  list: (params) => api.get('/mentors', { params }).then((r) => r.data),
+  featured: () => api.get('/mentors/featured').then((r) => r.data),
+  byUuid: (uuid) => api.get(`/mentors/${uuid}`).then((r) => r.data),
+  reviews: (uuid, params) => api.get(`/mentors/${uuid}/reviews`, { params }).then((r) => r.data),
+  apply: (body) => api.post('/mentors/apply', body).then((r) => r.data),
+  getMine: () => api.get('/mentors/me').then((r) => r.data),
+  patchMine: (body) => api.patch('/mentors/me', body).then((r) => r.data),
+};
+
+export const catalog = {
+  tags: (kind) => api.get('/tags', { params: kind ? { kind } : {} }).then((r) => r.data),
+  tiers: () => api.get('/pricing-tiers').then((r) => r.data),
+};
+
+export default { auth, me, mentors, catalog };
