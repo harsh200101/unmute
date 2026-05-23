@@ -3,6 +3,7 @@
 const { query, withTransaction } = require('../config/db');
 const { bad, notFound } = require('../utils/errors');
 const notify = require('./notificationService');
+const billing = require('./billingEngine');
 
 // --- Users ------------------------------------------------------------------
 
@@ -201,6 +202,159 @@ async function audit(client, { admin_user_id, action, target_table, target_id, b
   );
 }
 
+// --- Admin tools: meetings + bookings + audit log -------------------------
+
+async function listActiveMeetings({ limit = 50, offset = 0 } = {}) {
+  const limitN = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const offsetN = Math.max(Number(offset) || 0, 0);
+  const r = await query(
+    `SELECT m.id, m.uuid, m.billing_state, m.billed_paise, m.billed_seconds,
+            m.grace_started_at, m.low_balance_warned_at, m.created_at,
+            b.uuid AS booking_uuid, b.slot_start_at, b.slot_end_at, b.status AS booking_status,
+            mu.email AS mentor_email, mu.full_name AS mentor_name,
+            cu.email AS mentee_email, cu.full_name AS mentee_name
+       FROM meetings m
+       JOIN bookings b ON b.id = m.booking_id
+       JOIN users mu ON mu.id = b.mentor_user_id
+       JOIN users cu ON cu.id = b.mentee_user_id
+      WHERE m.billing_state IN ('idle','active','paused','low_balance_grace')
+      ORDER BY b.slot_start_at ASC
+      LIMIT ${limitN} OFFSET ${offsetN}`
+  );
+  return { items: r.rows, limit: limitN, offset: offsetN };
+}
+
+async function forceEndMeeting({ admin_user_id, meeting_id, reason }) {
+  const before = (await query(`SELECT * FROM meetings WHERE id = $1`, [meeting_id])).rows[0];
+  if (!before) throw notFound('meeting_not_found');
+  if (before.billing_state === 'finalized') {
+    return billing.finalizeMeeting === undefined ? before : before; // already done
+  }
+  const after = await billing.finalizeMeeting({
+    meeting_id,
+    end_reason: 'admin_forced',
+    by_user_id: admin_user_id,
+  });
+  // Audit
+  await withTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO admin_audit_log
+         (admin_user_id, action, target_table, target_id, before_state, after_state, notes)
+       VALUES ($1, 'force_end_meeting', 'meetings', $2, $3, $4, $5)`,
+      [admin_user_id, meeting_id, before, after, reason || null]
+    );
+  });
+  return after;
+}
+
+// Platform-funded refund. Credits mentee wallet, debits platform wallet.
+// Mentor's earnings are NOT clawed back (admin tool for goodwill).
+async function refundBooking({ admin_user_id, booking_id, amount_paise, reason }) {
+  const amt = Number(amount_paise);
+  if (!Number.isInteger(amt) || amt <= 0) throw bad('invalid_amount', 'amount_paise must be a positive integer');
+
+  return withTransaction(async (client) => {
+    const b = (await client.query(`SELECT * FROM bookings WHERE id = $1 FOR UPDATE`, [booking_id])).rows[0];
+    if (!b) throw notFound('booking_not_found');
+
+    // Find the meeting + total already charged
+    const m = (await client.query(`SELECT * FROM meetings WHERE booking_id = $1`, [b.id])).rows[0];
+    const max_refundable = m ? (m.finalized_total_paise || m.settled_paise || 0) : 0;
+    if (amt > max_refundable) {
+      throw bad('amount_exceeds_charge', `Maximum refundable is ₹${(max_refundable / 100).toFixed(2)}`);
+    }
+
+    const menteeWallet = (await client.query(
+      `SELECT id FROM wallets WHERE user_id = $1 AND kind = 'mentee' FOR UPDATE`,
+      [b.mentee_user_id]
+    )).rows[0];
+    if (!menteeWallet) throw notFound('mentee_wallet_not_found');
+
+    const platformWallet = (await client.query(
+      `SELECT id, balance_paise FROM wallets WHERE kind = 'platform' LIMIT 1 FOR UPDATE`
+    )).rows[0];
+    if (!platformWallet) throw notFound('platform_wallet_not_found');
+    if (platformWallet.balance_paise < amt) {
+      throw bad('platform_insufficient', 'Platform wallet has insufficient balance to fund this refund');
+    }
+
+    const refund_key = `refund:booking:${b.uuid}:${Date.now()}`;
+
+    // Credit mentee
+    await client.query(
+      `INSERT INTO wallet_transactions
+         (wallet_id, direction, amount_paise, reason,
+          reference_table, reference_id, idempotency_key, description, balance_after_paise)
+       VALUES ($1, 'credit', $2, 'refund', 'bookings', $3, $4, $5, 0)`,
+      [menteeWallet.id, amt, b.id, refund_key + ':mentee', reason || `Refund for booking ${b.uuid}`]
+    );
+    // Debit platform
+    await client.query(
+      `INSERT INTO wallet_transactions
+         (wallet_id, direction, amount_paise, reason,
+          reference_table, reference_id, idempotency_key, description, balance_after_paise)
+       VALUES ($1, 'debit', $2, 'refund', 'bookings', $3, $4, $5, 0)`,
+      [platformWallet.id, amt, b.id, refund_key + ':platform', `Platform-funded refund for booking ${b.uuid}`]
+    );
+
+    await client.query(
+      `INSERT INTO admin_audit_log
+         (admin_user_id, action, target_table, target_id, after_state, notes)
+       VALUES ($1, 'refund_booking', 'bookings', $2, $3, $4)`,
+      [admin_user_id, b.id, { amount_paise: amt }, reason || null]
+    );
+
+    await notify.notify({
+      client,
+      user_id: b.mentee_user_id,
+      kind: 'refund_issued',
+      title: `Refund of ₹${(amt / 100).toFixed(2)} credited to your wallet`,
+      body: reason || null,
+      link_url: '/wallet',
+      reference_table: 'bookings',
+      reference_id: b.id,
+    });
+
+    return { ok: true, refunded_paise: amt };
+  });
+}
+
+async function listAuditLog({ admin_user_id, action, target_table, limit = 100, offset = 0 } = {}) {
+  const limitN = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  const offsetN = Math.max(Number(offset) || 0, 0);
+  const params = [];
+  const where = [];
+  if (admin_user_id) {
+    params.push(admin_user_id);
+    where.push(`al.admin_user_id = $${params.length}`);
+  }
+  if (action) {
+    params.push(action);
+    where.push(`al.action = $${params.length}`);
+  }
+  if (target_table) {
+    params.push(target_table);
+    where.push(`al.target_table = $${params.length}`);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const r = await query(
+    `SELECT al.id, al.admin_user_id, al.action, al.target_table, al.target_id,
+            al.notes, al.created_at,
+            u.email AS admin_email, u.full_name AS admin_name
+       FROM admin_audit_log al
+       JOIN users u ON u.id = al.admin_user_id
+       ${whereSql}
+       ORDER BY al.created_at DESC
+       LIMIT ${limitN} OFFSET ${offsetN}`,
+    params
+  );
+  const total = await query(
+    `SELECT COUNT(*)::int AS n FROM admin_audit_log al ${whereSql}`,
+    params
+  );
+  return { items: r.rows, total: total.rows[0].n, limit: limitN, offset: offsetN };
+}
+
 function publicUser(u) {
   return {
     id: u.id, uuid: u.uuid, email: u.email, full_name: u.full_name,
@@ -211,4 +365,9 @@ function publicUser(u) {
   };
 }
 
-module.exports = { listUsers, patchUser, listMentorApplications, approveMentor, rejectMentor };
+module.exports = {
+  listUsers, patchUser,
+  listMentorApplications, approveMentor, rejectMentor,
+  listActiveMeetings, forceEndMeeting,
+  refundBooking, listAuditLog,
+};

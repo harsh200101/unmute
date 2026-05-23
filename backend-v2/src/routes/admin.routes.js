@@ -31,4 +31,10 @@ router.post('/withdrawals/:id/process',             payoutC.adminProcess);
 router.post('/withdrawals/:id/complete',            payoutC.adminComplete);
 router.post('/withdrawals/:id/fail',                payoutC.adminFail);
 
+// Phase 12: meeting ops + refunds + audit log
+router.get('/meetings/active',                      c.listActiveMeetings);
+router.post('/meetings/:id/force-end',              c.forceEndMeeting);
+router.post('/bookings/:id/refund',                 c.refundBooking);
+router.get('/audit-log',                            c.listAuditLog);
+
 module.exports = router;
