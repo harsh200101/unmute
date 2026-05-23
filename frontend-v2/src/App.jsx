@@ -18,6 +18,8 @@ import MentorAvailability from './pages/MentorAvailability.jsx';
 import Book from './pages/Book.jsx';
 import MyBookings from './pages/MyBookings.jsx';
 import BookingDetail from './pages/BookingDetail.jsx';
+import Wallet from './pages/Wallet.jsx';
+import PhonepeStub from './pages/PhonepeStub.jsx';
 // Lazy-load: pulls Agora SDK (~1.5 MB) only when entering a meeting
 const MeetingRoom = lazy(() => import('./pages/MeetingRoom.jsx'));
 import NotFound from './pages/NotFound.jsx';
@@ -43,6 +45,9 @@ export default function App() {
         <Route path="/book/:uuid" element={<ProtectedRoute><Book /></ProtectedRoute>} />
         <Route path="/bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
         <Route path="/bookings/:uuid" element={<ProtectedRoute><BookingDetail /></ProtectedRoute>} />
+
+        <Route path="/wallet" element={<ProtectedRoute><Wallet /></ProtectedRoute>} />
+        <Route path="/dev/phonepe-stub" element={<PhonepeStub />} />
 
         <Route path="*" element={<NotFound />} />
       </Route>

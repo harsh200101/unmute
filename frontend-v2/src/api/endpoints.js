@@ -59,6 +59,20 @@ export const meetings = {
   end:         (booking_uuid, reason) => api.post(`/meetings/${booking_uuid}/end`, { reason }).then((r) => r.data),
 };
 
+export const wallet = {
+  me:           () => api.get('/wallet/me').then((r) => r.data),
+  transactions: (params) => api.get('/wallet/me/transactions', { params }).then((r) => r.data),
+};
+
+export const payments = {
+  topup:    (amount_paise) => api.post('/payments/topup', { amount_paise }).then((r) => r.data),
+  status:   (order_id) => api.get(`/payments/status/${order_id}`).then((r) => r.data),
+  history:  (params) => api.get('/payments/me', { params }).then((r) => r.data),
+  // Dev-only: simulates a PhonePe webhook callback. The backend's stub provider
+  // accepts the body shape directly when env vars aren't set.
+  simulateWebhook: (body) => api.post('/webhooks/phonepe', body).then((r) => r.data),
+};
+
 export const catalog = {
   tags: (kind) => api.get('/tags', { params: kind ? { kind } : {} }).then((r) => r.data),
   tiers: () => api.get('/pricing-tiers').then((r) => r.data),
