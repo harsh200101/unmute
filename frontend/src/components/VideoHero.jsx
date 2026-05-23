@@ -126,7 +126,7 @@ const VideoHero = ({
           <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-4 py-2 mb-8">
             <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
             <span className="text-white/90 text-sm font-medium">
-              🎉 Join 10,000+ successful mentoring sessions
+              ✨ Now in early access — be one of the first to find your mentor
             </span>
           </div>
 

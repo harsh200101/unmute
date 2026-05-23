@@ -320,7 +320,7 @@ const Home = () => {
             <div className="md:col-span-2">
               <h3 className="text-2xl font-bold mb-4">Unmute</h3>
               <p className="text-gray-400 mb-6 max-w-md">
-                The world's leading platform for 1-on-1 mentorship. Connect, learn, and grow with expert guidance.
+                A new platform built to connect curious learners with mentors who actually care. Real conversations, real growth.
               </p>
               <div className="flex gap-4">
                 <div className="w-10 h-10 bg-gray-800 rounded-lg flex items-center justify-center cursor-pointer hover:bg-gray-700 transition-colors">
