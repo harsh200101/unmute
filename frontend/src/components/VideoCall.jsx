@@ -898,8 +898,7 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
   const remoteParticipantUid = remoteParticipantForEffect?.uid || null;
 
   useEffect(() => {
-    const container = remoteVideoRef.current;
-    if (!container || !remoteVideoTrack || !remoteParticipantUid) {
+    if (!remoteVideoTrack || !remoteParticipantUid) {
       playedRemoteVideoUidRef.current = null;
       return;
     }
@@ -907,14 +906,40 @@ const VideoCall = ({ sessionId, onClose, onMeetingEnd }) => {
     // Avoid replaying the same track on every render.
     if (playedRemoteVideoUidRef.current === remoteParticipantUid) return;
 
-    try {
-      remoteVideoTrack.play(container);
-      playedRemoteVideoUidRef.current = remoteParticipantUid;
-      console.log('🎥 Remote video playing via ref for uid:', remoteParticipantUid);
-    } catch (err) {
-      console.error('🎥 Failed to play remote video track:', err);
-      playedRemoteVideoUidRef.current = null;
-    }
+    // The remote container may not be mounted yet — this happens for the
+    // LATE JOINER because Agora delivers `user-published` events for the
+    // already-publishing host immediately after `client.join()` resolves,
+    // while the component is still showing the loading screen (the stage
+    // <div ref={remoteVideoRef}> only mounts once `loading` flips false).
+    // Retry until the container is attached, then call .play() exactly once.
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 30; // ~3s at 100ms
+    const tryPlay = () => {
+      if (cancelled) return;
+      const container = remoteVideoRef.current;
+      if (!container) {
+        if (attempts++ < MAX_ATTEMPTS) {
+          setTimeout(tryPlay, 100);
+        } else {
+          console.error('🎥 Remote video container never mounted for uid:', remoteParticipantUid);
+        }
+        return;
+      }
+      try {
+        remoteVideoTrack.play(container);
+        playedRemoteVideoUidRef.current = remoteParticipantUid;
+        console.log('🎥 Remote video playing via ref for uid:', remoteParticipantUid, 'after attempts:', attempts);
+      } catch (err) {
+        console.error('🎥 Failed to play remote video track:', err);
+        playedRemoteVideoUidRef.current = null;
+      }
+    };
+    tryPlay();
+
+    return () => {
+      cancelled = true;
+    };
   }, [remoteVideoTrack, remoteParticipantUid]);
 
   // ENHANCED: Main initialization logic with comprehensive state dumps and logging
