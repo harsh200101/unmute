@@ -5,7 +5,13 @@ import { notifications as notifApi } from '../api/endpoints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { relativeTime } from '../lib/format.js';
 
-const POLL_MS = 30_000;
+// Poll cadence for the unread-count badge.
+//   - 60s is comfortably below "feels stale" for a notification bell.
+//   - We also pause polling entirely when the tab is hidden and re-fetch
+//     once on visibility change, so a backgrounded tab makes ZERO requests.
+//   - And refetch on window focus, so coming back from another app feels
+//     instant without needing a tight interval.
+const POLL_MS = 60_000;
 
 export default function NotificationBell() {
   const { user } = useAuth();
@@ -25,19 +31,49 @@ export default function NotificationBell() {
     return () => window.removeEventListener('mousedown', onDown);
   }, [open]);
 
-  // Periodic unread-count fetch (only when logged in)
+  // Periodic unread-count fetch — visibility-aware so hidden tabs are silent.
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
+    let intervalId = null;
+
     const tick = async () => {
+      if (document.hidden) return; // skip while tab is in background
       try {
         const r = await notifApi.unreadCount();
         if (!cancelled) setUnread(r.unread || 0);
       } catch (_) { /* ignore */ }
     };
+
+    const start = () => {
+      if (intervalId) return;
+      intervalId = setInterval(tick, POLL_MS);
+    };
+    const stop = () => {
+      if (!intervalId) return;
+      clearInterval(intervalId);
+      intervalId = null;
+    };
+
+    // Pause polling whenever the tab goes to the background; resume + refetch
+    // when it comes back. This trims the request rate to ~zero for inactive
+    // tabs, which was the bulk of the noise the user was seeing.
+    const onVisibility = () => {
+      if (document.hidden) { stop(); } else { tick(); start(); }
+    };
+    const onFocus = () => tick();
+
     tick();
-    const id = setInterval(tick, POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [user]);
 
   // Load list when opening
