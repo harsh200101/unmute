@@ -145,26 +145,6 @@ const VideoHero = ({
             Get expert guidance, accelerate your growth, and achieve your goals faster.
           </p>
 
-          {/* Stats Row */}
-          <div className="flex flex-wrap justify-center gap-8 mb-12">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-white">5,000+</div>
-              <div className="text-white/70 text-sm">Expert Mentors</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-white">50,000+</div>
-              <div className="text-white/70 text-sm">Sessions Completed</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-white">4.9★</div>
-              <div className="text-white/70 text-sm">Average Rating</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-white">150+</div>
-              <div className="text-white/70 text-sm">Expertise Areas</div>
-            </div>
-          </div>
-
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
             <button

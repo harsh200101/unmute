@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import VideoHero from '../components/VideoHero';
-import ReviewCard from '../components/ReviewCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import api from '../utils/api';
 
@@ -10,8 +9,6 @@ const Home = () => {
   const { isAuthenticated, user, isMentor } = useAuth();
   const navigate = useNavigate();
   const [featuredMentors, setFeaturedMentors] = useState([]);
-  const [testimonials, setTestimonials] = useState([]);
-  const [platformStats, setPlatformStats] = useState({});
   const [loading, setLoading] = useState(false);
 
   // Load featured content on mount
@@ -25,20 +22,6 @@ const Home = () => {
           const mentorsResponse = await api.get('/mentors/featured', { params: { limit: 6 } });
           setFeaturedMentors(mentorsResponse.data.data || []);
         } catch (e) { /* non-critical, ignore */ }
-
-        // Load testimonials
-        try {
-          const testimonialsResponse = await api.get('/reviews/featured', { params: { limit: 6 } });
-          setTestimonials(testimonialsResponse.data.data || []);
-        } catch (e) { /* non-critical, ignore */ }
-
-        // Load platform statistics
-        setPlatformStats({
-          totalMentors: 5000,
-          totalSessions: 50000,
-          averageRating: 4.9,
-          successRate: 98
-        });
 
       } catch (error) {
         console.error('Failed to load featured content:', error);
@@ -242,38 +225,6 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Statistics Section */}
-      <section className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            <div className="text-center">
-              <div className="text-4xl md:text-5xl font-bold text-blue-600 mb-2">
-                {platformStats.totalMentors?.toLocaleString() || '5,000+'}
-              </div>
-              <div className="text-gray-600 font-medium">Expert Mentors</div>
-            </div>
-            <div className="text-center">
-              <div className="text-4xl md:text-5xl font-bold text-purple-600 mb-2">
-                {platformStats.totalSessions?.toLocaleString() || '50,000+'}
-              </div>
-              <div className="text-gray-600 font-medium">Sessions Completed</div>
-            </div>
-            <div className="text-center">
-              <div className="text-4xl md:text-5xl font-bold text-green-600 mb-2">
-                {platformStats.averageRating || '4.9'}★
-              </div>
-              <div className="text-gray-600 font-medium">Average Rating</div>
-            </div>
-            <div className="text-center">
-              <div className="text-4xl md:text-5xl font-bold text-orange-600 mb-2">
-                {platformStats.successRate || '98'}%
-              </div>
-              <div className="text-gray-600 font-medium">Success Rate</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Featured Mentors Section */}
       {featuredMentors.length > 0 && (
         <section className="py-20 bg-gradient-to-br from-purple-50 to-pink-100">
@@ -326,34 +277,6 @@ const Home = () => {
               >
                 View All Mentors
               </button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Testimonials Section */}
-      {testimonials.length > 0 && (
-        <section className="py-20 bg-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-16">
-              <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-                What Our Users Say
-              </h2>
-              <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-                Don't just take our word for it - hear from thousands of successful learners
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {testimonials.slice(0, 6).map((testimonial) => (
-                <ReviewCard
-                  key={testimonial.id}
-                  review={testimonial}
-                  showMentorInfo={false}
-                  showActions={false}
-                  className="transform hover:-translate-y-2 transition-transform"
-                />
-              ))}
             </div>
           </div>
         </section>
