@@ -1,0 +1,92 @@
+services:
+  - type: web
+    name: unmute-v2-backend
+    runtime: node
+    plan: starter
+    region: singapore
+    rootDir: backend-v2
+    buildCommand: npm install
+    startCommand: npm run migrate && npm start
+    healthCheckPath: /readyz
+    autoDeploy: true
+    branch: v2
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: 5001
+
+      # Database (Render auto-injects from the linked DB below)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: unmute-v2-db
+          property: connectionString
+
+      # Auth — Render generates a fresh secret on first deploy
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_TTL_SECONDS
+        value: "900"
+      - key: JWT_REFRESH_TTL_SECONDS
+        value: "2592000"
+
+      # Frontend origin (set after the static site is deployed)
+      - key: FRONTEND_URL
+        sync: false                 # set manually in dashboard
+
+      # PhonePe — set production values in dashboard (sandbox in dev)
+      - key: PHONEPE_MERCHANT_ID
+        sync: false
+      - key: PHONEPE_SALT_KEY
+        sync: false
+      - key: PHONEPE_SALT_INDEX
+        value: "1"
+      - key: PHONEPE_HOST
+        value: https://api.phonepe.com/apis/hermes
+
+      # Agora — set in dashboard
+      - key: AGORA_APP_ID
+        sync: false
+      - key: AGORA_APP_CERTIFICATE
+        sync: false
+
+      # Email — set in dashboard once you've picked a provider
+      - key: EMAIL_PROVIDER
+        value: stub                  # set to 'resend' or 'smtp' in dashboard
+      - key: EMAIL_FROM
+        value: no-reply@unmute.local # update in dashboard
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+
+      # Google OAuth (optional) — leave empty to disable
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+
+      # Admin seed — one-time. Remove from env after first deploy.
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        value: Admin
+
+databases:
+  - name: unmute-v2-db
+    databaseName: unmute_v2
+    region: singapore
+    plan: starter
+    # Render takes care of the connection string; we just reference it above.
