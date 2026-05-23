@@ -125,31 +125,44 @@ app.use(passport.session());
 // RATE LIMITING
 // ==========================================
 
+// Paths that should never count against the rate limit. Use originalUrl
+// because inside an `app.use('/api/', ...)` mount, req.path is relative to
+// the mount (e.g. '/health'), so checks against '/api/health' silently
+// never match. originalUrl always carries the full request path.
+const RATE_LIMIT_SKIP_PREFIXES = [
+  '/api/health',
+  '/api/meetings/test/',
+  '/api/test/agora-config'
+];
+
 const createRateLimit = (windowMs, max, message) => rateLimit({
   windowMs,
   max,
   message: { error: message },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/api/health' || req.path === '/api/meetings/test/config' || req.path === '/api/test/agora-config'
+  skip: (req) => RATE_LIMIT_SKIP_PREFIXES.some(p => req.originalUrl.startsWith(p))
 });
 
-// General API rate limiting
+// General API rate limiting.
+// Raised from 100 -> 1000 per 15 min (~66 req/min) because the previous
+// cap was below the steady-state needs of an authenticated SPA: the
+// appointments dashboard alone fetches sessions, wallet, notifications and
+// pending reschedule requests on mount, and refreshes every 30s while an
+// in-progress session exists. The previous cap caused users to see
+// "Too many requests" toasts and stale reschedule-request lists within a
+// couple of minutes of normal usage. Auth endpoints stay tightly capped
+// below to keep brute-force protection.
 app.use('/api/', createRateLimit(
   15 * 60 * 1000, // 15 minutes
-  100, // 100 requests per window
+  1000,
   'Too many requests, please try again later'
 ));
-
-// Skip rate limiting for test endpoints
-app.use('/api/meetings/test/', (req, res, next) => {
-  next();
-});
 
 // Stricter rate limiting for auth endpoints
 app.use('/api/auth/', createRateLimit(
   15 * 60 * 1000, // 15 minutes
-  20, // 20 requests per window
+  50, // bumped from 20 to leave a little headroom for legitimate retries
   'Too many authentication attempts'
 ));
 
