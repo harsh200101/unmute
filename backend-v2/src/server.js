@@ -26,6 +26,8 @@ const webhookRoutes = require('./routes/webhooks.routes');
 const meetingRoutes = require('./routes/meetings.routes');
 const reviewRoutes = require('./routes/reviews.routes');
 const notificationRoutes = require('./routes/notifications.routes');
+const kycRoutes = require('./routes/kyc.routes');
+const payoutRoutes = require('./routes/payouts.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -86,6 +88,10 @@ app.use('/api', reviewRoutes);
 
 // --- Phase 10: in-app notifications ---
 app.use('/api/me/notifications', notificationRoutes);
+
+// --- Phase 11: KYC + mentor payouts ---
+app.use('/api/mentors/kyc', kycRoutes);
+app.use('/api/payouts',     payoutRoutes);
 
 // Anything else under /api is not implemented yet.
 app.use('/api', (_req, res) => {
