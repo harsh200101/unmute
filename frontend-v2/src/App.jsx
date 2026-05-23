@@ -30,6 +30,9 @@ import Admin from './pages/Admin.jsx';
 // Lazy-load: pulls Agora SDK (~1.5 MB) only when entering a meeting
 const MeetingRoom = lazy(() => import('./pages/MeetingRoom.jsx'));
 import NotFound from './pages/NotFound.jsx';
+import Terms from './pages/Terms.jsx';
+import Privacy from './pages/Privacy.jsx';
+import Crisis from './pages/Crisis.jsx';
 
 export default function App() {
   return (
@@ -65,6 +68,11 @@ export default function App() {
         <Route path="/me/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
 
         <Route path="/admin" element={<ProtectedRoute role="admin"><Admin /></ProtectedRoute>} />
+
+        {/* Static legal + safety pages — public */}
+        <Route path="/terms"   element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/crisis"  element={<Crisis />} />
 
         <Route path="*" element={<NotFound />} />
       </Route>

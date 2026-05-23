@@ -14,6 +14,7 @@ import {
 import Card, { CardBody } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Avatar from '../components/Avatar.jsx';
+import OnboardingAck from '../components/OnboardingAck.jsx';
 import { formatINR, formatDate, relativeTime } from '../lib/format.js';
 
 // Modern, data-rich dashboard. Mobile-first stack; on ≥768px reorganises
@@ -64,6 +65,9 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 animate-fade-in">
+      {/* First-time "this isn't licensed care" acknowledgement — mentees only */}
+      <OnboardingAck />
+
       {/* Hero greeting */}
       <HeroGreeting user={user} firstName={firstName} />
 

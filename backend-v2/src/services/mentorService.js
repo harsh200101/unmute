@@ -3,6 +3,66 @@
 const { query, withTransaction } = require('../config/db');
 const { bad, conflict, notFound, forbidden } = require('../utils/errors');
 
+// --- Mentor language guardrails -------------------------------------------
+//
+// unmute is a peer mentoring + guidance platform, not licensed care.
+// Mentor profiles must avoid clinical / diagnostic / treatment language so
+// users (and we) aren't misled about what the platform provides.
+//
+// The list is matched as case-insensitive whole-word regex against the
+// headline + bio. If any banned term is found, the submission is rejected
+// with a structured error that names the offending words so the mentor
+// can rephrase. This is enforced on both apply() and updateMine().
+
+const BANNED_TERMS = [
+  // Practitioner titles that imply licensure
+  'licensed therapist', 'licensed counsellor', 'licensed counselor',
+  'licensed psychologist', 'licensed psychiatrist', 'licensed clinician',
+  'clinical psychologist', 'clinical psychiatrist',
+  'psychiatrist', 'psychotherapist',
+  // Clinical practice language
+  'therapy', 'therapist', 'therapies', 'therapeutic',
+  'psychotherapy', 'psychiatry', 'counseling', 'counselling',
+  'diagnose', 'diagnosis', 'diagnostic',
+  'treat', 'treatment', 'cure', 'heal you', 'medication',
+  'prescription', 'prescribe', 'prescribed',
+  // Clinical method labels
+  'cbt', 'dbt', 'emdr', 'ect',
+  // Disorder labels
+  'ptsd', 'ocd', 'adhd', 'bipolar', 'schizophren', 'depression disorder',
+  'anxiety disorder',
+];
+
+function detectBannedLanguage(textFields) {
+  const found = new Set();
+  for (const field of textFields) {
+    if (!field) continue;
+    const haystack = String(field).toLowerCase();
+    for (const term of BANNED_TERMS) {
+      // Whole-word(ish) match: surround with non-letter boundaries.
+      // We allow inside-word matches only for compound terms (no spaces).
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = term.includes(' ')
+        ? new RegExp(escaped, 'i')
+        : new RegExp(`(^|[^a-z])${escaped}([^a-z]|$)`, 'i');
+      if (re.test(haystack)) found.add(term);
+    }
+  }
+  return [...found];
+}
+
+function ensureCleanMentorLanguage({ headline, bio }) {
+  const offending = detectBannedLanguage([headline, bio]);
+  if (offending.length > 0) {
+    throw bad(
+      'clinical_language_detected',
+      `Mentor profiles can't use licensed-care / clinical language. ` +
+      `Please rephrase the following: ${offending.join(', ')}. ` +
+      `unmute is peer mentorship & guidance, not therapy.`
+    );
+  }
+}
+
 // --- Apply (mentee → mentor) ------------------------------------------------
 
 async function apply({ user_id, profile }) {
@@ -11,6 +71,7 @@ async function apply({ user_id, profile }) {
   for (const f of required) {
     if (!profile[f]) throw bad('missing_field', `${f} is required`);
   }
+  ensureCleanMentorLanguage({ headline: profile.headline, bio: profile.bio });
 
   return withTransaction(async (client) => {
     // Verify pricing tier exists + active
@@ -99,6 +160,16 @@ const SELF_EDITABLE = new Set([
 ]);
 
 async function updateMine(user_id, patch = {}) {
+  // Re-validate clinical-language guardrails whenever headline or bio is
+  // touched. We compare against the *new* effective values (falling back to
+  // current row if not in patch), so partial updates can't sneak banned
+  // language past us.
+  if ('headline' in patch || 'bio' in patch) {
+    const cur = await query(`SELECT headline, bio FROM mentor_profiles WHERE user_id = $1`, [user_id]);
+    const effective_headline = 'headline' in patch ? patch.headline : cur.rows[0]?.headline;
+    const effective_bio      = 'bio'      in patch ? patch.bio      : cur.rows[0]?.bio;
+    ensureCleanMentorLanguage({ headline: effective_headline, bio: effective_bio });
+  }
   return withTransaction(async (client) => {
     const cur = await client.query(
       `SELECT * FROM mentor_profiles WHERE user_id = $1 FOR UPDATE`,

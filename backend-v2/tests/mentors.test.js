@@ -72,6 +72,35 @@ describe('POST /api/mentors/apply', () => {
     expect(res.body.code).toBe('email_not_verified');
   });
 
+  test('rejects clinical language in headline or bio', async () => {
+    const { access_token } = await createUserWithToken();
+    const tier = await getTier();
+    // Headline that implies licensed care
+    const r1 = await request(app)
+      .post('/api/mentors/apply')
+      .set('Authorization', `Bearer ${access_token}`)
+      .send({
+        pricing_tier_id: tier.id,
+        headline: 'Licensed therapist helping with anxiety',
+        bio: 'I offer guidance.',
+      });
+    expect(r1.status).toBe(400);
+    expect(r1.body.code).toBe('clinical_language_detected');
+    expect(r1.body.error.toLowerCase()).toContain('therapist');
+
+    // Bio that names a disorder + treatment language
+    const r2 = await request(app)
+      .post('/api/mentors/apply')
+      .set('Authorization', `Bearer ${access_token}`)
+      .send({
+        pricing_tier_id: tier.id,
+        headline: 'Career mentor',
+        bio: 'I can diagnose and treat PTSD with CBT.',
+      });
+    expect(r2.status).toBe(400);
+    expect(r2.body.code).toBe('clinical_language_detected');
+  });
+
   test('rejects missing headline/bio/tier', async () => {
     const { access_token } = await createUserWithToken();
     const res = await request(app)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { mentors as mentorsApi, catalog } from '../api/endpoints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -28,6 +28,7 @@ export default function MentorApply() {
   const [selectedTags, setSelectedTags] = useState(new Set());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [agreedToMentorTOS, setAgreedToMentorTOS] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +54,10 @@ export default function MentorApply() {
     setErr(null);
     if (!pricing_tier_id) { setErr('Pick a pricing tier'); return; }
     if (!headline.trim() || !bio.trim()) { setErr('Headline and bio are required'); return; }
+    if (!agreedToMentorTOS) {
+      setErr('Please confirm you understand the mentor terms before submitting.');
+      return;
+    }
 
     setBusy(true);
     try {
@@ -198,11 +203,42 @@ export default function MentorApply() {
           </CardBody>
         </Card>
 
-        {err && <p className="text-sm text-rose-600">{err}</p>}
+        {/* Mentor TOS — required before submitting. Clear, plain-English. */}
+        <Card>
+          <CardBody className="bg-amber-50/60 dark:bg-amber-500/5 border-amber-200/50 dark:border-amber-500/20 rounded-2xl">
+            <h3 className="font-semibold text-amber-900 dark:text-amber-200">Mentor terms — please read</h3>
+            <ul className="mt-2 list-disc pl-5 space-y-1 text-sm text-amber-900/90 dark:text-amber-200/90 leading-relaxed">
+              <li>I will offer <strong>guidance and mentorship</strong> only — not therapy, counselling, diagnosis, or medical treatment.</li>
+              <li>I will <strong>not</strong> use clinical language (e.g. "therapy", "diagnose", "treat", "cure", named disorders like "PTSD/OCD/ADHD") in my profile or sessions. Profiles using such language are auto-blocked.</li>
+              <li>I am an independent contractor — not an employee of unmute.</li>
+              <li>If a mentee shows signs of crisis, I will refer them to the{' '}
+                <Link to="/crisis" target="_blank" className="underline font-semibold">crisis resources</Link>.
+              </li>
+              <li>I have read and accept the <Link to="/terms" target="_blank" className="underline font-semibold">Terms of Service</Link> and <Link to="/privacy" target="_blank" className="underline font-semibold">Privacy Policy</Link>.</li>
+            </ul>
+            <label className="mt-4 flex items-start gap-2.5 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agreedToMentorTOS}
+                onChange={(e) => setAgreedToMentorTOS(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-amber-300 dark:border-amber-700 text-amber-600 focus:ring-amber-500"
+              />
+              <span className="text-amber-900 dark:text-amber-200 font-medium">
+                I agree to the mentor terms above.
+              </span>
+            </label>
+          </CardBody>
+        </Card>
+
+        {err && (
+          <div className="rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 px-3 py-2 text-sm text-rose-900 dark:text-rose-200">
+            {err}
+          </div>
+        )}
 
         <div className="flex justify-end gap-2">
           <Button variant="secondary" type="button" onClick={() => navigate(-1)}>Cancel</Button>
-          <Button type="submit" loading={busy}>Submit application</Button>
+          <Button type="submit" loading={busy} disabled={!agreedToMentorTOS}>Submit application</Button>
         </div>
       </form>
     </div>
