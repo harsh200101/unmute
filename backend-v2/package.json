@@ -12,6 +12,7 @@
     "migrate:status": "node src/migrator.js status",
     "seed": "node src/seed.js",
     "dev:seed": "node src/dev-seed.js",
+    "dev:instant-booking": "node src/dev-instant-booking.js",
     "db:reset": "node src/migrator.js reset && npm run migrate && npm run seed",
     "test": "jest --runInBand --forceExit",
     "test:watch": "jest --watch",
