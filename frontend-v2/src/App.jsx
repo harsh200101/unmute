@@ -16,6 +16,7 @@ import MentorList from './pages/MentorList.jsx';
 import MentorProfile from './pages/MentorProfile.jsx';
 import MentorApply from './pages/MentorApply.jsx';
 import MentorAvailability from './pages/MentorAvailability.jsx';
+import MentorSettings from './pages/MentorSettings.jsx';
 import Book from './pages/Book.jsx';
 import MyBookings from './pages/MyBookings.jsx';
 import BookingDetail from './pages/BookingDetail.jsx';
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/mentors/:uuid" element={<MentorProfile />} />
         <Route path="/mentor/apply" element={<ProtectedRoute><MentorApply /></ProtectedRoute>} />
         <Route path="/mentor/availability" element={<ProtectedRoute role="mentor"><MentorAvailability /></ProtectedRoute>} />
+        <Route path="/mentor/settings" element={<ProtectedRoute role="mentor"><MentorSettings /></ProtectedRoute>} />
 
         <Route path="/book/:uuid" element={<ProtectedRoute><Book /></ProtectedRoute>} />
         <Route path="/bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />

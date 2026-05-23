@@ -21,10 +21,13 @@ export default function MentorCard({ item }) {
             </span>
           </div>
           <p className="text-sm text-slate-600 mt-0.5 line-clamp-1">{item.headline}</p>
-          <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
+          <div className="mt-2 flex items-center gap-3 text-xs text-slate-500 flex-wrap">
             <RatingStars value={Number(item.rating_avg) || 0} count={item.rating_count} />
             {item.location_city && <span>· {item.location_city}</span>}
             {item.years_experience > 0 && <span>· {item.years_experience}+ yrs</span>}
+            {Array.isArray(item.languages) && item.languages.length > 0 && (
+              <span>· Speaks {item.languages.map((l) => l.toUpperCase()).join(', ')}</span>
+            )}
           </div>
           {item.tags?.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">

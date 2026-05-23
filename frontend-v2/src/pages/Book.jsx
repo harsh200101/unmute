@@ -105,6 +105,11 @@ export default function Book() {
           <p className="text-sm text-slate-600">
             {formatPerMinute(mentor.pricing_tier?.per_minute_paise)} · 5-min minimum charge once both joined
           </p>
+          {Array.isArray(mentor.languages) && mentor.languages.length > 0 && (
+            <p className="text-xs text-slate-500 mt-0.5">
+              Speaks {mentor.languages.map((l) => l.toUpperCase()).join(', ')}
+            </p>
+          )}
         </div>
       </div>
 

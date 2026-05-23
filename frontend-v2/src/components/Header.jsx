@@ -23,12 +23,23 @@ export default function Header() {
     }
   }, [menuOpen]);
 
+  const isMentor = user?.role === 'mentor';
   const navItems = [
-    { to: '/mentors',  label: 'Find mentors',  show: true },
-    { to: '/dashboard', label: 'Dashboard',    show: !!user },
-    { to: '/bookings',  label: 'Bookings',     show: !!user },
-    { to: '/wallet',    label: 'Wallet',       show: !!user },
+    { to: '/mentors',   label: 'Find mentors',  show: true },
+    { to: '/dashboard', label: 'Dashboard',     show: !!user },
+    { to: '/bookings',  label: 'Bookings',      show: !!user },
+    { to: '/wallet',    label: 'Wallet',        show: !!user },
   ].filter((i) => i.show);
+
+  // Mentor-only items get their own group in the drawer so the desktop nav
+  // stays compact.
+  const mentorItems = isMentor ? [
+    { to: '/mentor/settings',     label: 'Mentor settings' },
+    { to: '/mentor/availability', label: 'Availability' },
+    { to: '/mentor/earnings',     label: 'Earnings' },
+    { to: '/mentor/kyc',          label: 'KYC' },
+    { to: '/mentor/reviews',      label: 'Reviews' },
+  ] : [];
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
@@ -95,6 +106,16 @@ export default function Header() {
               {navItems.map((it) => (
                 <MobileNavItem key={it.to} to={it.to}>{it.label}</MobileNavItem>
               ))}
+              {mentorItems.length > 0 && (
+                <>
+                  <p className="px-3 pt-3 pb-1 text-[11px] uppercase tracking-wide text-slate-400 font-semibold">
+                    Mentor
+                  </p>
+                  {mentorItems.map((it) => (
+                    <MobileNavItem key={it.to} to={it.to}>{it.label}</MobileNavItem>
+                  ))}
+                </>
+              )}
               {user && (
                 <>
                   <hr className="my-2 border-slate-200" />

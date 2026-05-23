@@ -61,7 +61,14 @@ export default function Dashboard() {
       {user.role === 'mentor' && (
         <div className="mt-10">
           <h2 className="text-xl font-semibold text-slate-900">Mentor tools</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mt-4">
+            <Card><CardBody>
+              <h3 className="font-semibold">Profile &amp; pricing</h3>
+              <p className="text-sm text-slate-600 mt-1">Update your tier, headline, languages and categories.</p>
+              <Link to="/mentor/settings" className="block mt-3">
+                <Button size="sm" variant="secondary">Edit profile</Button>
+              </Link>
+            </CardBody></Card>
             <Card><CardBody>
               <h3 className="font-semibold">Availability</h3>
               <p className="text-sm text-slate-600 mt-1">Set your weekly slots and one-off overrides.</p>
