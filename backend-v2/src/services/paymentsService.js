@@ -3,6 +3,7 @@
 const { query, withTransaction } = require('../config/db');
 const { bad, notFound } = require('../utils/errors');
 const phonepe = require('./phonepeService');
+const notify = require('./notificationService');
 
 const MIN_TOPUP_PAISE = 5000;      // ₹50
 const MAX_TOPUP_PAISE = 50000000;  // ₹5,00,000 hard cap to prevent fat-fingers
@@ -182,6 +183,16 @@ async function handleWebhook({ headers, body }) {
         );
       }
     }
+
+    await notify.notify({
+      client,
+      user_id: payment.user_id,
+      kind: 'topup_succeeded',
+      title: `Top-up of ₹${(payment.amount_paise / 100).toFixed(2)} added to your wallet`,
+      link_url: '/wallet',
+      reference_table: 'payments',
+      reference_id: payment.id,
+    });
 
     return { ok: true, payment: publicPayment(up.rows[0]) };
   });

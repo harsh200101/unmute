@@ -2,6 +2,7 @@
 
 const { query, withTransaction } = require('../config/db');
 const { bad, notFound } = require('../utils/errors');
+const notify = require('./notificationService');
 
 // --- Users ------------------------------------------------------------------
 
@@ -124,6 +125,17 @@ async function approveMentor({ admin_user_id, mentor_id, notes }) {
       notes,
     });
 
+    await notify.notify({
+      client,
+      user_id: before.rows[0].user_id,
+      kind: 'mentor_approved',
+      title: 'Your mentor application was approved 🎉',
+      body: notes || 'You can now publish availability and accept bookings.',
+      link_url: '/mentor/dashboard',
+      reference_table: 'mentor_profiles',
+      reference_id: mentor_id,
+    });
+
     return after.rows[0];
   });
 }
@@ -161,6 +173,17 @@ async function rejectMentor({ admin_user_id, mentor_id, notes }) {
       before_state: before.rows[0],
       after_state: after.rows[0],
       notes,
+    });
+
+    await notify.notify({
+      client,
+      user_id: before.rows[0].user_id,
+      kind: 'mentor_rejected',
+      title: 'Your mentor application was not approved',
+      body: notes || 'Please review the feedback and reapply.',
+      link_url: '/mentor/apply',
+      reference_table: 'mentor_profiles',
+      reference_id: mentor_id,
     });
 
     return after.rows[0];

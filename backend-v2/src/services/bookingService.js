@@ -5,6 +5,7 @@ const { bad, conflict, notFound, forbidden } = require('../utils/errors');
 const availability = require('./availabilityService');
 const email = require('./emailService');
 const { buildICS } = require('./icsService');
+const notify = require('./notificationService');
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 const LATE_CANCEL_PENALTY_PAISE = 5000; // ₹50
@@ -141,17 +142,35 @@ async function createBooking({ mentee_user_id, mentor_uuid, slot_start_at, mente
     throw err;
   }
 
-  // Fire-and-forget confirmation emails (await for test determinism)
+  // Fire-and-forget confirmation emails + in-app notifications
   try {
     const full = await loadBookingByUuid(null, booking.uuid);
     await sendBookingConfirmationEmails(full);
+    await notifyParties(full, {
+      kind: 'booking_confirmed',
+      title_for_mentor: `Booking from ${full.mentee_name}`,
+      title_for_mentee: `Booking confirmed with ${full.mentor_name}`,
+      body: new Date(full.slot_start_at).toISOString(),
+      link_url: `/bookings/${full.uuid}`,
+    });
   } catch (e) {
     // eslint-disable-next-line no-console
-    console.error('[booking] email send failed:', e.message);
+    console.error('[booking] notify failed:', e.message);
   }
 
   const full = await loadBookingByUuid(null, booking.uuid);
   return publicBooking(full);
+}
+
+async function notifyParties(b, { kind, title_for_mentor, title_for_mentee, body, link_url }) {
+  await notify.notify({
+    user_id: b.mentor_user_id, kind, title: title_for_mentor, body, link_url,
+    reference_table: 'bookings', reference_id: b.id,
+  });
+  await notify.notify({
+    user_id: b.mentee_user_id, kind, title: title_for_mentee, body, link_url,
+    reference_table: 'bookings', reference_id: b.id,
+  });
 }
 
 async function sendBookingConfirmationEmails(b) {
@@ -271,9 +290,16 @@ async function cancelBooking({ user_id, uuid, reason }) {
       await applyLatePenalty(client, { canceller_id: user_id, canceller_role: role, booking: b });
     }
 
-    // Email both parties
+    // Email both parties + in-app notify
     try {
       const updated = await loadBookingByUuid(client, uuid);
+      await notifyParties(updated, {
+        kind: 'booking_cancelled',
+        title_for_mentor: `Booking cancelled by ${role === 'mentee' ? 'mentee' : 'you'}`,
+        title_for_mentee: `Booking cancelled by ${role === 'mentor' ? 'mentor' : 'you'}`,
+        body: new Date(updated.slot_start_at).toISOString(),
+        link_url: `/bookings/${updated.uuid}`,
+      });
       const byLabel = role === 'mentee' ? 'mentee' : 'mentor';
       const other_to = role === 'mentee' ? updated.mentor_email : updated.mentee_email;
       const other_name = role === 'mentee' ? updated.mentor_name : updated.mentee_name;

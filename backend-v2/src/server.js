@@ -25,6 +25,7 @@ const paymentsRoutes = require('./routes/payments.routes');
 const webhookRoutes = require('./routes/webhooks.routes');
 const meetingRoutes = require('./routes/meetings.routes');
 const reviewRoutes = require('./routes/reviews.routes');
+const notificationRoutes = require('./routes/notifications.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -82,6 +83,9 @@ app.use('/api/meetings', meetingRoutes);
 
 // --- Phase 9: reviews + session notes (routes spread across /api/*) ---
 app.use('/api', reviewRoutes);
+
+// --- Phase 10: in-app notifications ---
+app.use('/api/me/notifications', notificationRoutes);
 
 // Anything else under /api is not implemented yet.
 app.use('/api', (_req, res) => {

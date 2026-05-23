@@ -2,6 +2,7 @@
 
 const { query, withTransaction } = require('../config/db');
 const { bad, conflict, notFound, forbidden } = require('../utils/errors');
+const notify = require('./notificationService');
 
 // --- Submit ----------------------------------------------------------------
 
@@ -39,6 +40,16 @@ async function submitReview({ user_id, booking_uuid, rating, body, is_anonymous 
          RETURNING *`,
         [booking.id, reviewer_user_id, reviewee_user_id, direction, r, body || null, anon]
       );
+      await notify.notify({
+        client,
+        user_id: reviewee_user_id,
+        kind: 'review_received',
+        title: `You received a ${r}-star review`,
+        body: body ? body.slice(0, 200) : null,
+        link_url: '/me/reviews/received',
+        reference_table: 'reviews',
+        reference_id: ins.rows[0].id,
+      });
       return { review: publicReview(ins.rows[0], { include_internal: true }), direction };
     } catch (err) {
       if (err.code === '23505') {
