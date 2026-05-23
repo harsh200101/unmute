@@ -299,9 +299,12 @@ describe('Google OAuth (feature-gated)', () => {
     expect(res.body.code).toBe('google_not_configured');
   });
 
-  test('GET /api/auth/google/callback returns 400 when not configured', async () => {
+  test('GET /api/auth/google/callback redirects to frontend with error when not configured', async () => {
     const res = await request(app).get('/api/auth/google/callback');
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('google_not_configured');
+    // Backend redirects to frontend /oauth/callback?error=... so the user never
+    // sees a raw JSON error during the OAuth flow.
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('/oauth/callback');
+    expect(res.headers.location).toContain('error=google_not_configured');
   });
 });

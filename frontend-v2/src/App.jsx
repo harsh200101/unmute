@@ -8,6 +8,7 @@ import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import VerifyEmail from './pages/VerifyEmail.jsx';
+import OAuthCallback from './pages/OAuthCallback.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
         <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
         <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/oauth/callback" element={<OAuthCallback />} />
         <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
         <Route path="/reset-password" element={<PublicOnly><ResetPassword /></PublicOnly>} />
 

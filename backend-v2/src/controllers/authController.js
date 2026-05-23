@@ -3,9 +3,11 @@
 // Thin HTTP layer over authService. Handlers parse req, call the service,
 // and shape the response. No business logic here.
 
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const auth = require('../services/authService');
 const env = require('../config/env');
-const { bad } = require('../utils/errors');
+const { bad, unauthorized } = require('../utils/errors');
 
 // Cookie name + options for the refresh token.
 const REFRESH_COOKIE = 'unmute_refresh';
@@ -114,13 +116,42 @@ async function changePassword(req, res, next) {
   } catch (e) { next(e); }
 }
 
-// --- Google OAuth shells (no-op until env vars are set) ----------------------
+// --- Google OAuth ------------------------------------------------------------
+//
+// Flow:
+//   1. Frontend opens /api/auth/google → we redirect to Google's consent screen
+//      with a signed CSRF state (HS256-signed short-lived JWT).
+//   2. User picks an account → Google redirects to /api/auth/google/callback
+//      with ?code=...&state=... → we verify state, exchange code for tokens,
+//      fetch the user's profile, call loginOrCreateGoogleUser, then redirect
+//      to the frontend's /oauth/callback page (refresh cookie already set).
 
-async function googleStart(_req, res, next) {
+const OAUTH_STATE_TTL_SECONDS = 600; // 10 min to complete the round-trip
+
+function signOauthState(payload) {
+  return jwt.sign(payload, env.JWT_SECRET, {
+    expiresIn: OAUTH_STATE_TTL_SECONDS,
+    issuer: 'unmute-v2',
+    audience: 'unmute-oauth-state',
+  });
+}
+function verifyOauthState(token) {
+  return jwt.verify(token, env.JWT_SECRET, {
+    issuer: 'unmute-v2',
+    audience: 'unmute-oauth-state',
+  });
+}
+
+async function googleStart(req, res, next) {
   try {
     if (!auth.googleConfigured()) {
       throw bad('google_not_configured', 'Google login is not enabled on this server');
     }
+    // CSRF state — random nonce + a return URL the user wants to land on
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const next_url = typeof req.query.next === 'string' ? req.query.next : '/dashboard';
+    const state = signOauthState({ nonce, next_url });
+
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     url.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
     url.searchParams.set('redirect_uri', env.GOOGLE_REDIRECT_URI);
@@ -128,27 +159,88 @@ async function googleStart(_req, res, next) {
     url.searchParams.set('scope', 'openid email profile');
     url.searchParams.set('access_type', 'online');
     url.searchParams.set('prompt', 'select_account');
-    res.json({ url: url.toString() });
+    url.searchParams.set('state', state);
+
+    // If the client did a fetch (Accept: application/json), return JSON.
+    // Otherwise redirect (default browser flow).
+    if (req.accepts(['html', 'json']) === 'json') {
+      return res.json({ url: url.toString() });
+    }
+    res.redirect(url.toString());
   } catch (e) { next(e); }
 }
 
+// Exchange Google authorization code for tokens, then fetch the userinfo.
+async function exchangeCodeForProfile(code) {
+  const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: env.GOOGLE_REDIRECT_URI,
+      grant_type: 'authorization_code',
+    }),
+  });
+  if (!tokenResp.ok) {
+    const t = await tokenResp.text().catch(() => '');
+    throw new Error(`Google token exchange failed (${tokenResp.status}): ${t}`);
+  }
+  const tokenData = await tokenResp.json();
+  const accessToken = tokenData.access_token;
+  if (!accessToken) throw new Error('Google did not return an access_token');
+
+  const profileResp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!profileResp.ok) throw new Error(`Google userinfo failed (${profileResp.status})`);
+  const profile = await profileResp.json();
+  return {
+    google_sub: profile.sub,
+    email: profile.email,
+    email_verified: !!profile.email_verified,
+    full_name: profile.name || profile.email,
+    avatar_url: profile.picture || null,
+  };
+}
+
 async function googleCallback(req, res, next) {
+  // We always redirect back to the frontend (success OR failure) so the user
+  // never sees a raw JSON error page on the OAuth flow.
+  const fail = (code) =>
+    res.redirect(`${env.FRONTEND_URL}/oauth/callback?error=${encodeURIComponent(code)}`);
   try {
-    if (!auth.googleConfigured()) {
-      throw bad('google_not_configured');
+    if (!auth.googleConfigured()) return fail('google_not_configured');
+
+    const { code, state, error } = req.query;
+    if (error) return fail(String(error));
+    if (!code || !state) return fail('missing_code_or_state');
+
+    let nextUrl = '/dashboard';
+    try {
+      const decoded = verifyOauthState(String(state));
+      if (decoded.next_url && decoded.next_url.startsWith('/')) nextUrl = decoded.next_url;
+    } catch (_) {
+      return fail('invalid_state');
     }
-    // The full code exchange + ID token verification is intentionally
-    // deferred to phase 1.5 (needs google-auth-library or fetch to Google).
-    // The route exists so the frontend integration is wired and tests can
-    // hit the endpoint to confirm the gate.
-    throw bad('google_callback_not_implemented', 'Google callback handler ships in phase 1.5');
-    // Sketch of the wiring (for when we implement it):
-    //   const code = req.query.code;
-    //   const profile = await exchangeCodeForProfile(code);
-    //   const session = await auth.loginOrCreateGoogleUser(profile);
-    //   setRefreshCookie(res, session.refresh_token);
-    //   res.redirect(`${env.FRONTEND_URL}/oauth/callback?ok=1`);
-  } catch (e) { next(e); }
+
+    const profile = await exchangeCodeForProfile(String(code));
+    if (!profile.email_verified) return fail('google_email_unverified');
+
+    const session = await auth.loginOrCreateGoogleUser(profile);
+    setRefreshCookie(res, session.refresh_token);
+
+    // Redirect to frontend /oauth/callback which will call /api/auth/refresh
+    // to mint an access token + load user, then push to nextUrl.
+    res.redirect(
+      `${env.FRONTEND_URL}/oauth/callback?next=${encodeURIComponent(nextUrl)}`
+    );
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[google callback]', e.message);
+    return fail('google_oauth_failed');
+  }
 }
 
 module.exports = {
