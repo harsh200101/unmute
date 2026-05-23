@@ -31,9 +31,28 @@ export const mentors = {
   patchMine: (body) => api.patch('/mentors/me', body).then((r) => r.data),
 };
 
+export const availability = {
+  getMine: () => api.get('/availability/me').then((r) => r.data),
+  putTemplate: (slots) => api.put('/availability/template', { slots }).then((r) => r.data),
+  addOverride: (body) => api.post('/availability/overrides', body).then((r) => r.data),
+  deleteOverride: (id) => api.delete(`/availability/overrides/${id}`).then((r) => r.data),
+  slots: (mentor_uuid, params) => api.get(`/availability/${mentor_uuid}/slots`, { params }).then((r) => r.data),
+};
+
+export const bookings = {
+  create: (body) => api.post('/bookings', body).then((r) => r.data),
+  listMine: (params) => api.get('/bookings/me', { params }).then((r) => r.data),
+  byUuid: (uuid) => api.get(`/bookings/${uuid}`).then((r) => r.data),
+  cancel: (uuid, reason) => api.post(`/bookings/${uuid}/cancel`, { reason }).then((r) => r.data),
+  reschedule: (uuid, new_slot_start_at) =>
+    api.post(`/bookings/${uuid}/reschedule`, { new_slot_start_at }).then((r) => r.data),
+  acceptReschedule: (uuid) => api.post(`/bookings/${uuid}/reschedule/accept`).then((r) => r.data),
+  declineReschedule: (uuid) => api.post(`/bookings/${uuid}/reschedule/decline`).then((r) => r.data),
+};
+
 export const catalog = {
   tags: (kind) => api.get('/tags', { params: kind ? { kind } : {} }).then((r) => r.data),
   tiers: () => api.get('/pricing-tiers').then((r) => r.data),
 };
 
-export default { auth, me, mentors, catalog };
+export default { auth, me, mentors, catalog, availability, bookings };

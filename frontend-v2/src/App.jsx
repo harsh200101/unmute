@@ -12,6 +12,10 @@ import Dashboard from './pages/Dashboard.jsx';
 import MentorList from './pages/MentorList.jsx';
 import MentorProfile from './pages/MentorProfile.jsx';
 import MentorApply from './pages/MentorApply.jsx';
+import MentorAvailability from './pages/MentorAvailability.jsx';
+import Book from './pages/Book.jsx';
+import MyBookings from './pages/MyBookings.jsx';
+import BookingDetail from './pages/BookingDetail.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -30,6 +34,11 @@ export default function App() {
         <Route path="/mentors" element={<MentorList />} />
         <Route path="/mentors/:uuid" element={<MentorProfile />} />
         <Route path="/mentor/apply" element={<ProtectedRoute><MentorApply /></ProtectedRoute>} />
+        <Route path="/mentor/availability" element={<ProtectedRoute role="mentor"><MentorAvailability /></ProtectedRoute>} />
+
+        <Route path="/book/:uuid" element={<ProtectedRoute><Book /></ProtectedRoute>} />
+        <Route path="/bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
+        <Route path="/bookings/:uuid" element={<ProtectedRoute><BookingDetail /></ProtectedRoute>} />
 
         <Route path="*" element={<NotFound />} />
       </Route>
