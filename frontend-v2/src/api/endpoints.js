@@ -50,9 +50,18 @@ export const bookings = {
   declineReschedule: (uuid) => api.post(`/bookings/${uuid}/reschedule/decline`).then((r) => r.data),
 };
 
+export const meetings = {
+  credentials: (booking_uuid) => api.get(`/meetings/${booking_uuid}/credentials`).then((r) => r.data),
+  get:         (booking_uuid) => api.get(`/meetings/${booking_uuid}`).then((r) => r.data),
+  billing:     (booking_uuid) => api.get(`/meetings/${booking_uuid}/billing`).then((r) => r.data),
+  joined:      (booking_uuid) => api.post(`/meetings/${booking_uuid}/events/joined`).then((r) => r.data),
+  left:        (booking_uuid) => api.post(`/meetings/${booking_uuid}/events/left`).then((r) => r.data),
+  end:         (booking_uuid, reason) => api.post(`/meetings/${booking_uuid}/end`, { reason }).then((r) => r.data),
+};
+
 export const catalog = {
   tags: (kind) => api.get('/tags', { params: kind ? { kind } : {} }).then((r) => r.data),
   tiers: () => api.get('/pricing-tiers').then((r) => r.data),
 };
 
-export default { auth, me, mentors, catalog, availability, bookings };
+export default { auth, me, mentors, catalog, availability, bookings, meetings };

@@ -1,6 +1,8 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import ProtectedRoute, { PublicOnly } from './components/ProtectedRoute.jsx';
+import { PageSpinner } from './components/ui/Spinner.jsx';
 
 import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
@@ -16,6 +18,8 @@ import MentorAvailability from './pages/MentorAvailability.jsx';
 import Book from './pages/Book.jsx';
 import MyBookings from './pages/MyBookings.jsx';
 import BookingDetail from './pages/BookingDetail.jsx';
+// Lazy-load: pulls Agora SDK (~1.5 MB) only when entering a meeting
+const MeetingRoom = lazy(() => import('./pages/MeetingRoom.jsx'));
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -42,6 +46,18 @@ export default function App() {
 
         <Route path="*" element={<NotFound />} />
       </Route>
+
+      {/* Meeting room: no Layout/header — uses its own full-screen dark UI */}
+      <Route
+        path="/meetings/:uuid"
+        element={
+          <ProtectedRoute>
+            <Suspense fallback={<PageSpinner />}>
+              <MeetingRoom />
+            </Suspense>
+          </ProtectedRoute>
+        }
+      />
     </Routes>
   );
 }

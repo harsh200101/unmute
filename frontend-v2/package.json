@@ -10,6 +10,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "agora-rtc-sdk-ng": "^4.24.3",
     "axios": "^1.12.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
