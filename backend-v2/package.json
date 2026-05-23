@@ -11,6 +11,7 @@
     "migrate": "node src/migrator.js up",
     "migrate:status": "node src/migrator.js status",
     "seed": "node src/seed.js",
+    "dev:seed": "node src/dev-seed.js",
     "db:reset": "node src/migrator.js reset && npm run migrate && npm run seed",
     "test": "jest --runInBand --forceExit",
     "test:watch": "jest --watch",
