@@ -3,7 +3,7 @@
 const { query } = require('../config/db');
 const { bad } = require('../utils/errors');
 
-const VALID_KINDS = ['expertise', 'industry'];
+const VALID_KINDS = ['expertise', 'audience', 'industry']; // 'industry' kept for back-compat
 
 async function listTags({ kind } = {}) {
   if (kind && !VALID_KINDS.includes(kind)) {

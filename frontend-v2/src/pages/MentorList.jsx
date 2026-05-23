@@ -99,7 +99,7 @@ export default function MentorList() {
           <option value="">All topics</option>
           {tags.map((t) => (
             <option key={t.id} value={t.slug}>
-              {t.display_name} ({t.kind})
+              {t.display_name} ({t.kind === 'expertise' ? 'topic' : t.kind})
             </option>
           ))}
         </select>

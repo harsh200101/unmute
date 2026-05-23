@@ -109,7 +109,7 @@ export default function MentorApply() {
   }
 
   const expertise = tags.filter((t) => t.kind === 'expertise');
-  const industries = tags.filter((t) => t.kind === 'industry');
+  const audience   = tags.filter((t) => t.kind === 'audience');
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
@@ -157,7 +157,7 @@ export default function MentorApply() {
           <CardBody className="space-y-4">
             <Field label="Headline" htmlFor="headline">
               <Input id="headline" value={headline} onChange={(e) => setHeadline(e.target.value)}
-                placeholder="Senior PM @ Stripe — career coaching for product folks" required />
+                placeholder="Licensed counsellor — anxiety, life transitions, and self-esteem" required />
             </Field>
             <Field label="Bio" htmlFor="bio">
               <textarea
@@ -165,7 +165,7 @@ export default function MentorApply() {
                 rows={6}
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                placeholder="Share your background, what you can help with, who you've worked with..."
+                placeholder="Share your training, the issues you specialise in, your approach, and who you’ve worked with..."
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
                 required
               />
@@ -189,12 +189,12 @@ export default function MentorApply() {
 
         <Card>
           <CardHeader>
-            <h2 className="font-semibold text-slate-900">Expertise tags</h2>
-            <p className="text-xs text-slate-500 mt-1">Pick anything that fits. Mentees use these to filter.</p>
+            <h2 className="font-semibold text-slate-900">Areas you help with</h2>
+            <p className="text-xs text-slate-500 mt-1">Pick anything that fits. Clients use these to find you.</p>
           </CardHeader>
           <CardBody className="space-y-4">
-            <TagGroup title="Expertise" items={expertise} selected={selectedTags} toggle={toggleTag} />
-            <TagGroup title="Industries" items={industries} selected={selectedTags} toggle={toggleTag} />
+            <TagGroup title="What you help with" items={expertise} selected={selectedTags} toggle={toggleTag} />
+            <TagGroup title="Who you serve" items={audience} selected={selectedTags} toggle={toggleTag} />
           </CardBody>
         </Card>
 

@@ -19,27 +19,45 @@ const TIERS = [
   { name: 'premium',  display_name: 'Premium',  per_minute_paise: 4000, sort_order: 4 },
 ];
 
+// unmute = 1:1 mental health support platform.
+// Topics the mentor helps with ↓
+const EXPERTISE = [
+  ['anxiety',              'Anxiety'],
+  ['depression',           'Depression'],
+  ['stress-burnout',       'Stress & Burnout'],
+  ['relationships',        'Relationships'],
+  ['self-esteem',          'Self-Esteem & Confidence'],
+  ['grief-and-loss',       'Grief & Loss'],
+  ['trauma-ptsd',          'Trauma & PTSD'],
+  ['anger-management',     'Anger Management'],
+  ['sleep-issues',         'Sleep Issues'],
+  ['life-transitions',     'Life Transitions'],
+  ['career-stress',        'Career Stress'],
+  ['family-conflict',      'Family Conflict'],
+  ['loneliness',           'Loneliness & Isolation'],
+  ['mindfulness',          'Mindfulness & Meditation'],
+  ['addiction-recovery',   'Addiction & Recovery'],
+  ['identity-and-self',    'Identity & Self-Discovery'],
+  ['parenting-support',    'Parenting Support'],
+  ['body-image',           'Body Image & Eating'],
+];
+
+// Who the mentor primarily serves ↓
+const AUDIENCE = [
+  ['teens',                'Teens (13-17)'],
+  ['young-adults',         'Young Adults (18-25)'],
+  ['adults',               'Adults'],
+  ['couples',              'Couples'],
+  ['parents',              'Parents'],
+  ['students',             'Students'],
+  ['working-professionals','Working Professionals'],
+  ['lgbtq-plus',           'LGBTQ+'],
+  ['caregivers',           'Caregivers'],
+];
+
 const TAGS = [
-  // expertise
-  ['career-coaching',  'Career Coaching',  'expertise'],
-  ['resume-review',    'Resume Review',    'expertise'],
-  ['interview-prep',   'Interview Prep',   'expertise'],
-  ['leadership',       'Leadership',       'expertise'],
-  ['product-strategy', 'Product Strategy', 'expertise'],
-  ['system-design',    'System Design',    'expertise'],
-  ['data-science',     'Data Science',     'expertise'],
-  ['ux-design',        'UX Design',        'expertise'],
-  ['negotiation',      'Negotiation',      'expertise'],
-  ['public-speaking',  'Public Speaking',  'expertise'],
-  // industry
-  ['software',         'Software',         'industry'],
-  ['fintech',          'Fintech',          'industry'],
-  ['edtech',           'EdTech',           'industry'],
-  ['healthcare',       'Healthcare',       'industry'],
-  ['ecommerce',        'E-commerce',       'industry'],
-  ['consulting',       'Consulting',       'industry'],
-  ['startups',         'Startups',         'industry'],
-  ['media',            'Media',            'industry'],
+  ...EXPERTISE.map(([slug, name]) => [slug, name, 'expertise']),
+  ...AUDIENCE.map(([slug, name])  => [slug, name, 'audience']),
 ];
 
 async function seedTiers() {
@@ -58,14 +76,26 @@ async function seedTiers() {
 }
 
 async function seedTags() {
+  // Soft-delete tags whose slugs are no longer in our canonical list. We
+  // mark is_active=false rather than DELETE so existing mentor_tags FK
+  // rows stay intact; the public list filter (`WHERE is_active`) hides them.
+  const canonical = TAGS.map((t) => t[0]);
+  await pool.query(
+    `UPDATE tags SET is_active = FALSE
+      WHERE slug NOT IN (SELECT unnest($1::text[]))`,
+    [canonical]
+  );
+
   for (let i = 0; i < TAGS.length; i++) {
     const [slug, display, kind] = TAGS[i];
     await pool.query(
-      `INSERT INTO tags (slug, display_name, kind, sort_order)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO tags (slug, display_name, kind, sort_order, is_active)
+       VALUES ($1, $2, $3, $4, TRUE)
        ON CONFLICT (slug) DO UPDATE
          SET display_name = EXCLUDED.display_name,
-             kind = EXCLUDED.kind`,
+             kind = EXCLUDED.kind,
+             sort_order = EXCLUDED.sort_order,
+             is_active = TRUE`,
       [slug, display, kind, i]
     );
   }

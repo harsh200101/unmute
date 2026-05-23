@@ -17,14 +17,14 @@ export default function Landing() {
           <div className="max-w-6xl mx-auto px-4 sm:px-6 w-full">
             <div className="max-w-2xl text-white">
               <p className="text-sm uppercase tracking-wider text-amber-300 font-semibold">
-                Mentoring, by the minute
+                Mental health support, on your terms
               </p>
               <h1 className="mt-3 text-4xl sm:text-5xl font-bold leading-tight">
-                Talk to a real mentor. <br />Pay only for the minutes you use.
+                Talk to someone who gets it. <br />Pay only for the minutes you use.
               </h1>
               <p className="mt-4 text-lg text-slate-200">
-                Book a 1-on-1 video session with a verified expert. We charge per minute while
-                both of you are on the call — no minimums, no surprise bills.
+                Book a 1-on-1 video session with a verified counsellor or coach. We only charge while
+                both of you are on the call — no minimums, no surprise bills, no commitment.
               </p>
               <div className="mt-6 flex gap-3">
                 <Link to="/register">
@@ -46,26 +46,26 @@ export default function Landing() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Feature
             img="/images/illustration-1.png"
-            title="Per-minute pricing"
-            body="Book a slot for free. We only charge while both you and the mentor are actually on the call. Leave the call any time — you stop paying instantly."
+            title="Pay only for the minutes you talk"
+            body="Booking is free. We only charge while you and your mentor are actually on the call. Leave anytime — billing stops the second you do."
           />
           <Feature
             img="/images/illustration-2.png"
-            title="Verified mentors only"
-            body="Every mentor passes an admin review before they appear on the platform. KYC, profile, expertise — all checked."
+            title="Verified mentors, real people"
+            body="Every counsellor and coach passes an admin review before they appear here. Identity, training, and approach — all checked."
           />
           <Feature
             img="/images/illustration-3.png"
-            title="60-minute slots, hard cap"
-            body="Every slot is exactly 60 minutes. No surprise charges, no overruns into the next session. You're always in control."
+            title="Talk for up to 60 minutes"
+            body="Sessions cap at 60 minutes. No surprise charges, no overruns. End early when you've said what you needed to say."
           />
         </div>
       </section>
 
       <section className="bg-white border-t border-slate-200">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14 text-center">
-          <h2 className="text-2xl font-bold text-slate-900">Ready to talk to someone who's done it?</h2>
-          <p className="mt-2 text-slate-600">Sign up free. Top up your wallet. Book a slot in 60 seconds.</p>
+          <h2 className="text-2xl font-bold text-slate-900">Whatever you're carrying — you don't have to carry it alone.</h2>
+          <p className="mt-2 text-slate-600">Sign up free. Top up your wallet. Book a session in 60 seconds.</p>
           <div className="mt-6">
             <Link to="/register">
               <Button size="lg">Create your account</Button>

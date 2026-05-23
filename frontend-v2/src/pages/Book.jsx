@@ -184,7 +184,7 @@ export default function Book() {
           <CardBody className="space-y-4">
             <Field label="Session title (optional)" htmlFor="title">
               <Input id="title" value={mentee_title} onChange={(e) => setTitle(e.target.value)}
-                placeholder="Career change to product management" maxLength={120} />
+                placeholder="What's on your mind?" maxLength={120} />
             </Field>
             <Field label="What do you want to discuss? (optional)" htmlFor="topic">
               <textarea id="topic" rows={4} value={mentee_topic} onChange={(e) => setTopic(e.target.value)}
@@ -193,8 +193,8 @@ export default function Book() {
               />
             </Field>
             <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3">
-              <strong>How billing works:</strong> Booking is free. We charge per minute only while both of you are
-              in the call. 5-min minimum once both joined. Hard 60-min cap.
+              <strong>How billing works:</strong> Booking is free. We only charge while you and your mentor
+              are both on the call — by the minute. 5-min minimum once both join. Sessions cap at 60 minutes.
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setPicked(null)}>Pick another</Button>
