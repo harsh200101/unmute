@@ -3,7 +3,10 @@
 // Shared test helpers. Reset state between tests with `truncateAll()`.
 // Factories return DB rows so tests can chain on them.
 
+const request = require('supertest');
 const { pool, query, withTransaction } = require('../src/config/db');
+const { hashPassword } = require('../src/utils/crypto');
+const { signAccessToken } = require('../src/utils/jwt');
 
 // Order matters: tables with FKs first. ON DELETE CASCADE handles most,
 // but TRUNCATE ... CASCADE is the safest reset between tests. We exclude
@@ -121,12 +124,70 @@ async function createBooking(overrides = {}) {
   return res.rows[0];
 }
 
+// Create a user with a known password + auto-issue a JWT.
+// Returns { user, access_token } so tests can immediately hit auth-only routes.
+async function createUserWithToken(overrides = {}) {
+  const password_hash = await hashPassword('longenoughpw1');
+  const user = await createUser({
+    ...overrides,
+    // verified by default; pass email_verified_at: null to override
+  });
+  // Set password_hash directly so callers can also use POST /api/auth/login
+  await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [password_hash, user.id]);
+  user.password_hash = password_hash;
+  const access_token = signAccessToken({
+    ...user,
+    email_verified_at: user.email_verified_at,
+  });
+  return { user, access_token };
+}
+
+async function createAdminWithToken(overrides = {}) {
+  return createUserWithToken({ role: 'admin', email: `admin-${Date.now()}@test.local`, ...overrides });
+}
+
+// Re-seed pricing tiers + tags after a truncateAll (they live in the same tables we wipe).
+async function seedReferenceData() {
+  // Tiers
+  const tiers = [
+    ['starter',  'Starter',  500,  1],
+    ['standard', 'Standard', 1000, 2],
+    ['expert',   'Expert',   2000, 3],
+    ['premium',  'Premium',  4000, 4],
+  ];
+  for (const [name, display, paise, sort] of tiers) {
+    await query(
+      `INSERT INTO pricing_tiers (name, display_name, per_minute_paise, sort_order)
+       VALUES ($1, $2, $3, $4) ON CONFLICT (name) DO NOTHING`,
+      [name, display, paise, sort]
+    );
+  }
+  // A handful of tags is enough for tests
+  const tags = [
+    ['career-coaching', 'Career Coaching', 'expertise'],
+    ['interview-prep',  'Interview Prep',  'expertise'],
+    ['fintech',         'Fintech',         'industry'],
+    ['edtech',          'EdTech',          'industry'],
+  ];
+  for (let i = 0; i < tags.length; i++) {
+    await query(
+      `INSERT INTO tags (slug, display_name, kind, sort_order)
+       VALUES ($1, $2, $3, $4) ON CONFLICT (slug) DO NOTHING`,
+      [tags[i][0], tags[i][1], tags[i][2], i]
+    );
+  }
+}
+
 module.exports = {
   pool,
   query,
   withTransaction,
+  request,
   truncateAll,
+  seedReferenceData,
   createUser,
+  createUserWithToken,
+  createAdminWithToken,
   createPricingTier,
   createMentor,
   createWallet,

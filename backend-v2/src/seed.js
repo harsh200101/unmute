@@ -5,11 +5,12 @@
 //   - Pricing tiers (4)
 //   - A starter tag list (expertise + industry)
 //   - A platform "system" user + platform wallet
+//   - An admin user (if ADMIN_EMAIL + ADMIN_PASSWORD env vars are set)
 //
-// Real users (mentors, mentees, admin) are NOT seeded here. Use the signup
-// flow once auth is wired up in phase 1.
+// Real mentee/mentor users are NOT seeded here — use the signup flow.
 
 const { pool } = require('./config/db');
+const bcrypt = require('bcrypt');
 
 const TIERS = [
   { name: 'starter',  display_name: 'Starter',  per_minute_paise: 500,  sort_order: 1 },
@@ -71,8 +72,7 @@ async function seedTags() {
 }
 
 async function seedPlatformWallet() {
-  // Create a "system" user that owns the platform wallet. Marked role=admin
-  // and never logs in (no password, email is sentinel).
+  // System user owns the platform wallet. Never logs in (no password set).
   const sysEmail = 'system@unmute.internal';
   const res = await pool.query(
     `INSERT INTO users (email, full_name, role, is_active, email_verified_at)
@@ -91,6 +91,30 @@ async function seedPlatformWallet() {
   );
 }
 
+async function seedAdminUser() {
+  const email = process.env.ADMIN_EMAIL;
+  const password = process.env.ADMIN_PASSWORD;
+  if (!email || !password) {
+    // eslint-disable-next-line no-console
+    console.log('[seed]   (admin user skipped — set ADMIN_EMAIL + ADMIN_PASSWORD to enable)');
+    return;
+  }
+  const password_hash = await bcrypt.hash(password, 12);
+  const fullName = process.env.ADMIN_NAME || 'Admin';
+  await pool.query(
+    `INSERT INTO users (email, password_hash, full_name, role, is_active, email_verified_at)
+     VALUES ($1, $2, $3, 'admin', TRUE, NOW())
+     ON CONFLICT (email) DO UPDATE
+       SET password_hash = EXCLUDED.password_hash,
+           role = 'admin',
+           is_active = TRUE,
+           email_verified_at = COALESCE(users.email_verified_at, NOW())`,
+    [email, password_hash, fullName]
+  );
+  // eslint-disable-next-line no-console
+  console.log(`[seed]   admin user ${email} ready`);
+}
+
 async function main() {
   try {
     // eslint-disable-next-line no-console
@@ -102,6 +126,9 @@ async function main() {
     // eslint-disable-next-line no-console
     console.log('[seed] platform wallet…');
     await seedPlatformWallet();
+    // eslint-disable-next-line no-console
+    console.log('[seed] admin user…');
+    await seedAdminUser();
     // eslint-disable-next-line no-console
     console.log('[seed] done');
   } catch (err) {

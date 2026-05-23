@@ -15,6 +15,9 @@ const env = require('./config/env');
 const { pool } = require('./config/db');
 const authRoutes = require('./routes/auth.routes');
 const meRoutes = require('./routes/me.routes');
+const mentorRoutes = require('./routes/mentors.routes');
+const tagsRoutes = require('./routes/tags.routes');
+const adminRoutes = require('./routes/admin.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -50,6 +53,11 @@ app.get('/readyz', async (_req, res) => {
 // --- Phase 1: auth + me ---
 app.use('/api/auth', authRoutes);
 app.use('/api/me',   meRoutes);
+
+// --- Phase 2: mentors, tags, admin ---
+app.use('/api/mentors', mentorRoutes);
+app.use('/api',         tagsRoutes);          // /api/tags, /api/pricing-tiers
+app.use('/api/admin',   adminRoutes);
 
 // Anything else under /api is not implemented yet.
 app.use('/api', (_req, res) => {
