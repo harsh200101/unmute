@@ -18,6 +18,7 @@ const meRoutes = require('./routes/me.routes');
 const mentorRoutes = require('./routes/mentors.routes');
 const tagsRoutes = require('./routes/tags.routes');
 const adminRoutes = require('./routes/admin.routes');
+const availabilityRoutes = require('./routes/availability.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -58,6 +59,9 @@ app.use('/api/me',   meRoutes);
 app.use('/api/mentors', mentorRoutes);
 app.use('/api',         tagsRoutes);          // /api/tags, /api/pricing-tiers
 app.use('/api/admin',   adminRoutes);
+
+// --- Phase 3: availability ---
+app.use('/api/availability', availabilityRoutes);
 
 // Anything else under /api is not implemented yet.
 app.use('/api', (_req, res) => {
