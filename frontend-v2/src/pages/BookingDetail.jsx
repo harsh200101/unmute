@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowRight, Calendar, Video } from 'lucide-react';
-import { bookings as bookingsApi, availability as avApi } from '../api/endpoints.js';
+import { ArrowRight, Calendar, Video, Star } from 'lucide-react';
+import { bookings as bookingsApi, availability as avApi, reviews as reviewsApi } from '../api/endpoints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -22,6 +22,11 @@ export default function BookingDetail() {
 
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Reviews for this booking (loaded once after we have the booking)
+  const [myReview, setMyReview] = useState(null);     // I wrote about the other party
+  const [theirReview, setTheirReview] = useState(null); // other party wrote about me
+  const [reviewsLoading, setReviewsLoading] = useState(false);
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -44,6 +49,26 @@ export default function BookingDetail() {
   }
 
   useEffect(() => { reload(); }, [uuid]);
+
+  // Once we have a completed booking, fetch reviews tied to it. We fetch
+  // both directions (mine + about-me) and filter by booking_uuid client-side,
+  // since the API doesn't expose a per-booking review endpoint.
+  useEffect(() => {
+    if (!booking || booking.status !== 'completed') return;
+    let cancelled = false;
+    setReviewsLoading(true);
+    Promise.all([
+      reviewsApi.given({ limit: 100 }).catch(() => ({ items: [] })),
+      reviewsApi.received({ limit: 100 }).catch(() => ({ items: [] })),
+    ])
+      .then(([g, r]) => {
+        if (cancelled) return;
+        setMyReview((g.items || []).find((x) => x.booking_uuid === booking.uuid) || null);
+        setTheirReview((r.items || []).find((x) => x.booking_uuid === booking.uuid) || null);
+      })
+      .finally(() => { if (!cancelled) setReviewsLoading(false); });
+    return () => { cancelled = true; };
+  }, [booking?.uuid, booking?.status]);
 
   async function loadReschedSlots() {
     if (!booking) return;
@@ -215,6 +240,18 @@ export default function BookingDetail() {
         </div>
       )}
 
+      {booking.status === 'completed' && (
+        <ReviewSection
+          booking={booking}
+          youAreMentor={youAreMentor}
+          other={other}
+          myReview={myReview}
+          theirReview={theirReview}
+          loading={reviewsLoading}
+          onSubmitted={(r) => setMyReview(r)}
+        />
+      )}
+
       <Modal open={cancelOpen} onClose={() => setCancelOpen(false)} title="Cancel booking">
         <p className="text-sm text-slate-700">
           {lateCancel
@@ -265,6 +302,150 @@ export default function BookingDetail() {
           </Button>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+// --- Review section --------------------------------------------------------
+
+function ReviewSection({ booking, youAreMentor, other, myReview, theirReview, loading, onSubmitted }) {
+  const [rating, setRating] = useState(0);
+  const [hover, setHover] = useState(0);
+  const [body, setBody] = useState('');
+  const [anonymous, setAnonymous] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!rating) {
+      toast.error('Pick a star rating first');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await reviewsApi.submit(booking.uuid, {
+        rating,
+        body: body.trim() || null,
+        is_anonymous: youAreMentor ? false : anonymous, // only mentees can be anonymous
+      });
+      toast.success('Thanks for the review!');
+      onSubmitted(res.review);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to submit review');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <h2 className="font-semibold text-slate-900">Reviews</h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          {youAreMentor
+            ? 'Leave a private note for your mentee, and see what they wrote about the session.'
+            : 'Help others — share how this session went.'}
+        </p>
+      </CardHeader>
+      <CardBody className="space-y-5">
+        {loading ? (
+          <p className="text-sm text-slate-500">Loading reviews…</p>
+        ) : (
+          <>
+            {/* What the other party wrote about me */}
+            {theirReview ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500 mb-1">
+                  {theirReview.is_anonymous ? 'Anonymous' : other.full_name} wrote about you
+                </p>
+                <StarRow value={theirReview.rating} />
+                {theirReview.body && (
+                  <p className="text-sm text-slate-800 mt-2 whitespace-pre-wrap">{theirReview.body}</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">
+                {other.full_name} hasn't left a review yet.
+              </p>
+            )}
+
+            {/* My review */}
+            {myReview ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                <p className="text-xs text-emerald-700 mb-1">You reviewed {other.full_name}</p>
+                <StarRow value={myReview.rating} />
+                {myReview.body && (
+                  <p className="text-sm text-emerald-900 mt-2 whitespace-pre-wrap">{myReview.body}</p>
+                )}
+              </div>
+            ) : (
+              <form onSubmit={submit} className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-1">
+                    Your rating for {other.full_name}
+                  </p>
+                  <div className="flex items-center gap-1" onMouseLeave={() => setHover(0)}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setRating(n)}
+                        onMouseEnter={() => setHover(n)}
+                        className="p-0.5 text-amber-500 hover:scale-110 transition-transform"
+                        aria-label={`${n} star${n > 1 ? 's' : ''}`}
+                      >
+                        <Star
+                          size={26}
+                          strokeWidth={1.5}
+                          fill={(hover || rating) >= n ? 'currentColor' : 'transparent'}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <Field label="Comment (optional)" htmlFor="rv_body">
+                  <textarea
+                    id="rv_body"
+                    rows={3}
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    placeholder={
+                      youAreMentor
+                        ? 'A few private words about the session — only the mentee sees this.'
+                        : 'How did this session go? What was helpful?'
+                    }
+                    maxLength={1000}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
+                  />
+                </Field>
+                {!youAreMentor && (
+                  <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={anonymous}
+                      onChange={(e) => setAnonymous(e.target.checked)}
+                    />
+                    Post anonymously (hides your name from the public mentor profile)
+                  </label>
+                )}
+                <div className="flex justify-end">
+                  <Button type="submit" loading={busy}>Submit review</Button>
+                </div>
+              </form>
+            )}
+          </>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function StarRow({ value }) {
+  return (
+    <div className="flex items-center gap-0.5 text-amber-500">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star key={n} size={16} strokeWidth={1.5} fill={n <= value ? 'currentColor' : 'transparent'} />
+      ))}
     </div>
   );
 }

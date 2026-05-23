@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { auth as authApi } from '../api/endpoints.js';
 import Card, { CardBody } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
-import { Field, Input } from '../components/ui/Field.jsx';
+import { Field, PasswordInput } from '../components/ui/Field.jsx';
 
 export default function ResetPassword() {
   const [params] = useSearchParams();
@@ -43,11 +43,11 @@ export default function ResetPassword() {
             ) : (
               <form onSubmit={onSubmit} className="space-y-4">
                 <Field label="New password" htmlFor="pw">
-                  <Input id="pw" type="password" minLength={8} required
+                  <PasswordInput id="pw" autoComplete="new-password" minLength={8} required
                     value={password} onChange={(e) => setPassword(e.target.value)} />
                 </Field>
                 <Field label="Confirm new password" htmlFor="pw2">
-                  <Input id="pw2" type="password" minLength={8} required
+                  <PasswordInput id="pw2" autoComplete="new-password" minLength={8} required
                     value={confirm} onChange={(e) => setConfirm(e.target.value)} />
                 </Field>
                 {err && <p className="text-sm text-rose-600">{err}</p>}

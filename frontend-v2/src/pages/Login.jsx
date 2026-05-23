@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Card, { CardBody } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
-import { Field, Input } from '../components/ui/Field.jsx';
+import { Field, Input, PasswordInput } from '../components/ui/Field.jsx';
 
 export default function Login() {
   const { login } = useAuth();
@@ -53,7 +53,7 @@ export default function Login() {
                   value={email} onChange={(e) => setEmail(e.target.value)} />
               </Field>
               <Field label="Password" htmlFor="password">
-                <Input id="password" type="password" autoComplete="current-password" required
+                <PasswordInput id="password" autoComplete="current-password" required
                   value={password} onChange={(e) => setPassword(e.target.value)} />
               </Field>
               {err && <p className="text-sm text-rose-600">{err}</p>}

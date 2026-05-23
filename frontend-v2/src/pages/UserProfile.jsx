@@ -4,7 +4,7 @@ import { me as meApi, auth as authApi } from '../api/endpoints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
-import { Field, Input } from '../components/ui/Field.jsx';
+import { Field, Input, PasswordInput } from '../components/ui/Field.jsx';
 import { PageSpinner } from '../components/ui/Spinner.jsx';
 
 export default function UserProfile() {
@@ -155,13 +155,13 @@ function ChangePassword() {
       <CardBody>
         <form onSubmit={onSubmit} className="space-y-3 max-w-md">
           <Field label="Current password" htmlFor="cp">
-            <Input id="cp" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
+            <PasswordInput id="cp" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
           </Field>
           <Field label="New password" htmlFor="np">
-            <Input id="np" type="password" minLength={8} value={next} onChange={(e) => setNext(e.target.value)} required />
+            <PasswordInput id="np" autoComplete="new-password" minLength={8} value={next} onChange={(e) => setNext(e.target.value)} required />
           </Field>
           <Field label="Confirm new password" htmlFor="np2">
-            <Input id="np2" type="password" minLength={8} value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
+            <PasswordInput id="np2" autoComplete="new-password" minLength={8} value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
           </Field>
           <Button type="submit" loading={busy}>Change password</Button>
         </form>
