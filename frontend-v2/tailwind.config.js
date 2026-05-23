@@ -1,6 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
+  // Class-based dark mode: toggled by adding/removing `dark` on <html>.
+  // See @/Users/hgajbhiye/Cphort/unmute/frontend-v2/src/theme/ThemeProvider.jsx.
+  darkMode: 'class',
   theme: {
     extend: {
       fontFamily: {

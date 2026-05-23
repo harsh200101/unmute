@@ -9,9 +9,11 @@ export const Input = forwardRef(function Input({ className, error, ...rest }, re
       className={clsx(
         'w-full rounded-lg border bg-white px-3 py-2 text-sm text-slate-900',
         'placeholder:text-slate-400 focus:outline-none focus:ring-2',
+        // Dark variants
+        'dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500',
         error
-          ? 'border-rose-400 focus:ring-rose-400/30'
-          : 'border-slate-300 focus:border-slate-500 focus:ring-slate-300/40',
+          ? 'border-rose-400 focus:ring-rose-400/30 dark:border-rose-500'
+          : 'border-slate-300 focus:border-brand-500 focus:ring-brand-500/20 dark:border-slate-700 dark:focus:border-brand-500',
         className
       )}
       {...rest}
@@ -21,7 +23,7 @@ export const Input = forwardRef(function Input({ className, error, ...rest }, re
 
 export function Label({ children, htmlFor, className }) {
   return (
-    <label htmlFor={htmlFor} className={clsx('block text-sm font-medium text-slate-700 mb-1', className)}>
+    <label htmlFor={htmlFor} className={clsx('block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1', className)}>
       {children}
     </label>
   );

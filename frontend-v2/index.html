@@ -4,9 +4,25 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#fafbff" />
     <title>unmute</title>
+    <!--
+      Pre-paint dark-mode boot. Reads the user's saved choice (or system pref)
+      and sets `class="dark"` on <html> BEFORE React mounts, so users on dark
+      mode don't see a white flash on load.
+    -->
+    <script>
+      (function () {
+        try {
+          var c = localStorage.getItem('unmute_theme') || 'system';
+          var dark = c === 'dark' ||
+            (c === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body class="bg-slate-50">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

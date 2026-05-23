@@ -159,20 +159,31 @@ function HeroGreeting({ user, firstName }) {
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mt-0.5">
             {firstName} 👋
           </h1>
-          <p className="mt-2 text-brand-100/90 text-sm sm:text-base max-w-md">
-            {!user.email_verified ? (
-              <>
+          {!user.email_verified ? (
+            // High-contrast amber callout — readable on top of the brand
+            // gradient. The plain `text-brand-100/90` underneath was nearly
+            // invisible against the indigo bg.
+            <div className="mt-3 inline-flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900 max-w-md">
+              <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse-soft" />
+              <span>
                 Please verify your email to unlock bookings.{' '}
-                <Link to="/verify-email" className="underline font-medium">Resend link</Link>
-              </>
-            ) : user.role === 'mentor' ? (
-              "Here's how your practice is doing today."
-            ) : (
-              "Whatever you're feeling, you don't have to feel it alone."
-            )}
-          </p>
+                <Link to="/verify-email" className="underline font-semibold whitespace-nowrap">Resend link</Link>
+              </span>
+            </div>
+          ) : (
+            <p className="mt-2 text-white/90 text-sm sm:text-base max-w-md">
+              {user.role === 'mentor'
+                ? "Here's how your practice is doing today."
+                : "Whatever you're feeling, you don't have to feel it alone."}
+            </p>
+          )}
         </div>
-        <Avatar src={user.avatar_url} name={user.full_name} size={56} className="ring-2 ring-white/20 shrink-0 hidden sm:block" />
+        <Avatar
+          src={user.avatar_url}
+          name={user.full_name}
+          size={56}
+          className="ring-2 ring-white/30 shrink-0 hidden sm:block !text-brand-900 !bg-white"
+        />
       </div>
     </div>
   );
@@ -182,20 +193,20 @@ function HeroGreeting({ user, firstName }) {
 
 function Stat({ icon, label, value, tone = 'brand', href }) {
   const tones = {
-    brand:   'bg-brand-50 text-brand-700',
-    emerald: 'bg-emerald-50 text-emerald-700',
-    amber:   'bg-amber-50 text-amber-700',
-    sky:     'bg-sky-50 text-sky-700',
+    brand:   'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300',
+    emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+    amber:   'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+    sky:     'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
   };
   const Comp = href ? Link : 'div';
   return (
     <Comp to={href || undefined}
-      className="block bg-white border border-slate-200/80 rounded-2xl shadow-soft p-3 sm:p-4 hover:shadow-elev hover:border-slate-300 transition-all">
+      className="block bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-soft p-3 sm:p-4 hover:shadow-elev hover:border-slate-300 dark:hover:border-slate-700 transition-all">
       <div className={`inline-flex items-center justify-center h-9 w-9 rounded-xl ${tones[tone] || tones.brand}`}>
         {icon}
       </div>
-      <p className="mt-2 text-xs sm:text-sm text-slate-500">{label}</p>
-      <p className="text-lg sm:text-xl font-semibold text-slate-900 mt-0.5 tabular-nums truncate">
+      <p className="mt-2 text-xs sm:text-sm text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-slate-100 mt-0.5 tabular-nums truncate">
         {value}
       </p>
     </Comp>
@@ -219,26 +230,26 @@ function NextSessionCard({ booking, user }) {
 
   return (
     <Card className="overflow-hidden">
-      <div className={`px-5 sm:px-6 py-2 text-xs font-medium ${canJoin ? 'bg-emerald-50 text-emerald-800' : 'bg-brand-50 text-brand-800'}`}>
+      <div className={`px-5 sm:px-6 py-2 text-xs font-medium ${canJoin ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-brand-50 text-brand-800 dark:bg-brand-500/15 dark:text-brand-300'}`}>
         {canJoin ? '● Live — both can join' : 'Your next session'}
       </div>
       <CardBody>
         <div className="flex items-start gap-4">
           <Avatar src={other.avatar_url} name={other.full_name} size={52} />
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-slate-500">{isMentor ? 'with mentee' : 'with mentor'}</p>
-            <h3 className="text-lg font-semibold text-slate-900 truncate">{other.full_name}</h3>
-            <div className="mt-1 flex items-center flex-wrap gap-2 text-xs sm:text-sm text-slate-600">
+            <p className="text-xs text-slate-500 dark:text-slate-400">{isMentor ? 'with mentee' : 'with mentor'}</p>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 truncate">{other.full_name}</h3>
+            <div className="mt-1 flex items-center flex-wrap gap-2 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
               <span className="inline-flex items-center gap-1">
                 <Calendar size={14} /> {formatDate(booking.slot_start_at)}
               </span>
               <span className="text-slate-300">·</span>
-              <span className="inline-flex items-center gap-1 font-medium text-slate-900">
+              <span className="inline-flex items-center gap-1 font-medium text-slate-900 dark:text-slate-100">
                 <Clock size={14} /> {countdownLabel}
               </span>
             </div>
             {booking.mentee_title && (
-              <p className="mt-2 text-sm text-slate-700 line-clamp-2 italic">"{booking.mentee_title}"</p>
+              <p className="mt-2 text-sm text-slate-700 dark:text-slate-300 line-clamp-2 italic">"{booking.mentee_title}"</p>
             )}
           </div>
         </div>
@@ -266,13 +277,13 @@ function EmptyNextSessionCard({ role }) {
   return (
     <Card>
       <CardBody className="text-center py-10">
-        <div className="mx-auto h-12 w-12 rounded-2xl bg-brand-50 text-brand-700 flex items-center justify-center">
+        <div className="mx-auto h-12 w-12 rounded-2xl bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300 flex items-center justify-center">
           <Calendar size={22} />
         </div>
-        <h3 className="mt-3 font-semibold text-slate-900">
+        <h3 className="mt-3 font-semibold text-slate-900 dark:text-slate-100">
           {role === 'mentor' ? 'No upcoming sessions' : "Let's book your first session"}
         </h3>
-        <p className="mt-1 text-sm text-slate-600 max-w-sm mx-auto">
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300 max-w-sm mx-auto">
           {role === 'mentor'
             ? 'When a mentee books with you, it will show up here.'
             : 'Find a counsellor or coach you vibe with. Pay only for the minutes you talk.'}
@@ -307,28 +318,28 @@ function ActivityCard({ notifications }) {
   return (
     <Card>
       <div className="px-5 sm:px-6 pt-5 pb-3 flex items-center justify-between">
-        <h2 className="font-semibold text-slate-900">Recent activity</h2>
-        <Link to="/me/notifications" className="text-xs font-medium text-brand-700 hover:underline">
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Recent activity</h2>
+        <Link to="/me/notifications" className="text-xs font-medium text-brand-700 dark:text-brand-300 hover:underline">
           See all
         </Link>
       </div>
       {notifications.length === 0 ? (
-        <CardBody className="text-sm text-slate-500 text-center py-8">
+        <CardBody className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">
           Nothing yet. Activity from your sessions, wallet, and reviews shows here.
         </CardBody>
       ) : (
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
           {notifications.map((n) => {
             const Icon = NOTIF_ICON[n.kind] || Bell;
             return (
-              <li key={n.id} className={`flex items-start gap-3 px-5 sm:px-6 py-3 ${!n.read_at ? 'bg-brand-50/40' : ''}`}>
-                <span className="mt-0.5 h-8 w-8 shrink-0 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center">
+              <li key={n.id} className={`flex items-start gap-3 px-5 sm:px-6 py-3 ${!n.read_at ? 'bg-brand-50/40 dark:bg-brand-500/10' : ''}`}>
+                <span className="mt-0.5 h-8 w-8 shrink-0 rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 flex items-center justify-center">
                   <Icon size={15} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-900 truncate">{n.title}</p>
-                  {n.body && <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{n.body}</p>}
-                  <p className="text-xs text-slate-400 mt-1">{relativeTime(n.created_at)}</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{n.title}</p>
+                  {n.body && <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 line-clamp-2">{n.body}</p>}
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{relativeTime(n.created_at)}</p>
                 </div>
                 {!n.read_at && <span className="mt-2 h-2 w-2 rounded-full bg-brand-500 shrink-0" />}
               </li>
@@ -346,20 +357,20 @@ function RecentReviewsCard({ reviews }) {
   return (
     <Card>
       <div className="px-5 sm:px-6 pt-5 pb-3 flex items-center justify-between">
-        <h2 className="font-semibold text-slate-900">Recent reviews</h2>
-        <Link to="/me/reviews/received" className="text-xs font-medium text-brand-700 hover:underline">See all</Link>
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Recent reviews</h2>
+        <Link to="/me/reviews/received" className="text-xs font-medium text-brand-700 dark:text-brand-300 hover:underline">See all</Link>
       </div>
-      <ul className="divide-y divide-slate-100">
+      <ul className="divide-y divide-slate-100 dark:divide-slate-800">
         {reviews.map((r) => (
           <li key={r.id} className="px-5 sm:px-6 py-3">
             <div className="flex items-center gap-2 text-amber-500">
               {[1, 2, 3, 4, 5].map((n) => (
                 <Star key={n} size={14} fill={n <= r.rating ? 'currentColor' : 'transparent'} />
               ))}
-              <span className="text-xs text-slate-500 ml-1">{relativeTime(r.created_at)}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400 ml-1">{relativeTime(r.created_at)}</span>
             </div>
-            {r.body && <p className="mt-1.5 text-sm text-slate-800 line-clamp-2">"{r.body}"</p>}
-            <p className="mt-1 text-xs text-slate-500">— {r.is_anonymous ? 'Anonymous' : (r.reviewer?.full_name || 'A mentee')}</p>
+            {r.body && <p className="mt-1.5 text-sm text-slate-800 dark:text-slate-200 line-clamp-2">"{r.body}"</p>}
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">— {r.is_anonymous ? 'Anonymous' : (r.reviewer?.full_name || 'A mentee')}</p>
           </li>
         ))}
       </ul>
@@ -373,7 +384,7 @@ function QuickActions({ user }) {
   return (
     <Card>
       <CardBody>
-        <h2 className="font-semibold text-slate-900">Quick actions</h2>
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Quick actions</h2>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <QA to="/mentors" icon={<Sparkles size={16} />} label="Browse mentors" />
           <QA to="/bookings" icon={<Calendar size={16} />} label="My bookings" />
@@ -387,8 +398,8 @@ function QuickActions({ user }) {
 function QA({ to, icon, label }) {
   return (
     <Link to={to}
-      className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors">
-      <span className="text-slate-500">{icon}</span>
+      className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 hover:border-slate-300 dark:hover:bg-slate-800 dark:hover:border-slate-600 transition-colors">
+      <span className="text-slate-500 dark:text-slate-400">{icon}</span>
       <span className="truncate">{label}</span>
     </Link>
   );
@@ -400,11 +411,11 @@ function MentorTools({ mentorBalance }) {
   return (
     <Card>
       <CardBody>
-        <h2 className="font-semibold text-slate-900">Mentor tools</h2>
-        <div className="mt-3 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/60 p-3">
-          <p className="text-xs text-emerald-700 font-medium">Available to withdraw</p>
-          <p className="text-2xl font-bold text-emerald-900 mt-1 tabular-nums">{formatINR(mentorBalance)}</p>
-          <p className="text-xs text-emerald-700 mt-0.5">Minus pending withdrawals</p>
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Mentor tools</h2>
+        <div className="mt-3 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/60 p-3 dark:from-emerald-500/10 dark:to-emerald-600/5 dark:border-emerald-500/20">
+          <p className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">Available to withdraw</p>
+          <p className="text-2xl font-bold text-emerald-900 dark:text-emerald-200 mt-1 tabular-nums">{formatINR(mentorBalance)}</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">Minus pending withdrawals</p>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <QA to="/mentor/settings"     icon={<Settings size={16} />}     label="Profile" />
@@ -442,8 +453,8 @@ function AdminCTA() {
   return (
     <Card>
       <CardBody>
-        <h2 className="font-semibold text-slate-900">Admin</h2>
-        <p className="mt-1 text-sm text-slate-600">Mentor approvals, KYC, refunds, audit log.</p>
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Admin</h2>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Mentor approvals, KYC, refunds, audit log.</p>
         <Link to="/admin" className="block mt-3">
           <Button className="w-full">Open admin panel</Button>
         </Link>
@@ -456,7 +467,7 @@ function AdminCTA() {
 
 function FootnoteCard() {
   return (
-    <p className="mt-8 text-center text-xs text-slate-400">
+    <p className="mt-8 text-center text-xs text-slate-400 dark:text-slate-500">
       Built with care for the moments that matter.
     </p>
   );

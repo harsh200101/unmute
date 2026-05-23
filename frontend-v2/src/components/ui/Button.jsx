@@ -1,11 +1,12 @@
 import clsx from 'clsx';
 
 const VARIANTS = {
-  primary:   'bg-brand-600 text-white shadow-soft hover:bg-brand-700 active:bg-brand-800 disabled:bg-brand-300',
-  secondary: 'bg-white text-slate-900 border border-slate-200 shadow-soft hover:bg-slate-50 hover:border-slate-300 disabled:opacity-60',
-  ghost:     'bg-transparent text-slate-700 hover:bg-slate-100',
+  primary:   'bg-brand-600 text-white shadow-soft hover:bg-brand-700 active:bg-brand-800 disabled:bg-brand-300 dark:disabled:bg-brand-900',
+  secondary: 'bg-white text-slate-900 border border-slate-200 shadow-soft hover:bg-slate-50 hover:border-slate-300 disabled:opacity-60 ' +
+             'dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-slate-700 dark:hover:border-slate-600',
+  ghost:     'bg-transparent text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
   danger:    'bg-rose-600 text-white shadow-soft hover:bg-rose-700 disabled:bg-rose-300',
-  outline:   'bg-transparent text-brand-700 border border-brand-200 hover:bg-brand-50',
+  outline:   'bg-transparent text-brand-700 border border-brand-200 hover:bg-brand-50 dark:text-brand-300 dark:border-brand-700 dark:hover:bg-brand-500/10',
 };
 
 const SIZES = {
