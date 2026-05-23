@@ -73,6 +73,23 @@ export const payments = {
   simulateWebhook: (body) => api.post('/webhooks/phonepe', body).then((r) => r.data),
 };
 
+export const notifications = {
+  list:        (params) => api.get('/me/notifications', { params }).then((r) => r.data),
+  unreadCount: () => api.get('/me/notifications/unread-count').then((r) => r.data),
+  markRead:    (id) => api.post(`/me/notifications/${id}/read`).then((r) => r.data),
+  markAllRead: () => api.post('/me/notifications/read-all').then((r) => r.data),
+};
+
+export const kyc = {
+  submit:  (body) => api.post('/mentors/kyc', body).then((r) => r.data),
+  getMine: () => api.get('/mentors/kyc/me').then((r) => r.data),
+};
+
+export const payouts = {
+  request: (amount_paise) => api.post('/payouts/request', { amount_paise }).then((r) => r.data),
+  listMine: (params) => api.get('/payouts/me', { params }).then((r) => r.data),
+};
+
 export const catalog = {
   tags: (kind) => api.get('/tags', { params: kind ? { kind } : {} }).then((r) => r.data),
   tiers: () => api.get('/pricing-tiers').then((r) => r.data),

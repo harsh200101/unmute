@@ -1,6 +1,7 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Button from './ui/Button.jsx';
+import NotificationBell from './NotificationBell.jsx';
 
 export default function Header() {
   const { user, logout } = useAuth();
@@ -29,8 +30,9 @@ export default function Header() {
             </>
           )}
           {user && (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-600 hidden sm:inline">{user.full_name}</span>
+            <div className="flex items-center gap-2">
+              <NotificationBell />
+              <span className="text-sm text-slate-600 hidden sm:inline ml-1">{user.full_name}</span>
               <Button variant="secondary" size="sm" onClick={async () => { await logout(); navigate('/'); }}>
                 Sign out
               </Button>
