@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import { Eye, EyeOff } from 'lucide-react';
 import { me as meApi, auth as authApi } from '../api/endpoints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
@@ -26,6 +27,23 @@ export default function UserProfile() {
 
   function patch(k, v) { setProfile((p) => ({ ...p, [k]: v })); }
 
+  // Per-field "share with mentor" flag. Default = true. Stored under
+  // preferences.share_with_mentor on the user.
+  const share = profile.preferences?.share_with_mentor || {};
+  function isShared(field) { return share[field] !== false; }
+  function setShared(field, value) {
+    setProfile((p) => ({
+      ...p,
+      preferences: {
+        ...(p.preferences || {}),
+        share_with_mentor: {
+          ...((p.preferences || {}).share_with_mentor || {}),
+          [field]: value,
+        },
+      },
+    }));
+  }
+
   async function onSave(e) {
     e.preventDefault();
     setSaving(true);
@@ -40,6 +58,7 @@ export default function UserProfile() {
         location_city: profile.location_city || null,
         location_country: profile.location_country || 'IN',
         preferred_language: profile.preferred_language || 'en',
+        preferences: profile.preferences || {},
       });
       toast.success('Profile saved');
       await reloadMe();
@@ -77,14 +96,30 @@ export default function UserProfile() {
         <Card>
           <CardHeader>
             <h2 className="font-semibold text-slate-900">Personal</h2>
-            <p className="text-xs text-slate-500 mt-1">Optional. Helps mentors prepare for the session.</p>
+            <p className="text-xs text-slate-500 mt-1">
+              All optional. Use the <strong>Share with mentor</strong> toggle on each field to control
+              what your mentor sees before a session. Untoggled fields stay private to you.
+            </p>
           </CardHeader>
           <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Date of birth" htmlFor="dob">
+            <SharedField
+              label="Date of birth"
+              shareKey="age"
+              shareLabel="Share age with mentor"
+              isShared={isShared('age')}
+              setShared={(v) => setShared('age', v)}
+            >
               <Input id="dob" type="date" value={(profile.date_of_birth || '').slice(0, 10)}
                 onChange={(e) => patch('date_of_birth', e.target.value || null)} />
-            </Field>
-            <Field label="Gender" htmlFor="gender">
+            </SharedField>
+
+            <SharedField
+              label="Gender"
+              shareKey="gender"
+              shareLabel="Share gender with mentor"
+              isShared={isShared('gender')}
+              setShared={(v) => setShared('gender', v)}
+            >
               <select id="gender" value={profile.gender || ''} onChange={(e) => patch('gender', e.target.value || null)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
                 <option value="">—</option>
@@ -94,8 +129,15 @@ export default function UserProfile() {
                 <option value="other">Other / self-describe</option>
                 <option value="prefer_not_to_say">Prefer not to say</option>
               </select>
-            </Field>
-            <Field label="Marital status" htmlFor="ms">
+            </SharedField>
+
+            <SharedField
+              label="Marital status"
+              shareKey="marital_status"
+              shareLabel="Share marital status with mentor"
+              isShared={isShared('marital_status')}
+              setShared={(v) => setShared('marital_status', v)}
+            >
               <select id="ms" value={profile.marital_status || ''} onChange={(e) => patch('marital_status', e.target.value || null)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
                 <option value="">—</option>
@@ -107,10 +149,18 @@ export default function UserProfile() {
                 <option value="widowed">Widowed</option>
                 <option value="prefer_not_to_say">Prefer not to say</option>
               </select>
-            </Field>
-            <Field label="City" htmlFor="city">
+            </SharedField>
+
+            <SharedField
+              label="City"
+              shareKey="city"
+              shareLabel="Share city with mentor"
+              isShared={isShared('city')}
+              setShared={(v) => setShared('city', v)}
+            >
               <Input id="city" value={profile.location_city || ''} onChange={(e) => patch('location_city', e.target.value)} />
-            </Field>
+            </SharedField>
+
             <Field label="Country (ISO)" htmlFor="cn">
               <Input id="cn" maxLength={2} value={profile.location_country || ''} onChange={(e) => patch('location_country', e.target.value.toUpperCase())} />
             </Field>
@@ -170,5 +220,33 @@ function ChangePassword() {
         </form>
       </CardBody>
     </Card>
+  );
+}
+
+// Field with an inline "Share with mentor" eye toggle. The toggle controls
+// the per-field visibility flag in preferences.share_with_mentor; the actual
+// data is still saved either way.
+function SharedField({ label, shareLabel, isShared, setShared, children }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label className="block text-sm font-medium text-slate-700">{label}</label>
+        <button
+          type="button"
+          onClick={() => setShared(!isShared)}
+          aria-pressed={isShared}
+          title={shareLabel}
+          className={`inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2 py-0.5 border transition-colors ${
+            isShared
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+              : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+          }`}
+        >
+          {isShared ? <Eye size={12} /> : <EyeOff size={12} />}
+          {isShared ? 'Shared with mentor' : 'Hidden from mentor'}
+        </button>
+      </div>
+      {children}
+    </div>
   );
 }

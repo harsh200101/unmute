@@ -22,6 +22,7 @@ async function loadBookingByUuid(client, uuid) {
             cu.gender          AS mentee_gender,
             cu.marital_status  AS mentee_marital_status,
             cu.location_city   AS mentee_city,
+            cu.preferences     AS mentee_preferences,
             mp.timezone AS mentor_timezone, mp.uuid AS mentor_profile_uuid
        FROM bookings b
        JOIN users mu ON mu.id = b.mentor_user_id
@@ -60,11 +61,15 @@ async function getPlatformWalletId(client) {
 }
 
 function publicBooking(b) {
-  // Mentee demographic fields are included on the booking response — only the
-  // mentor and the mentee are parties to a booking, and both already know the
-  // mentee. (The mentee knows themselves; the mentor needs context for the
-  // session.) The /api/bookings/:uuid route is authenticated and ensures the
-  // caller is a party, so this is safe.
+  // Mentee demographic fields are included on the booking response, but each
+  // field is gated by the mentee's `preferences.share_with_mentor.<field>`
+  // flag. Default = SHOW (so existing data isn't suddenly hidden). The
+  // mentee can flip individual flags from /me/profile to redact a field.
+  //
+  // Privacy model: the /api/bookings/:uuid route is auth'd and only returns
+  // to the two parties of the booking. The mentee always sees their own data.
+  const share = b.mentee_preferences?.share_with_mentor || {};
+  const visible = (field) => share[field] !== false; // undefined → show
   return {
     uuid: b.uuid,
     mentor: { id: b.mentor_user_id, full_name: b.mentor_name, email: b.mentor_email, profile_uuid: b.mentor_profile_uuid, timezone: b.mentor_timezone },
@@ -72,10 +77,10 @@ function publicBooking(b) {
       id: b.mentee_user_id,
       full_name: b.mentee_name,
       email: b.mentee_email,
-      date_of_birth: b.mentee_dob || null,
-      gender: b.mentee_gender || null,
-      marital_status: b.mentee_marital_status || null,
-      location_city: b.mentee_city || null,
+      date_of_birth:  visible('age')            ? (b.mentee_dob            || null) : null,
+      gender:         visible('gender')         ? (b.mentee_gender         || null) : null,
+      marital_status: visible('marital_status') ? (b.mentee_marital_status || null) : null,
+      location_city:  visible('city')           ? (b.mentee_city           || null) : null,
     },
     slot_start_at: b.slot_start_at,
     slot_end_at: b.slot_end_at,
