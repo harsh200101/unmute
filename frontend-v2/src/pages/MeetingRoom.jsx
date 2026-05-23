@@ -22,7 +22,6 @@ export default function MeetingRoom() {
   // Agora refs
   const clientRef = useRef(null);
   const localTracksRef = useRef({ audio: null, video: null });
-  const initStartedRef = useRef(false);   // guards StrictMode double-invoke
   const remoteUsers = useRef(new Map());
 
   const localVideoRef = useRef(null);
@@ -39,10 +38,13 @@ export default function MeetingRoom() {
   const [ending, setEnding] = useState(false);
 
   // --- mount: credentials → agora join → events/joined → start polling ---
+  //
+  // We rely on the local `cancelled` flag (not a ref guard) to cope with
+  // React 18 StrictMode's mount → unmount → remount cycle in dev. The first
+  // mount's init() will bail out on its `cancelled` check; the second mount's
+  // init() runs to completion. A ref guard breaks that — the second mount
+  // would skip init entirely and the user is stuck on the spinner.
   useEffect(() => {
-    if (initStartedRef.current) return;
-    initStartedRef.current = true;
-
     let cancelled = false;
     let pollTimer = null;
 
@@ -85,11 +87,18 @@ export default function MeetingRoom() {
         });
 
         if (!isStub) {
+          if (cancelled) { try { await client.leave(); } catch (_) {} return; }
           await client.join(creds.app_id, creds.channel, creds.token, creds.uid);
+          if (cancelled) { try { await client.leave(); } catch (_) {} return; }
 
           const [audio, video] = await AgoraRTC.createMicrophoneAndCameraTracks({}, {
             encoderConfig: '720p_1',
           });
+          if (cancelled) {
+            try { audio.close(); video.close(); } catch (_) {}
+            try { await client.leave(); } catch (_) {}
+            return;
+          }
           localTracksRef.current = { audio, video };
           await client.publish([audio, video]);
           if (localVideoRef.current) video.play(localVideoRef.current);
