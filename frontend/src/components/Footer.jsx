@@ -31,9 +31,14 @@ const contactInfo = [
   { icon: MapPin, text: 'Made in India', isAddress: true },
 ];
 
+// `relative isolate` makes the footer its own stacking context so any
+// absolutely-positioned decorative elements inside it can't escape and
+// overlap external links. `place-self-end` removed — it had no effect
+// in a flex-column layout and on some mobile browsers interacted oddly
+// with `w-full`, leaving link rows unclickable.
 export default function Footer() {
   return (
-    <footer className="bg-secondary dark:bg-secondary/20 mt-16 w-full place-self-end rounded-t-xl">
+    <footer className="relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl">
       <div className="mx-auto max-w-screen-xl px-4 pt-16 pb-6 sm:px-6 lg:px-8 lg:pt-24">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           {/* --------------------------- Brand column --------------------------- */}
@@ -91,7 +96,9 @@ export default function Footer() {
                       {text}
                     </span>
                     {urgent && (
-                      <span className="relative flex size-2 mt-1.5">
+                      // Decorative only — never catch taps so a near-miss
+                      // still hits the parent Link, not the ping ring.
+                      <span aria-hidden className="pointer-events-none relative flex size-2 mt-1.5">
                         <span className="bg-destructive absolute inline-flex h-full w-full animate-ping rounded-full opacity-75" />
                         <span className="bg-destructive relative inline-flex size-2 rounded-full" />
                       </span>
