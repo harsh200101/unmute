@@ -50,6 +50,7 @@ async function notify({
         await emailService.sendEmail({
           to,
           subject: title,
+          kind,
           text: [
             full_name ? `Hi ${full_name},` : 'Hi,',
             '',

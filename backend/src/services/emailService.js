@@ -2,49 +2,94 @@
 
 // Provider-agnostic email service.
 //
-// Phase 1: only the `stub` provider is wired. It logs the email to stdout
-// so dev flows still work — copy the link from the log into the browser.
+// Providers wired:
+//   - stub      (dev: logs to stdout)
+//   - sendgrid  (HTTPS, works on Render where SMTP is blocked)
+//   - resend    (HTTPS, alternative to SendGrid)
+//   - smtp      (nodemailer — only works off Render, e.g. local dev)
 //
-// Phase later: add `resend` or `smtp` provider impls and select via
-// EMAIL_PROVIDER env var. The public API (sendEmail) stays the same.
+// Every send is logged to `email_log` so we have a server-side audit
+// trail independent of any provider dashboard. Tests skip logging to
+// keep the test DB clean (they assert on global.__SENT_EMAILS__).
 
 const env = require('../config/env');
+const { query } = require('../config/db');
 
-async function sendEmail({ to, subject, text, html, attachments }) {
+async function sendEmail({ to, subject, text, html, attachments, kind }) {
   if (env.NODE_ENV === 'test') {
     // Capture in a global for tests to assert on
     global.__SENT_EMAILS__ = global.__SENT_EMAILS__ || [];
-    global.__SENT_EMAILS__.push({ to, subject, text, html, attachments });
+    global.__SENT_EMAILS__.push({ to, subject, text, html, attachments, kind });
     return { provider: 'test', id: `test-${Date.now()}` };
   }
 
-  if (env.EMAIL_PROVIDER === 'stub' || !env.EMAIL_PROVIDER) {
-    // eslint-disable-next-line no-console
-    console.log('\n=== EMAIL (stub provider) ===');
-    // eslint-disable-next-line no-console
-    console.log('To:     ', to);
-    // eslint-disable-next-line no-console
-    console.log('Subject:', subject);
-    // eslint-disable-next-line no-console
-    console.log('Body:\n', text || html);
-    // eslint-disable-next-line no-console
-    console.log('=============================\n');
-    return { provider: 'stub', id: `stub-${Date.now()}` };
+  let result;
+  let errMsg = null;
+  let errMeta = null;
+  try {
+    if (env.EMAIL_PROVIDER === 'stub' || !env.EMAIL_PROVIDER) {
+      // eslint-disable-next-line no-console
+      console.log('\n=== EMAIL (stub provider) ===');
+      // eslint-disable-next-line no-console
+      console.log('To:     ', to);
+      // eslint-disable-next-line no-console
+      console.log('Subject:', subject);
+      // eslint-disable-next-line no-console
+      console.log('Body:\n', text || html);
+      // eslint-disable-next-line no-console
+      console.log('=============================\n');
+      result = { provider: 'stub', id: `stub-${Date.now()}` };
+    } else if (env.EMAIL_PROVIDER === 'smtp') {
+      result = await sendViaSmtp({ to, subject, text, html, attachments });
+    } else if (env.EMAIL_PROVIDER === 'resend') {
+      result = await sendViaResend({ to, subject, text, html, attachments });
+    } else if (env.EMAIL_PROVIDER === 'sendgrid') {
+      result = await sendViaSendGrid({ to, subject, text, html, attachments });
+    } else {
+      throw new Error(`Email provider '${env.EMAIL_PROVIDER}' is not wired yet`);
+    }
+  } catch (err) {
+    errMsg = err.message;
+    errMeta = { stack: (err.stack || '').slice(0, 1000) };
+    // Re-throw after logging so callers (fire-and-forget paths) still see it.
+    logEmailAttempt({ to, subject, kind, status: 'failed', provider: env.EMAIL_PROVIDER || 'stub', provider_msg_id: null, error_message: errMsg, meta: errMeta });
+    throw err;
   }
 
-  if (env.EMAIL_PROVIDER === 'smtp') {
-    return sendViaSmtp({ to, subject, text, html, attachments });
-  }
+  // Don't block the caller on the audit-log write — it's best-effort.
+  logEmailAttempt({
+    to,
+    subject,
+    kind,
+    status: 'accepted',
+    provider: result.provider,
+    provider_msg_id: result.id || null,
+    error_message: null,
+    meta: { provider_response: result },
+  });
+  return result;
+}
 
-  if (env.EMAIL_PROVIDER === 'resend') {
-    return sendViaResend({ to, subject, text, html, attachments });
-  }
-
-  if (env.EMAIL_PROVIDER === 'sendgrid') {
-    return sendViaSendGrid({ to, subject, text, html, attachments });
-  }
-
-  throw new Error(`Email provider '${env.EMAIL_PROVIDER}' is not wired yet`);
+// Fire-and-forget audit write. We never want a logging hiccup to break a
+// real email send, so swallow errors. Truncate long values defensively.
+function logEmailAttempt({ to, subject, kind, status, provider, provider_msg_id, error_message, meta }) {
+  query(
+    `INSERT INTO email_log (to_email, subject, kind, provider, provider_msg_id, status, error_message, meta)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      String(Array.isArray(to) ? to[0] : to).slice(0, 320),
+      String(subject || '').slice(0, 998),
+      kind || null,
+      provider || 'unknown',
+      provider_msg_id ? String(provider_msg_id).slice(0, 200) : null,
+      status,
+      error_message ? String(error_message).slice(0, 2000) : null,
+      meta || null,
+    ]
+  ).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[email_log] failed to record send', err.message);
+  });
 }
 
 // --- SendGrid (HTTPS API) --------------------------------------------------
@@ -201,6 +246,7 @@ async function sendViaSmtp({ to, subject, text, html, attachments }) {
 function verificationEmail({ to, full_name, link }) {
   return {
     to,
+    kind: 'verification',
     subject: 'Verify your unmute email',
     text: [
       `Hi ${full_name || ''},`,
@@ -232,6 +278,7 @@ function formatLocal(iso, tz = 'Asia/Kolkata') {
 function bookingConfirmedEmail({ to, full_name, other_name, slot_start_at, slot_end_at, mentee_title, ics_string, viewer_tz = 'Asia/Kolkata' }) {
   return {
     to,
+    kind: 'booking_confirmed',
     subject: `Booking confirmed: session with ${other_name}`,
     text: [
       `Hi ${full_name || ''},`,
@@ -249,6 +296,7 @@ function bookingConfirmedEmail({ to, full_name, other_name, slot_start_at, slot_
 function bookingCancelledEmail({ to, full_name, other_name, slot_start_at, by, reason, viewer_tz = 'Asia/Kolkata' }) {
   return {
     to,
+    kind: 'booking_cancelled',
     subject: `Booking cancelled: session with ${other_name}`,
     text: [
       `Hi ${full_name || ''},`,
@@ -264,6 +312,7 @@ function bookingCancelledEmail({ to, full_name, other_name, slot_start_at, by, r
 function rescheduleProposedEmail({ to, full_name, other_name, old_slot, new_slot, viewer_tz = 'Asia/Kolkata' }) {
   return {
     to,
+    kind: 'reschedule_proposed',
     subject: `Reschedule request from ${other_name}`,
     text: [
       `Hi ${full_name || ''},`,
@@ -280,6 +329,7 @@ function rescheduleProposedEmail({ to, full_name, other_name, old_slot, new_slot
 function rescheduleAcceptedEmail({ to, full_name, other_name, new_slot, ics_string, viewer_tz = 'Asia/Kolkata' }) {
   return {
     to,
+    kind: 'reschedule_accepted',
     subject: `Session rescheduled with ${other_name}`,
     text: [
       `Hi ${full_name || ''},`,
@@ -295,6 +345,7 @@ function rescheduleAcceptedEmail({ to, full_name, other_name, new_slot, ics_stri
 function rescheduleDeclinedEmail({ to, full_name, other_name, original_slot, viewer_tz = 'Asia/Kolkata' }) {
   return {
     to,
+    kind: 'reschedule_declined',
     subject: `Reschedule declined`,
     text: [
       `Hi ${full_name || ''},`,
@@ -307,6 +358,7 @@ function rescheduleDeclinedEmail({ to, full_name, other_name, original_slot, vie
 function passwordResetEmail({ to, full_name, link }) {
   return {
     to,
+    kind: 'password_reset',
     subject: 'Reset your unmute password',
     text: [
       `Hi ${full_name || ''},`,
