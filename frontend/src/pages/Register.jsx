@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { SignUpAuthComponent } from '../components/ui/sign-up.jsx';
 import Logo from '../components/Logo.jsx';
+import { API_BASE_URL } from '../api/client.js';
 
 /* -------------------------------------------------------------------------- */
 /* Sign-up screen.                                                            */
@@ -26,7 +27,7 @@ export default function Register() {
   };
 
   const onGoogleSignIn = () => {
-    window.location.href = '/api/auth/google?next=/dashboard';
+    window.location.href = `${API_BASE_URL}/auth/google?next=/dashboard`;
   };
 
   return (

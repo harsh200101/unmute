@@ -18,11 +18,21 @@ export function onAuthChange(handler) {
   _onAuthChange = handler;
 }
 
+// In dev, baseURL is `/api` so Vite's proxy can forward to the local
+// backend (avoids CORS + cookie domain headaches). In prod, VITE_API_URL
+// points at the deployed backend's origin (e.g. https://unmute-backend-...
+// .onrender.com) and we hit it directly; the backend's CORS allows the
+// static-site origin and credentials.
+const API_ORIGIN = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${API_ORIGIN}/api`,
   withCredentials: true,
   timeout: 20_000,
 });
+
+// Exported for places that need to build full URLs themselves (e.g. OAuth
+// redirects via window.location, which can't go through the axios instance).
+export const API_BASE_URL = `${API_ORIGIN}/api`;
 
 api.interceptors.request.use((config) => {
   if (_accessToken) {
