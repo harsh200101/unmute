@@ -12,10 +12,16 @@ const { bad, unauthorized } = require('../utils/errors');
 // Cookie name + options for the refresh token.
 const REFRESH_COOKIE = 'unmute_refresh';
 function refreshCookieOpts() {
+  // The frontend and backend live on different render.com subdomains
+  // (unmute-frontend.onrender.com ↔ unmute-backend-...onrender.com), so the
+  // refresh cookie is cross-site. Browsers only send cross-site cookies on
+  // XHR/fetch when `sameSite=none`, and `sameSite=none` requires `secure`.
+  // Locally we keep `lax` because dev uses Vite's proxy → same-origin.
+  const crossSite = env.NODE_ENV === 'production';
   return {
     httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: crossSite,
+    sameSite: crossSite ? 'none' : 'lax',
     path: '/api/auth',
     maxAge: env.JWT_REFRESH_TTL_SECONDS * 1000,
   };
