@@ -10,9 +10,19 @@ const env = require('./env');
 // number once here so the rest of the app can use === safely.
 types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10)));
 
+// Render-managed Postgres requires SSL but ships a self-signed CA the Node
+// pg client doesn't trust by default. In production we enable SSL with
+// `rejectUnauthorized: false` so the handshake succeeds; locally we skip SSL
+// entirely because dev databases run plain TCP. The `?sslmode=disable` escape
+// hatch lets tests opt out even in production-like environments.
+const sslRequired =
+  env.NODE_ENV === 'production' &&
+  !/sslmode=disable/.test(env.DATABASE_URL || '');
+
 // Single pool, lazily created. Tests can override DATABASE_URL.
 const pool = new Pool({
   connectionString: env.DATABASE_URL,
+  ssl: sslRequired ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
