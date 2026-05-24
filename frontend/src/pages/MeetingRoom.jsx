@@ -4,12 +4,36 @@ import { Mic, MicOff, Video, VideoOff, PhoneOff, AlertTriangle, Clock, IndianRup
 import toast from 'react-hot-toast';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import { meetings as meetingsApi } from '../api/endpoints.js';
+import { getAccessToken } from '../api/client.js';
 import Button from '../components/ui/Button.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import { PageSpinner } from '../components/ui/Spinner.jsx';
 import { formatDuration, formatINR } from '../lib/format.js';
 
 const BILLING_POLL_MS = 5_000;
+
+// Reliable "left" beacon for tab-close / browser-quit / OS-shutdown.
+// `fetch(..., { keepalive: true })` lets the request outlive the page so
+// the server reliably hears we left, in cases where the React unmount
+// cleanup doesn't run. The server already handles /events/left correctly
+// (rolls active interval into billed and transitions to `paused`).
+function fireLeaveBeacon(uuid) {
+  const token = getAccessToken();
+  if (!token) return;
+  try {
+    const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+    fetch(`${apiBase}/api/meetings/${uuid}/events/left`, {
+      method: 'POST',
+      keepalive: true,
+      credentials: 'include',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    }).catch(() => {});
+  } catch (_) { /* never throw inside unload */ }
+}
 
 export default function MeetingRoom() {
   const { uuid } = useParams();
@@ -129,10 +153,18 @@ export default function MeetingRoom() {
       }
     }
 
+    // Fire a keepalive POST to /events/left on tab close / browser quit so
+    // the server marks us as no-longer-present and pauses billing. This is
+    // the most reliable signal — `useEffect` cleanup is best-effort and is
+    // skipped on hard tab-close.
+    const onPageHide = () => fireLeaveBeacon(uuid);
+    window.addEventListener('pagehide', onPageHide);
+
     init();
 
     return () => {
       cancelled = true;
+      window.removeEventListener('pagehide', onPageHide);
       if (pollTimer) clearInterval(pollTimer);
       teardown('unmount').catch(() => {});
     };
@@ -199,7 +231,9 @@ export default function MeetingRoom() {
         <HUDBar billing={billing} meta={meta} />
       </div>
 
-      {/* Video grid */}
+      {/* Video grid. Local tile reads "You" (everyone knows their own name);
+          remote tile uses the counterpart's full_name from the credentials
+          payload so it's clear who you're talking to. */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
         <Tile label="You" mutedFlag={muted} camOffFlag={camOff}>
           <div ref={localVideoRef} className="absolute inset-0 [&>video]:object-cover [&>video]:w-full [&>video]:h-full" />
@@ -209,7 +243,12 @@ export default function MeetingRoom() {
             </div>
           )}
         </Tile>
-        <Tile label={remoteJoined ? 'Other party' : 'Waiting for the other person…'} idle={!remoteJoined}>
+        <Tile
+          label={remoteJoined
+            ? (meta?.counterpart_name || 'Other party')
+            : `Waiting for ${meta?.counterpart_name || 'the other person'}…`}
+          idle={!remoteJoined}
+        >
           <div ref={remoteVideoRef} className="absolute inset-0 [&>video]:object-cover [&>video]:w-full [&>video]:h-full" />
         </Tile>
       </div>
@@ -236,7 +275,9 @@ export default function MeetingRoom() {
           </Banner>
         )}
         {billing?.billing_state === 'paused' && remoteJoined === false && (
-          <Banner tone="info">Billing paused — waiting for the other person to rejoin.</Banner>
+          <Banner tone="info">
+            Billing paused — waiting for <strong>{meta?.counterpart_name || 'the other person'}</strong> to rejoin.
+          </Banner>
         )}
       </div>
 
