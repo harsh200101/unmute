@@ -15,4 +15,8 @@ router.post('/:booking_uuid/events/joined', general, c.joined);
 router.post('/:booking_uuid/events/left',   general, c.left);
 router.post('/:booking_uuid/end',           general, c.end);
 
+// In-call chat
+router.get('/:booking_uuid/messages',  general, c.listMessages);
+router.post('/:booking_uuid/messages', general, c.sendMessage);
+
 module.exports = router;
