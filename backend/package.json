@@ -7,7 +7,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
+    "start": "node src/migrator.js up && node src/server.js",
     "migrate": "node src/migrator.js up",
     "migrate:status": "node src/migrator.js status",
     "seed": "node src/seed.js",
