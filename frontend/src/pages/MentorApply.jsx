@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowUpRight } from 'lucide-react';
-import { mentors as mentorsApi, catalog } from '../api/endpoints.js';
+import { mentors as mentorsApi, catalog, auth as authApi } from '../api/endpoints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Card, { CardBody } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -124,15 +124,7 @@ export default function MentorApply() {
   }
 
   if (!user?.email_verified) {
-    return (
-      <div className="max-w-3xl mx-auto px-4 py-10">
-        <Card><CardBody className="text-center">
-          <h1 className="text-xl font-bold text-foreground">Verify your email first</h1>
-          <p className="mt-1 text-muted-foreground">Mentor applications require a verified email address.</p>
-          <Button className="mt-4" onClick={() => navigate('/verify-email')}>Verify email</Button>
-        </CardBody></Card>
-      </div>
-    );
+    return <NeedsEmailVerification user={user} onCheckAgain={reloadMe} />;
   }
 
   const expertise = tags.filter((t) => t.kind === 'expertise');
@@ -329,3 +321,90 @@ function TagGroup({ title, items, selected, toggle }) {
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Email-verification gate.                                                   */
+/*                                                                            */
+/* Shown when the signed-in user has not yet verified their email. Mentor     */
+/* applications require a verified email both as a UX guard (here) and as a   */
+/* backend guard (requireEmailVerified middleware on POST /api/mentors/apply).*/
+/*                                                                            */
+/* The big "Send verification email" button calls /auth/resend-verification   */
+/* with the user's own email. After clicking, we show a clear success state   */
+/* with the destination address so the user knows where to look (incl. spam). */
+/* The "I've verified — check again" button re-fetches /me so the gate flips  */
+/* off as soon as the user has clicked the link in another tab.               */
+/* -------------------------------------------------------------------------- */
+
+function NeedsEmailVerification({ user, onCheckAgain }) {
+  const [sending, setSending] = useState(false);
+  const [sentTo, setSentTo] = useState(null);
+  const [checking, setChecking] = useState(false);
+
+  async function sendNow() {
+    if (!user?.email) return;
+    setSending(true);
+    try {
+      await authApi.resendVerification(user.email);
+      setSentTo(user.email);
+      toast.success('Verification email sent');
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not send verification email');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function checkAgain() {
+    setChecking(true);
+    try {
+      await onCheckAgain();
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-10">
+      <Card>
+        <CardBody className="text-center space-y-4">
+          <h1 className="text-xl font-bold text-foreground">Verify your email first</h1>
+          <p className="text-muted-foreground">
+            Mentor applications require a verified email address. We'll send a one-click
+            verification link to <strong className="text-foreground">{user?.email}</strong>.
+          </p>
+
+          {!sentTo ? (
+            <Button onClick={sendNow} loading={sending} className="mt-2">
+              Send verification email
+            </Button>
+          ) : (
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-4 text-left">
+              <p className="text-sm text-emerald-900 dark:text-emerald-100">
+                ✓ Email sent to <strong>{sentTo}</strong>
+              </p>
+              <p className="text-xs text-emerald-800/80 dark:text-emerald-200/80 mt-1">
+                Check your inbox <strong>and spam folder</strong> — first emails from a new
+                sender sometimes land there. Click the link inside, then come back here and
+                tap "I've verified".
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" onClick={sendNow} loading={sending}>
+                  Resend
+                </Button>
+                <Button size="sm" onClick={checkAgain} loading={checking}>
+                  I've verified — check again
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground pt-2">
+            Wrong email? <Link to="/me/profile" className="underline">Update it in your profile.</Link>
+          </p>
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
