@@ -36,7 +36,61 @@ async function sendEmail({ to, subject, text, html, attachments }) {
     return sendViaSmtp({ to, subject, text, html, attachments });
   }
 
+  if (env.EMAIL_PROVIDER === 'resend') {
+    return sendViaResend({ to, subject, text, html, attachments });
+  }
+
   throw new Error(`Email provider '${env.EMAIL_PROVIDER}' is not wired yet`);
+}
+
+// --- Resend (HTTPS API) ----------------------------------------------------
+//
+// Render's free/starter tier blocks outbound SMTP, but HTTPS is always open.
+// Resend gives us 3,000 emails/month on the free plan with a simple POST.
+// Get an API key at https://resend.com → API Keys.
+//
+// `EMAIL_FROM` must either be on a domain you've verified in Resend, OR you
+// can use the testing-only address `onboarding@resend.dev` to send to YOUR
+// own address while a domain is being set up.
+
+async function sendViaResend({ to, subject, text, html, attachments }) {
+  if (!env.RESEND_API_KEY) throw new Error('RESEND_API_KEY is required when EMAIL_PROVIDER=resend');
+  if (!env.EMAIL_FROM) throw new Error('EMAIL_FROM is required when EMAIL_PROVIDER=resend');
+
+  const body = {
+    from: env.EMAIL_FROM,
+    to: Array.isArray(to) ? to : [to],
+    subject,
+    ...(html ? { html } : {}),
+    ...(text ? { text } : {}),
+    ...(attachments?.length
+      ? {
+          attachments: attachments.map((a) => ({
+            filename: a.filename,
+            content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : a.content,
+            content_type: a.contentType,
+          })),
+        }
+      : {}),
+  };
+
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    // Cap network call at 10 s — same rationale as SMTP timeouts.
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!resp.ok) {
+    let detail = '';
+    try { detail = JSON.stringify(await resp.json()); } catch { /* ignore */ }
+    throw new Error(`Resend API ${resp.status} ${resp.statusText}: ${detail}`);
+  }
+  const data = await resp.json();
+  return { provider: 'resend', id: data.id };
 }
 
 // --- SMTP (nodemailer) ------------------------------------------------------

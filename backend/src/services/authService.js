@@ -94,7 +94,14 @@ async function resendVerification({ email }) {
   // Quiet response: don't leak whether the email exists
   if (!user) return { sent: true };
   if (user.email_verified_at) return { sent: true };
-  await issueVerificationEmail(user);
+  // Fire-and-forget in prod so a blocked SMTP / slow provider can't hang the
+  // user-facing response for 10+ seconds. Token row IS written synchronously
+  // inside issueVerificationEmail.
+  const emailP = issueVerificationEmail(user).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[resend-verification] send failed for', user.email, '-', err.message);
+  });
+  if (env.NODE_ENV !== 'production') await emailP;
   return { sent: true };
 }
 
