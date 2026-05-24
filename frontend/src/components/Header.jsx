@@ -1,363 +1,221 @@
-import React, { useState, useEffect } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { WalletBalanceHeader } from './WalletBalance';
+import { useEffect, useState } from 'react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Menu, X, Sun, Moon, Monitor,
+  User as UserIcon, LayoutDashboard, Wallet as WalletIcon,
+  Settings as SettingsIcon, Calendar as CalendarIcon, LineChart, LogOut,
+} from 'lucide-react';
+import { useAuth } from '../auth/AuthContext.jsx';
+import { useTheme } from '../theme/ThemeProvider.jsx';
+import Button from './ui/Button.jsx';
+import StaggeredDropdown from './ui/staggered-dropdown.jsx';
+import NavHeader from './ui/nav-header.jsx';
+import Avatar from './Avatar.jsx';
+import Logo from './Logo.jsx';
+import NotificationBell from './NotificationBell.jsx';
 
-const Header = () => {
-  const { user, logout, isAuthenticated } = useAuth();
-  const [isScrolled, setIsScrolled] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+export default function Header() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  // Handle scroll effect
+  // Auto-close the drawer whenever the route changes (e.g. user taps a link).
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+
+  // Lock background scroll while the mobile drawer is open.
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 10);
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+    if (menuOpen) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = prev; };
+    }
+  }, [menuOpen]);
 
-  // Close mobile menu on route change
-  useEffect(() => {
-    setIsMobileMenuOpen(false);
-  }, [location]);
+  const isMentor = user?.role === 'mentor';
+  const navItems = [
+    { to: '/mentors',   label: 'Find mentors',  show: true },
+    { to: '/dashboard', label: 'Dashboard',     show: !!user },
+    { to: '/bookings',  label: 'Bookings',      show: !!user },
+    { to: '/wallet',    label: 'Wallet',        show: !!user },
+  ].filter((i) => i.show);
 
-  const handleLogout = () => {
-    logout();
-    setUserDropdownOpen(false);
-  };
+  // Mentor-only items get their own group in the drawer so the desktop nav
+  // stays compact.
+  const mentorItems = isMentor ? [
+    { to: '/mentor/settings',     label: 'Mentor settings' },
+    { to: '/mentor/availability', label: 'Availability' },
+    { to: '/mentor/earnings',     label: 'Earnings' },
+    { to: '/mentor/kyc',          label: 'KYC' },
+    { to: '/mentor/reviews',      label: 'Reviews' },
+  ] : [];
 
   return (
-    <>
-      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        isScrolled 
-          ? 'bg-white/95 backdrop-blur-md shadow-lg border-b border-gray-100' 
-          : 'bg-white shadow-sm'
-      }`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            
-            {/* Logo */}
-            <div className="flex items-center">
-              <Link to="/" className="flex items-center group">
-                <div className="relative">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg transform group-hover:scale-105 transition-transform duration-200">
-                    <span className="text-white font-bold text-lg">U</span>
-                  </div>
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                </div>
-                <span className="ml-3 text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
-                  Unmute
-                </span>
-              </Link>
-            </div>
+    <header className="glass border-b border-border sticky top-0 z-30">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
+        <Link to="/" className="flex items-center gap-2 shrink-0 group" aria-label="unmute — home">
+          <Logo size={32} className="transition-transform group-hover:scale-105" />
+          <span className="font-semibold text-foreground tracking-tight">unmute</span>
+        </Link>
 
-            {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center space-x-1">
-              <NavLink
-                to="/"
-                className={({ isActive }) =>
-                  `relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? 'text-blue-600 bg-blue-50'
-                      : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
-                  }`
+        {/* Desktop nav (≥640px) — pill with sliding cursor (NavHeader). */}
+        <div className="hidden sm:block">
+          <NavHeader items={navItems} />
+        </div>
+
+        <div className="flex items-center gap-2">
+          {!user && (
+            <>
+              <Button variant="ghost" size="sm" onClick={() => navigate('/login')}>Sign in</Button>
+              <Button size="sm" onClick={() => navigate('/register')}>Get started</Button>
+            </>
+          )}
+          <ThemeToggle />
+          {user && (
+            <>
+              <NotificationBell />
+              <StaggeredDropdown
+                align="right"
+                trigger={
+                  <span className="inline-flex items-center gap-2 rounded-full p-0.5 hover:bg-muted transition-colors">
+                    <Avatar
+                      src={user.avatar_url}
+                      name={user.full_name}
+                      size={32}
+                    />
+                  </span>
                 }
-              >
-                {({ isActive }) => (
-                  <>
-                    Home
-                    {isActive && (
-                      <span className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full"></span>
-                    )}
-                  </>
-                )}
-              </NavLink>
-              
-              <NavLink
-                to="/mentors"
-                className={({ isActive }) =>
-                  `relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? 'text-blue-600 bg-blue-50'
-                      : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
-                  }`
-                }
-              >
-                Find Mentors
-              </NavLink>
-              
-              {isAuthenticated && (
-                <NavLink
-                  to="/dashboard"
-                  className={({ isActive }) =>
-                    `relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
-                      isActive
-                        ? 'text-blue-600 bg-blue-50'
-                        : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
-                    }`
-                  }
-                >
-                  Dashboard
-                </NavLink>
+                triggerClassName="inline-flex items-center"
+                items={buildUserMenuItems({ isMentor, onSignOut: async () => { await logout(); navigate('/'); } })}
+              />
+            </>
+          )}
+
+          {/* Hamburger — mobile only */}
+          <button
+            type="button"
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            className="sm:hidden inline-flex items-center justify-center h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+          >
+            {menuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile drawer */}
+      {menuOpen && (
+        <>
+          {/* Backdrop — tap to close */}
+          <div
+            className="sm:hidden fixed inset-0 top-14 bg-foreground/40 z-20"
+            onClick={() => setMenuOpen(false)}
+          />
+          <div className="sm:hidden absolute left-0 right-0 top-14 z-30 bg-popover text-popover-foreground border-b border-border shadow-lg">
+            <nav className="px-4 py-3 flex flex-col gap-1">
+              {navItems.map((it) => (
+                <MobileNavItem key={it.to} to={it.to}>{it.label}</MobileNavItem>
+              ))}
+              {mentorItems.length > 0 && (
+                <>
+                  <p className="px-3 pt-3 pb-1 text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">
+                    Mentor
+                  </p>
+                  {mentorItems.map((it) => (
+                    <MobileNavItem key={it.to} to={it.to}>{it.label}</MobileNavItem>
+                  ))}
+                </>
+              )}
+              {user && (
+                <>
+                  <hr className="my-2 border-border" />
+                  <MobileNavItem to="/me/profile">
+                    Profile <span className="text-xs text-muted-foreground">({user.full_name})</span>
+                  </MobileNavItem>
+                  <button
+                    onClick={async () => { setMenuOpen(false); await logout(); navigate('/'); }}
+                    className="text-left px-3 py-2.5 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/10"
+                  >
+                    Sign out
+                  </button>
+                </>
+              )}
+              {!user && (
+                <>
+                  <hr className="my-2 border-border" />
+                  <MobileNavItem to="/login">Sign in</MobileNavItem>
+                  <MobileNavItem to="/register">Get started</MobileNavItem>
+                </>
               )}
             </nav>
-
-            {/* Desktop Auth Section */}
-            <div className="hidden md:flex items-center space-x-4">
-              {isAuthenticated && user ? (
-                <>
-                  <WalletBalanceHeader />
-                  <div className="relative">
-                  <button
-                    onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                    className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors duration-200"
-                  >
-                    <div className="relative">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center ring-2 ring-gray-200 overflow-hidden">
-                        {user.avatarUrl ? (
-                          <img src={user.avatarUrl} alt="User Avatar" className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-white font-bold text-sm">
-                            {user.firstName ? user.firstName.charAt(0).toUpperCase() : 'U'}
-                          </span>
-                        )}
-                      </div>
-                      <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></div>
-                    </div>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-gray-900">
-                        {user.firstName} {user.lastName}
-                      </p>
-                      <p className="text-xs text-gray-500 capitalize">{user.role || 'Member'}</p>
-                    </div>
-                    <svg
-                      className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${
-                        userDropdownOpen ? 'rotate-180' : ''
-                      }`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-
-                  {/* User Dropdown */}
-                  {userDropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
-                      <div className="px-4 py-3 border-b border-gray-100">
-                        <p className="text-sm font-medium text-gray-900">
-                          {user.firstName} {user.lastName}
-                        </p>
-                        <p className="text-sm text-gray-500">{user.email}</p>
-                      </div>
-                      
-                      <div className="py-2">
-                        <Link
-                          to="/profile"
-                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
-                          onClick={() => setUserDropdownOpen(false)}
-                        >
-                          <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                          </svg>
-                          Profile Settings
-                        </Link>
-                        
-                        <Link
-                          to="/sessions"
-                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
-                          onClick={() => setUserDropdownOpen(false)}
-                        >
-                          <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          My Sessions
-                        </Link>
-                        
-                        <div className="border-t border-gray-100 my-2"></div>
-                        
-                        <button
-                          onClick={handleLogout}
-                          className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-150"
-                        >
-                          <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                          </svg>
-                          Sign Out
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center space-x-3">
-                  <Link
-                    to="/login"
-                    className="text-gray-600 hover:text-gray-900 font-medium transition-colors duration-200"
-                  >
-                    Sign In
-                  </Link>
-                  <Link
-                    to="/register"
-                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
-                  >
-                    Get Started
-                  </Link>
-                </div>
-              )}
-            </div>
-
-            {/* Mobile menu button */}
-            <div className="md:hidden">
-              <button
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors duration-200"
-              >
-                <svg
-                  className={`w-6 h-6 transition-transform duration-200 ${
-                    isMobileMenuOpen ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  {isMobileMenuOpen ? (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  ) : (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  )}
-                </svg>
-              </button>
-            </div>
           </div>
-        </div>
-      </header>
-
-      {/* Mobile Menu */}
-      {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div className="fixed inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
-          <div className="fixed top-16 left-0 right-0 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-lg">
-            <div className="px-4 py-6 space-y-4">
-              <NavLink
-                to="/"
-                className={({ isActive }) =>
-                  `block px-4 py-3 rounded-lg text-base font-medium transition-all duration-200 ${
-                    isActive
-                      ? 'text-blue-600 bg-blue-50'
-                      : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
-                  }`
-                }
-              >
-                Home
-              </NavLink>
-              
-              <NavLink
-                to="/mentors"
-                className={({ isActive }) =>
-                  `block px-4 py-3 rounded-lg text-base font-medium transition-all duration-200 ${
-                    isActive
-                      ? 'text-blue-600 bg-blue-50'
-                      : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
-                  }`
-                }
-              >
-                Find Mentors
-              </NavLink>
-              
-              {isAuthenticated && (
-                <NavLink
-                  to="/dashboard"
-                  className={({ isActive }) =>
-                    `block px-4 py-3 rounded-lg text-base font-medium transition-all duration-200 ${
-                      isActive
-                        ? 'text-blue-600 bg-blue-50'
-                        : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
-                    }`
-                  }
-                >
-                  Dashboard
-                </NavLink>
-              )}
-
-              <div className="border-t border-gray-100 pt-4 mt-4">
-                {isAuthenticated && user ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-3 px-4 py-2">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center overflow-hidden">
-                        {user.avatarUrl ? (
-                          <img src={user.avatarUrl} alt="User Avatar" className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-white font-bold text-base">
-                            {user.firstName ? user.firstName.charAt(0).toUpperCase() : 'U'}
-                          </span>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {user.firstName} {user.lastName}
-                        </p>
-                        <p className="text-xs text-gray-500">{user.email}</p>
-                      </div>
-                    </div>
-                    
-                    <Link
-                      to="/profile"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors duration-150"
-                    >
-                      Profile Settings
-                    </Link>
-                    
-                    <Link
-                      to="/sessions"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors duration-150"
-                    >
-                      My Sessions
-                    </Link>
-                    
-                    <button
-                      onClick={handleLogout}
-                      className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150"
-                    >
-                      Sign Out
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <Link
-                      to="/login"
-                      className="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-lg text-center transition-colors duration-200"
-                    >
-                      Sign In
-                    </Link>
-                    <Link
-                      to="/register"
-                      className="block bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-3 rounded-lg font-medium text-center transition-all duration-200 shadow-md"
-                    >
-                      Get Started
-                    </Link>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        </>
       )}
-
-      {/* Click outside handler for user dropdown */}
-      {userDropdownOpen && (
-        <div
-          className="fixed inset-0 z-30"
-          onClick={() => setUserDropdownOpen(false)}
-        />
-      )}
-    </>
+    </header>
   );
-};
+}
 
-export default Header;
+function MobileNavItem({ to, children }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+          isActive
+            ? 'bg-accent text-accent-foreground'
+            : 'text-foreground hover:bg-muted'
+        }`
+      }
+    >
+      {children}
+    </NavLink>
+  );
+}
+
+// Items shown in the avatar dropdown when the user is signed in.
+// Mentor-only entries are appended conditionally so non-mentor users get a
+// short list. Sign out always sits at the bottom with the destructive style.
+function buildUserMenuItems({ isMentor, onSignOut }) {
+  const common = [
+    { type: 'link',   to: '/me/profile', label: 'Profile',     icon: UserIcon },
+    { type: 'link',   to: '/dashboard',  label: 'Dashboard',   icon: LayoutDashboard },
+    { type: 'link',   to: '/wallet',     label: 'Wallet',      icon: WalletIcon },
+  ];
+  const mentor = [
+    { type: 'divider' },
+    { header: true,   label: 'Mentor' },
+    { type: 'link',   to: '/mentor/settings',     label: 'Settings',     icon: SettingsIcon },
+    { type: 'link',   to: '/mentor/availability', label: 'Availability', icon: CalendarIcon },
+    { type: 'link',   to: '/mentor/earnings',     label: 'Earnings',     icon: LineChart },
+  ];
+  const trailer = [
+    { type: 'divider' },
+    { type: 'button', onClick: onSignOut, label: 'Sign out', icon: LogOut, variant: 'destructive' },
+  ];
+  return isMentor ? [...common, ...mentor, ...trailer] : [...common, ...trailer];
+}
+
+// Three-state theme switcher: light → dark → system → light…
+// Shows the icon for the *current effective* theme; tap label rotates choices.
+function ThemeToggle() {
+  const { choice, effective, cycle } = useTheme();
+  // Icon reflects what's currently applied; tooltip shows the active mode.
+  const Icon = effective === 'dark' ? Moon : Sun;
+  const label =
+    choice === 'system' ? `System (${effective})` :
+    choice === 'dark'   ? 'Dark mode' : 'Light mode';
+  return (
+    <button
+      type="button"
+      onClick={cycle}
+      title={label}
+      aria-label={`Theme: ${label}. Tap to change.`}
+      className="inline-flex items-center justify-center h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+    >
+      {choice === 'system'
+        ? <Monitor size={18} />
+        : <Icon size={18} />}
+    </button>
+  );
+}

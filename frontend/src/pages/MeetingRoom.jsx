@@ -1,265 +1,350 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import VideoCall from '../components/VideoCall';
-import api from '../utils/api';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, AlertTriangle, Clock, IndianRupee } from 'lucide-react';
 import toast from 'react-hot-toast';
+import AgoraRTC from 'agora-rtc-sdk-ng';
+import { meetings as meetingsApi } from '../api/endpoints.js';
+import Button from '../components/ui/Button.jsx';
+import Modal from '../components/ui/Modal.jsx';
+import { PageSpinner } from '../components/ui/Spinner.jsx';
+import { formatDuration, formatINR } from '../lib/format.js';
 
-const MeetingRoom = () => {
-  const { sessionId } = useParams();
+const BILLING_POLL_MS = 5_000;
+
+export default function MeetingRoom() {
+  const { uuid } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [meetingStatus, setMeetingStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
+
+  // Phase state
+  const [phase, setPhase] = useState('joining'); // joining | live | leaving | error
   const [error, setError] = useState(null);
-  const [showVideoCall, setShowVideoCall] = useState(false);
 
+  // Agora refs
+  const clientRef = useRef(null);
+  const localTracksRef = useRef({ audio: null, video: null });
+  const remoteUsers = useRef(new Map());
+
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+
+  const [meta, setMeta] = useState(null);  // credentials + booking info
+  const [remoteJoined, setRemoteJoined] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [camOff, setCamOff] = useState(false);
+
+  // Billing snapshot polling
+  const [billing, setBilling] = useState(null);
+  const [endingModal, setEndingModal] = useState(false);
+  const [ending, setEnding] = useState(false);
+
+  // --- mount: credentials → agora join → events/joined → start polling ---
+  //
+  // We rely on the local `cancelled` flag (not a ref guard) to cope with
+  // React 18 StrictMode's mount → unmount → remount cycle in dev. The first
+  // mount's init() will bail out on its `cancelled` check; the second mount's
+  // init() runs to completion. A ref guard breaks that — the second mount
+  // would skip init entirely and the user is stuck on the spinner.
   useEffect(() => {
-    // Check if user is authenticated before proceeding
-    if (!user) {
-      console.log('🏠 [DEBUG] User not authenticated, redirecting to login');
-      toast.error('Please log in to access this meeting');
-      navigate('/login');
-      return;
-    }
+    let cancelled = false;
+    let pollTimer = null;
 
-    checkMeetingStatus();
-  }, [sessionId, user, navigate]);
+    async function init() {
+      try {
+        const creds = await meetingsApi.credentials(uuid);
+        if (cancelled) return;
+        setMeta(creds);
 
-  const checkMeetingStatus = async () => {
-    try {
-      console.log('🏠 [DEBUG] Checking meeting status for session:', sessionId);
-      setLoading(true);
-      const response = await api.get(`/meetings/${sessionId}/status`);
-      console.log('🏠 [DEBUG] Meeting status response:', response.data);
-      setMeetingStatus(response.data.data);
-      console.log('🏠 [DEBUG] Meeting status set successfully');
-    } catch (err) {
-      console.error('🏠 [DEBUG] Failed to check meeting status:', err);
-      console.error('🏠 [DEBUG] Error details:', {
-        message: err.message,
-        response: err.response?.data,
-        status: err.response?.status
-      });
+        // Stub Agora mode: backend returned a "stub-" token. Don't try to
+        // actually connect; show a placeholder. The user can still hang up,
+        // and the billing engine still tracks state via /events/joined.
+        const isStub = (creds.token || '').startsWith('stub-');
 
-      // Handle authentication errors specifically
-      if (err.response?.status === 401) {
-        console.log('🏠 [DEBUG] Authentication required, redirecting to login');
-        toast.error('Please log in to access this meeting');
-        navigate('/login');
-        return;
+        const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+        clientRef.current = client;
+
+        client.on('user-published', async (user, mediaType) => {
+          try {
+            await client.subscribe(user, mediaType);
+            remoteUsers.current.set(user.uid, user);
+            if (mediaType === 'video' && remoteVideoRef.current) {
+              user.videoTrack?.play(remoteVideoRef.current);
+            }
+            if (mediaType === 'audio') user.audioTrack?.play();
+            setRemoteJoined(true);
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error('[agora] subscribe failed', e);
+          }
+        });
+        client.on('user-unpublished', (user, mediaType) => {
+          if (mediaType === 'video' && remoteVideoRef.current) {
+            try { user.videoTrack?.stop(); } catch (_) {}
+          }
+        });
+        client.on('user-left', (user) => {
+          remoteUsers.current.delete(user.uid);
+          if (remoteUsers.current.size === 0) setRemoteJoined(false);
+        });
+
+        if (!isStub) {
+          if (cancelled) { try { await client.leave(); } catch (_) {} return; }
+          await client.join(creds.app_id, creds.channel, creds.token, creds.uid);
+          if (cancelled) { try { await client.leave(); } catch (_) {} return; }
+
+          const [audio, video] = await AgoraRTC.createMicrophoneAndCameraTracks({}, {
+            encoderConfig: '720p_1',
+          });
+          if (cancelled) {
+            try { audio.close(); video.close(); } catch (_) {}
+            try { await client.leave(); } catch (_) {}
+            return;
+          }
+          localTracksRef.current = { audio, video };
+          await client.publish([audio, video]);
+          if (localVideoRef.current) video.play(localVideoRef.current);
+        }
+
+        // Tell the server we're present
+        await meetingsApi.joined(uuid).catch(() => {});
+
+        if (cancelled) return;
+        setPhase('live');
+
+        // Start billing snapshot polling
+        const tick = async () => {
+          try {
+            const s = await meetingsApi.billing(uuid);
+            if (!cancelled) setBilling(s);
+            if (s.billing_state === 'finalized') {
+              // Server already finalized this — end gracefully
+              await teardown('server_finalized');
+            }
+          } catch (_) { /* ignore */ }
+        };
+        await tick();
+        pollTimer = setInterval(tick, BILLING_POLL_MS);
+      } catch (e) {
+        setPhase('error');
+        setError(e.response?.data?.error || e.message || 'Failed to start meeting');
       }
-
-      setError(err.response?.data?.message || 'Failed to load meeting status');
-    } finally {
-      setLoading(false);
     }
-  };
 
-  const handleJoinMeeting = () => {
-    setShowVideoCall(true);
-  };
+    init();
 
-  const handleLeaveMeeting = () => {
-    setShowVideoCall(false);
-    navigate('/sessions');
-  };
+    return () => {
+      cancelled = true;
+      if (pollTimer) clearInterval(pollTimer);
+      teardown('unmount').catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uuid]);
 
-  const handleMeetingEnd = () => {
-    setShowVideoCall(false);
-    toast.success('Meeting has ended');
-    navigate('/sessions');
-  };
+  async function teardown(reason) {
+    try { await meetingsApi.left(uuid).catch(() => {}); } catch (_) {}
+    try {
+      const tracks = localTracksRef.current;
+      tracks?.audio?.close();
+      tracks?.video?.close();
+      localTracksRef.current = { audio: null, video: null };
+    } catch (_) {}
+    try { await clientRef.current?.leave(); } catch (_) {}
+    clientRef.current = null;
+  }
 
-  const formatTime = (minutes) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}:${mins.toString().padStart(2, '0')}`;
-  };
+  async function hangUp() {
+    setEnding(true);
+    try {
+      await teardown('user_hangup');
+      await meetingsApi.end(uuid).catch(() => {});
+      toast.success('Session ended');
+      navigate(`/bookings/${uuid}`);
+    } finally {
+      setEnding(false);
+    }
+  }
 
-  if (loading) {
+  function toggleMute() {
+    const t = localTracksRef.current.audio;
+    if (!t) return;
+    const next = !muted;
+    t.setEnabled(!next);
+    setMuted(next);
+  }
+  function toggleCam() {
+    const t = localTracksRef.current.video;
+    if (!t) return;
+    const next = !camOff;
+    t.setEnabled(!next);
+    setCamOff(next);
+  }
+
+  if (phase === 'joining' && !meta) return <PageSpinner />;
+  if (phase === 'error') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h3 className="text-lg font-semibold">Loading Meeting...</h3>
+      <div className="min-h-[70vh] flex items-center justify-center text-center px-4">
+        <div className="max-w-md">
+          <AlertTriangle className="mx-auto text-rose-500" size={36} />
+          <h1 className="mt-3 text-xl font-semibold text-slate-900">Couldn't start the meeting</h1>
+          <p className="mt-2 text-slate-600">{error}</p>
+          <Button className="mt-5" onClick={() => navigate(`/bookings/${uuid}`)}>Back to booking</Button>
         </div>
       </div>
     );
   }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="max-w-md w-full mx-4">
-          <div className="bg-white rounded-lg shadow-md p-6 text-center">
-            <div className="text-red-500 mb-4">
-              <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold mb-2">Meeting Error</h3>
-            <p className="text-gray-600 mb-4">{error}</p>
-            <button
-              onClick={() => navigate('/sessions')}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
-            >
-              Back to Sessions
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (showVideoCall) {
-    return (
-      <VideoCall
-        sessionId={sessionId}
-        onClose={handleLeaveMeeting}
-        onMeetingEnd={handleMeetingEnd}
-      />
-    );
-  }
-
-  const { meeting, session } = meetingStatus || {};
-  // Allow testing users (Harsh Gajbhiye - ID 49, manswi sahare - ID 51, new user - ID 55, test mentors - ID 68, 71) to join anytime
-  const isTestingUser = user?.id === 49 || user?.id === 51 || user?.id === 55 || user?.id === 68 || user?.id === 71;
-  const canJoin = meeting?.canJoin || isTestingUser;
-
-  console.log('🏠 [DEBUG] MeetingRoom canJoin check - userId:', user?.id, 'isTestingUser:', isTestingUser, 'meeting.canJoin:', meeting?.canJoin, 'canJoin:', canJoin);
-  const timeUntilStart = session?.scheduledAt ? new Date(session.scheduledAt) - new Date() : 0;
-  const minutesUntilStart = Math.ceil(timeUntilStart / (1000 * 60));
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          {/* Header */}
-          <div className="bg-blue-600 text-white p-6">
-            <h1 className="text-2xl font-bold">{session?.title || 'Video Meeting'}</h1>
-            <p className="text-blue-100 mt-1">
-              {new Date(session?.scheduledAt).toLocaleString()}
-            </p>
-          </div>
+    <div className="bg-slate-900 min-h-screen text-white -mt-px">
+      {/* Top bar: status + HUD */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4">
+        <HUDBar billing={billing} meta={meta} />
+      </div>
 
-          {/* Meeting Status */}
-          <div className="p-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Meeting Info */}
-              <div>
-                <h2 className="text-lg font-semibold mb-4">Meeting Details</h2>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Status:</span>
-                    <span className={`font-semibold ${
-                      meeting?.status === 'active' ? 'text-green-600' :
-                      meeting?.status === 'scheduled' ? 'text-blue-600' :
-                      'text-gray-600'
-                    }`}>
-                      {meeting?.status || 'Unknown'}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Duration:</span>
-                    <span>{session?.durationMinutes} minutes</span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Participants:</span>
-                    <span>{meeting?.participantsJoined?.length || 0} joined</span>
-                  </div>
-
-                  {meeting?.timeRemaining !== null && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Time Remaining:</span>
-                      <span className={meeting.timeRemaining < 15 ? 'text-red-600 font-semibold' : ''}>
-                        {formatTime(meeting.timeRemaining)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Join Status */}
-              <div>
-                <h2 className="text-lg font-semibold mb-4">Join Meeting</h2>
-
-                {!canJoin ? (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <div className="flex items-center">
-                      <svg className="w-5 h-5 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                      </svg>
-                      <div>
-                        <h3 className="text-yellow-800 font-medium">Not ready to join</h3>
-                        <p className="text-yellow-700 text-sm mt-1">
-                          {isTestingUser
-                            ? 'Testing mode: You can join this meeting anytime.'
-                            : minutesUntilStart > 0
-                            ? `Meeting starts in ${minutesUntilStart} minutes. You can join 15 minutes early.`
-                            : 'Meeting time has passed or is not available.'
-                          }
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex items-center">
-                      <svg className="w-5 h-5 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div>
-                        <h3 className="text-green-800 font-medium">Ready to join</h3>
-                        <p className="text-green-700 text-sm mt-1">
-                          {isTestingUser
-                            ? 'Testing mode: Ready to join anytime!'
-                            : 'Click the button below to join the video meeting.'
-                          }
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+      {/* Video grid */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Tile label="You" mutedFlag={muted} camOffFlag={camOff}>
+          <div ref={localVideoRef} className="absolute inset-0 [&>video]:object-cover [&>video]:w-full [&>video]:h-full" />
+          {(camOff) && (
+            <div className="absolute inset-0 flex items-center justify-center text-slate-400">
+              <VideoOff size={36} />
             </div>
+          )}
+        </Tile>
+        <Tile label={remoteJoined ? 'Other party' : 'Waiting for the other person…'} idle={!remoteJoined}>
+          <div ref={remoteVideoRef} className="absolute inset-0 [&>video]:object-cover [&>video]:w-full [&>video]:h-full" />
+        </Tile>
+      </div>
 
-            {/* Instructions */}
-            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="text-blue-800 font-medium mb-2">Before joining:</h3>
-              <ul className="text-blue-700 text-sm space-y-1">
-                <li>• Ensure you have a stable internet connection</li>
-                <li>• Test your camera and microphone</li>
-                <li>• Close other applications that might use your camera</li>
-                <li>• Make sure you're in a quiet, well-lit environment</li>
-              </ul>
-            </div>
+      {/* Banners */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 mt-4 space-y-2">
+        {billing?.low_balance_warned_at && billing?.billing_state === 'active' && (
+          <Banner tone="warning">
+            <AlertTriangle size={16} className="inline mr-1" />
+            Low balance — your wallet runs out in ~{formatDuration(billing.est_seconds_remaining)}.
+            Top up to avoid the call ending.
+          </Banner>
+        )}
+        {billing?.billing_state === 'low_balance_grace' && (
+          <Banner tone="danger">
+            <AlertTriangle size={16} className="inline mr-1" />
+            Wallet empty. Auto-ending in <strong>{formatDuration(billing.grace_seconds_remaining || 0)}</strong>{' '}
+            unless you top up.{' '}
+            <button
+              onClick={() => window.open('/wallet?topup=1', '_blank', 'width=520,height=720')}
+              className="underline ml-1">
+              Top up now
+            </button>
+          </Banner>
+        )}
+        {billing?.billing_state === 'paused' && remoteJoined === false && (
+          <Banner tone="info">Billing paused — waiting for the other person to rejoin.</Banner>
+        )}
+      </div>
 
-            {/* Action Buttons */}
-            <div className="mt-6 flex justify-center space-x-4">
-              <button
-                onClick={() => navigate('/sessions')}
-                className="bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 font-semibold"
-              >
-                Back to Sessions
-              </button>
+      {/* Controls */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 mt-6 pb-10 flex items-center justify-center gap-3">
+        <CircleBtn onClick={toggleMute} active={!muted}>
+          {muted ? <MicOff size={20} /> : <Mic size={20} />}
+        </CircleBtn>
+        <CircleBtn onClick={toggleCam} active={!camOff}>
+          {camOff ? <VideoOff size={20} /> : <Video size={20} />}
+        </CircleBtn>
+        <CircleBtn onClick={() => setEndingModal(true)} danger>
+          <PhoneOff size={20} />
+        </CircleBtn>
+      </div>
 
-              {canJoin && (
-                <button
-                  onClick={handleJoinMeeting}
-                  className="bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700 font-semibold"
-                >
-                  Join Meeting
-                </button>
-              )}
-            </div>
-          </div>
+      <Modal open={endingModal} onClose={() => setEndingModal(false)} title="End the session?">
+        <p className="text-sm text-slate-700">
+          You'll be charged for billed time so far (subject to the 15-min minimum if both joined).
+        </p>
+        {billing && (
+          <p className="mt-2 text-sm text-slate-700">
+            Billed so far: <strong>{formatINR(billing.billed_paise)}</strong>{' '}
+            ({formatDuration(billing.billed_seconds)})
+          </p>
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setEndingModal(false)}>Keep talking</Button>
+          <Button variant="danger" loading={ending} onClick={hangUp}>End session</Button>
         </div>
+      </Modal>
+    </div>
+  );
+}
+
+// --- Sub-components -------------------------------------------------------
+
+function HUDBar({ billing, meta }) {
+  if (!billing) {
+    return (
+      <div className="flex items-center justify-between bg-slate-800 rounded-xl px-4 py-3 text-sm">
+        <span className="text-slate-300">Connecting…</span>
+      </div>
+    );
+  }
+  const stateTone = {
+    idle: 'text-slate-300',
+    active: 'text-emerald-300',
+    paused: 'text-amber-300',
+    low_balance_grace: 'text-rose-300',
+    finalized: 'text-slate-300',
+  }[billing.billing_state] || 'text-slate-300';
+
+  return (
+    <div className="flex items-center justify-between bg-slate-800 rounded-xl px-4 py-3 text-sm">
+      <div className="flex items-center gap-5">
+        <span className="inline-flex items-center gap-1 text-slate-300">
+          <Clock size={14} /> {formatDuration(billing.wall_clock_seconds)} / {formatDuration(billing.wall_clock_max_seconds)}
+        </span>
+        <span className="inline-flex items-center gap-1 text-slate-300">
+          <IndianRupee size={14} /> Billed {formatINR(billing.billed_paise)} ({formatDuration(billing.billed_seconds)})
+        </span>
+        <span className="text-slate-400">@ {formatINR(billing.per_minute_paise)}/min</span>
+      </div>
+      <span className={`inline-flex items-center gap-1.5 ${stateTone}`}>
+        <span className="inline-block h-2 w-2 rounded-full bg-current"></span>
+        {billing.billing_state.replaceAll('_', ' ')}
+      </span>
+    </div>
+  );
+}
+
+function Tile({ label, idle, children }) {
+  return (
+    <div className={`relative aspect-video rounded-2xl overflow-hidden ${idle ? 'bg-slate-800' : 'bg-slate-700'}`}>
+      {children}
+      <div className="absolute bottom-2 left-2 px-2 py-1 rounded bg-black/40 text-xs">
+        {label}
       </div>
     </div>
   );
-};
+}
 
-export default MeetingRoom;
+function Banner({ tone, children }) {
+  const palette = {
+    info: 'bg-blue-100 text-blue-900 border-blue-200',
+    warning: 'bg-amber-100 text-amber-900 border-amber-200',
+    danger: 'bg-rose-100 text-rose-900 border-rose-200',
+  }[tone] || 'bg-slate-100 text-slate-900 border-slate-200';
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-sm ${palette}`}>
+      {children}
+    </div>
+  );
+}
+
+function CircleBtn({ onClick, active = true, danger = false, children }) {
+  const cls = danger
+    ? 'bg-rose-600 hover:bg-rose-700 text-white'
+    : active
+      ? 'bg-slate-700 hover:bg-slate-600 text-white'
+      : 'bg-rose-600 hover:bg-rose-700 text-white';
+  return (
+    <button
+      onClick={onClick}
+      className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors ${cls}`}
+    >
+      {children}
+    </button>
+  );
+}

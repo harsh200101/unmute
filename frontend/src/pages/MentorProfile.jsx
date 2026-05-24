@@ -1,569 +1,126 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import ReviewCard from '../components/ReviewCard';
-import LoadingSpinner from '../components/LoadingSpinner';
-import BookingModal from '../components/BookingModal';
-import { toast } from 'react-hot-toast';
-import api from '../utils/api';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
+import { mentors as mentorsApi } from '../api/endpoints.js';
+import { useAuth } from '../auth/AuthContext.jsx';
+import Avatar from '../components/Avatar.jsx';
+import RatingStars from '../components/ui/RatingStars.jsx';
+import Card, { CardBody } from '../components/ui/Card.jsx';
+import MentorProfileCard from '../components/ui/profile-card.jsx';
+import { PageSpinner } from '../components/ui/Spinner.jsx';
+import { formatDate } from '../lib/format.js';
 
-const MentorProfile = () => {
-  const { mentorId } = useParams();
-  const { user, isAuthenticated } = useAuth();
+export default function MentorProfile() {
+  const { uuid } = useParams();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
-  // State management
   const [mentor, setMentor] = useState(null);
-  const [reviews, setReviews] = useState([]);
+  const [reviews, setReviews] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
-  const [reviewsLoading, setReviewsLoading] = useState(false);
-  const [showBookingModal, setShowBookingModal] = useState(false);
-  const [categories, setCategories] = useState([]);
-  const [error, setError] = useState(null);
-  const [retryCount, setRetryCount] = useState(0);
+  const [notFound, setNotFound] = useState(false);
 
-  // Pagination for reviews
-  const [reviewsPage, setReviewsPage] = useState(1);
-  const [reviewsTotal, setReviewsTotal] = useState(0);
-  const reviewsLimit = 6;
-
-  // Render stars with support for half stars
-  const renderStars = (rating) => {
-    return [...Array(5)].map((_, i) => {
-      const starValue = i + 1;
-      const isFull = rating >= starValue;
-      const isHalf = rating >= starValue - 0.5 && rating < starValue;
-
-      if (isFull) {
-        return (
-          <svg key={i} className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-          </svg>
-        );
-      } else if (isHalf) {
-        return (
-          <div key={i} className="relative overflow-hidden w-2.5">
-            <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-            </svg>
-          </div>
-        );
-      } else {
-        return (
-          <svg key={i} className="w-5 h-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-          </svg>
-        );
-      }
-    });
-  };
-
-  // Load mentor data on mount
   useEffect(() => {
-    const loadMentorData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    let cancelled = false;
+    setLoading(true); setNotFound(false);
+    Promise.all([mentorsApi.byUuid(uuid), mentorsApi.reviews(uuid)])
+      .then(([m, r]) => {
+        if (cancelled) return;
+        setMentor(m.mentor);
+        setReviews(r);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        if (e.response?.status === 404) setNotFound(true);
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [uuid]);
 
-        // Load categories first
-        try {
-          const categoriesResponse = await api.get('/mentors/meta/categories');
-          setCategories(categoriesResponse.data.data?.categories || []);
-        } catch (catErr) {
-          console.warn('Failed to load categories, continuing without them');
-        }
-
-        // Load mentor profile
-        const mentorResponse = await api.get(`/mentors/${mentorId}`);
-        setMentor(mentorResponse.data.data.mentor);
-
-        // Load reviews
-        await loadReviews(1);
-
-        // Reset retry count on success
-        setRetryCount(0);
-
-      } catch (error) {
-        console.error('Failed to load mentor data:', error);
-        setError(error.message);
-
-        // Auto-retry for network/server errors (up to 2 times)
-        if (retryCount < 2 && (error.message.includes('Server error') || error.message.includes('network'))) {
-          setTimeout(() => {
-            setRetryCount(prev => prev + 1);
-            loadMentorData();
-          }, 2000 * (retryCount + 1)); // Exponential backoff
-        } else {
-          toast.error(error.message);
-          if (error.message === 'Mentor not found') {
-            navigate('/mentors');
-          }
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (mentorId) {
-      loadMentorData();
-    }
-  }, [mentorId, navigate, retryCount]);
-
-  // Load reviews with pagination
-  const loadReviews = async (page = 1) => {
-    try {
-      setReviewsLoading(true);
-      const response = await api.get(`/mentors/${mentorId}/reviews`, { params: { page, limit: reviewsLimit } });
-      {
-        const data = response.data;
-        const transformedReviews = (data.data.reviews || []).map(review => ({
-          id: review.id,
-          overall_rating: review.rating,
-          comment: review.comment,
-          created_at: review.createdAt,
-          is_featured: review.isFeatured,
-          helpful_votes: review.helpfulVotes,
-          mentor_response: review.mentorResponse,
-          mentor_response_at: review.mentorResponseAt,
-          mentee_name: `${review.mentee.firstName} ${review.mentee.lastName}`,
-          session_duration: review.session.duration,
-        }));
-
-        if (page === 1) {
-          setReviews(transformedReviews);
-        } else {
-          setReviews(prev => [...prev, ...transformedReviews]);
-        }
-        setReviewsTotal(data.data.pagination?.totalReviews || 0);
-        setReviewsPage(page);
-      }
-    } catch (error) {
-      console.error('Failed to load reviews:', error);
-    } finally {
-      setReviewsLoading(false);
-    }
-  };
-
-
-  // Handle helpful vote on reviews
-  const handleHelpfulVote = async (reviewId) => {
-    try {
-      await api.post(`/reviews/${reviewId}/helpful`);
-      // Reload reviews to get updated vote counts
-      await loadReviews(1);
-    } catch (error) {
-      console.error('Vote error:', error);
-      toast.error('Failed to submit vote');
-    }
-  };
-
-  // Handle review reporting
-  const handleReportReview = async (reviewId) => {
-    try {
-      await api.post(`/reviews/${reviewId}/report`, { reason: 'inappropriate' });
-      toast.success('Review reported successfully');
-    } catch (error) {
-      console.error('Report error:', error);
-      toast.error('Failed to report review');
-    }
-  };
-
-  // Handle manual retry
-  const handleRetry = () => {
-    setRetryCount(0);
-    setError(null);
-    // Trigger re-load by updating effect dependency
-    setLoading(true);
-  };
-
-  if (loading) {
+  if (loading) return <PageSpinner />;
+  if (notFound || !mentor) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-        <div className="text-center">
-          <LoadingSpinner size="xl" variant="gradient" />
-          <p className="text-gray-600 mt-4 text-lg">Loading mentor profile...</p>
-        </div>
+      <div className="max-w-3xl mx-auto px-4 py-20 text-center">
+        <h1 className="text-xl font-semibold text-foreground">Mentor not found</h1>
+        <Link to="/mentors" className="inline-block mt-4 underline text-primary">Browse all mentors</Link>
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-50">
-        <div className="text-center max-w-md mx-auto p-8">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Unable to Load Mentor Profile</h1>
-          <p className="text-gray-600 mb-6">{error}</p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button
-              onClick={handleRetry}
-              className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Try Again
-            </button>
-            <button
-              onClick={() => navigate('/mentors')}
-              className="px-6 py-3 bg-gray-200 text-gray-800 rounded-xl hover:bg-gray-300 transition-colors"
-            >
-              Browse Mentors
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const onBook = () => {
+    if (!user) navigate(`/login?next=/mentors/${uuid}`);
+    else navigate(`/book/${uuid}`);
+  };
 
-  if (!mentor) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Mentor not found</h1>
-          <button
-            onClick={() => navigate('/mentors')}
-            className="mt-4 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
-          >
-            Browse Mentors
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const isSelf = user?.id === mentor.user.id;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      {/* Hero Section */}
-      <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex flex-col lg:flex-row gap-8">
-            {/* Mentor Info */}
-            <div className="flex-1">
-              <div className="flex items-start gap-6">
-                <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center text-white text-3xl font-bold flex-shrink-0 overflow-hidden">
-                  {mentor.avatarUrl ? (
-                    <img src={mentor.avatarUrl} alt={`${mentor.firstName} ${mentor.lastName}`} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-white text-3xl font-bold">
-                      {mentor.firstName?.charAt(0).toUpperCase() || mentor.lastName?.charAt(0).toUpperCase() || 'M'}
-                    </span>
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h1 className="text-3xl font-bold text-gray-900">
-                      {mentor.firstName && mentor.lastName
-                        ? `${mentor.firstName} ${mentor.lastName}`
-                        : mentor.fullName || 'Mentor'}
-                    </h1>
-                    {mentor.isFeatured && (
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                        ⭐ Featured
-                      </span>
-                    )}
-                    {mentor.badgeLevel && (
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                        mentor.badgeLevel === 'diamond' ? 'bg-purple-100 text-purple-800' :
-                        mentor.badgeLevel === 'platinum' ? 'bg-gray-100 text-gray-800' :
-                        mentor.badgeLevel === 'gold' ? 'bg-yellow-100 text-yellow-800' :
-                        mentor.badgeLevel === 'silver' ? 'bg-gray-100 text-gray-600' :
-                        'bg-orange-100 text-orange-800'
-                      }`}>
-                        {mentor.badgeLevel.toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-lg text-gray-600 mb-4">
-                    {mentor.specializations?.join(' • ') || 'Professional Mentor'}
-                  </p>
-
-                  {/* Categories */}
-                  {mentor.categories && mentor.categories.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      <span className="text-sm font-medium text-gray-700">Categories:</span>
-                      {mentor.categories.map((category, index) => {
-                        // Handle both object and string formats
-                        const categoryName = typeof category === 'object' ? category.name : category;
-                        const categoryColor = typeof category === 'object' ? category.colorHex : '#6B7280';
-                        return (
-                          <span
-                            key={index}
-                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium"
-                            style={{
-                              backgroundColor: `${categoryColor}20`,
-                              color: categoryColor,
-                              border: `1px solid ${categoryColor}40`
-                            }}
-                          >
-                            {categoryName}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-
-
-                  <div className="flex flex-wrap gap-4 mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="flex">
-                        {renderStars(mentor.averageRating || 0)}
-                      </div>
-                      <span className="font-semibold text-gray-900">
-                        {(mentor.averageRating || 0).toFixed(1)}
-                      </span>
-                      <span className="text-gray-600">
-                        ({mentor.totalReviews || 0} reviews)
-                      </span>
-                    </div>
-                    <div className="text-gray-600">
-                      📅 {mentor.totalSessions || 0} sessions completed
-                    </div>
-                    <div className="text-gray-600">
-                      ⚡ Responds in ~{mentor.responseTimeHours || 24}h
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-            </div>
-
-            {/* Booking Card */}
-            <div className="lg:w-80">
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 sticky top-4">
-                <div className="text-center mb-6">
-                  <div className="text-3xl font-bold text-gray-900 mb-1">
-                    ₹{mentor.perMinuteRate ? (mentor.perMinuteRate * 60).toFixed(0) : '5000'}/hour
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    ₹{mentor.perMinuteRate ? mentor.perMinuteRate.toFixed(2) : '83.33'}/minute • Video session
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => setShowBookingModal(true)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setShowBookingModal(true);
-                    }
-                  }}
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-[1.02] shadow-lg hover:shadow-xl mb-4 focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50"
-                  aria-label={`Book a session with ${mentor.firstName} ${mentor.lastName}`}
-                  role="button"
-                  tabIndex={0}
-                >
-                  Book Session
-                </button>
-
-                <div className="space-y-3 text-sm text-gray-600">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {mentor.minSessionDuration || 30} - {mentor.maxSessionDuration || 180} min sessions
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {mentor.responseRate || 100}% response rate
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    Book up to {mentor.advanceBookingDays || 30} days ahead
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* About Section */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">About</h2>
-              <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-                This mentor hasn't added a bio yet.
-              </p>
-
-              {mentor.yearsExperience && (
-                <div className="mt-4 p-4 bg-blue-50 rounded-xl">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    <span className="font-semibold text-blue-900">
-                      {mentor.yearsExperience} years of experience
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Specializations */}
-            {mentor.specializations && mentor.specializations.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">Specializations</h2>
-                <div className="flex flex-wrap gap-3">
-                  {mentor.specializations.map((spec, index) => (
-                    <span
-                      key={index}
-                      className="inline-flex items-center px-4 py-2 rounded-xl bg-gradient-to-r from-blue-100 to-purple-100 text-blue-800 font-medium"
-                    >
-                      {spec}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Categories */}
-            {mentor.categories && mentor.categories.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">Categories</h2>
-                <div className="flex flex-wrap gap-3">
-                  {mentor.categories.map((category, index) => {
-                    // Handle both object and string formats
-                    const categoryName = typeof category === 'object' ? category.name : category;
-                    const categoryColor = typeof category === 'object' ? category.colorHex : '#6B7280';
-                    const categoryDesc = typeof category === 'object' ? category.description : '';
-                    return (
-                      <div
-                        key={index}
-                        className="flex-1 min-w-0 p-4 rounded-xl border"
-                        style={{ borderColor: `${categoryColor}40` }}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <div
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: categoryColor }}
-                          ></div>
-                          <span className="font-medium text-gray-900">{categoryName}</span>
-                        </div>
-                        {categoryDesc && (
-                          <p className="text-sm text-gray-600">{categoryDesc}</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-
-            {/* Reviews Section */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  Reviews ({reviewsTotal})
-                </h2>
-                {mentor.averageRating && (
-                  <div className="flex items-center gap-2">
-                    <div className="flex">
-                      {renderStars(mentor.averageRating || 0)}
-                    </div>
-                    <span className="text-xl font-bold text-gray-900">
-                      {(mentor.averageRating || 0).toFixed(1)}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {reviews.length > 0 ? (
-                <div className="space-y-6">
-                  {reviews.map((review) => (
-                    <ReviewCard
-                      key={review.id}
-                      review={review}
-                      showMentorInfo={false}
-                      onHelpfulVote={handleHelpfulVote}
-                      onReportReview={handleReportReview}
-                    />
-                  ))}
-
-                  {/* Load More Reviews */}
-                  {reviews.length < reviewsTotal && (
-                    <div className="text-center pt-4">
-                      <button
-                        onClick={() => loadReviews(reviewsPage + 1)}
-                        disabled={reviewsLoading}
-                        className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition-colors flex items-center gap-2 mx-auto"
-                      >
-                        {reviewsLoading ? <LoadingSpinner size="sm" /> : 'Load More Reviews'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                    </svg>
-                  </div>
-                  <p className="text-gray-500 text-lg">No reviews yet</p>
-                  <p className="text-gray-400 text-sm">Be the first to book and review this mentor!</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Quick Stats */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Quick Stats</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Sessions</span>
-                  <span className="font-semibold text-gray-900">{mentor.totalSessions || 0}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Response Time</span>
-                  <span className="font-semibold text-gray-900">{mentor.responseTimeHours || 24}h</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Response Rate</span>
-                  <span className="font-semibold text-gray-900">{mentor.responseRate || 100}%</span>
-                </div>
-                {mentor.yearsExperience && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Experience</span>
-                    <span className="font-semibold text-gray-900">{mentor.yearsExperience} years</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </div>
-
-      {/* Booking Modal */}
-      <BookingModal
-        mentor={{
-          id: mentor?.id,
-          firstName: mentor?.firstName || 'Mentor',
-          lastName: mentor?.lastName || '',
-          perMinuteRate: mentor?.perMinuteRate || 83.33
-        }}
-        isOpen={showBookingModal}
-        onClose={() => setShowBookingModal(false)}
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+      {/* Hero — themed glass profile card with brand-indigo accents. */}
+      <MentorProfileCard
+        mentor={mentor}
+        onBook={onBook}
+        canBook={!isSelf}
       />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+        <div className="lg:col-span-2 space-y-6">
+          <Card>
+            <CardBody>
+              <h2 className="font-semibold text-foreground">About</h2>
+              <p className="mt-2 text-muted-foreground leading-relaxed whitespace-pre-wrap">{mentor.bio}</p>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardBody>
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-foreground">Reviews ({reviews.total})</h2>
+              </div>
+              {reviews.items.length === 0 ? (
+                <p className="mt-3 text-sm text-muted-foreground">No reviews yet.</p>
+              ) : (
+                <div className="mt-4 divide-y divide-border">
+                  {reviews.items.map((rv) => (
+                    <div key={rv.uuid} className="py-4 first:pt-0">
+                      <div className="flex items-start gap-3">
+                        <Avatar src={rv.reviewer.avatar_url} name={rv.reviewer.full_name} size={36} />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-foreground">
+                              {rv.reviewer.full_name}
+                            </p>
+                            <span className="text-xs text-muted-foreground">{formatDate(rv.created_at)}</span>
+                          </div>
+                          <RatingStars value={rv.rating} showNumber={false} />
+                          {rv.body && (
+                            <p className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">{rv.body}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          {mentor.video_intro_url && (
+            <Card>
+              <CardBody>
+                <h3 className="font-semibold text-foreground">Video intro</h3>
+                <video
+                  className="mt-2 w-full rounded-lg bg-muted"
+                  src={mentor.video_intro_url}
+                  controls
+                  preload="metadata"
+                />
+              </CardBody>
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
-};
-
-export default MentorProfile;
+}

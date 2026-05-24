@@ -1,306 +1,198 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import LoadingSpinner from '../components/LoadingSpinner';
-import { toast } from 'react-hot-toast';
-import api from '../utils/api';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Wallet as WalletIcon, ArrowUpRight, ShieldCheck, AlertCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { wallet as walletApi, payouts as payoutsApi, kyc as kycApi } from '../api/endpoints.js';
+import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
+import Button from '../components/ui/Button.jsx';
+import Modal from '../components/ui/Modal.jsx';
+import { Field, Input } from '../components/ui/Field.jsx';
+import { PageSpinner } from '../components/ui/Spinner.jsx';
+import { formatINR, formatDate } from '../lib/format.js';
 
-const MentorEarnings = () => {
-  const { user, isAuthenticated, isMentor } = useAuth();
-  const navigate = useNavigate();
+const MIN_PAYOUT_PAISE = 50000;
+const STATUS_LABEL = {
+  pending: { label: 'Pending', tone: 'bg-amber-50 text-amber-800' },
+  processing: { label: 'Processing', tone: 'bg-blue-50 text-blue-800' },
+  succeeded: { label: 'Paid out', tone: 'bg-emerald-50 text-emerald-800' },
+  failed: { label: 'Failed', tone: 'bg-rose-50 text-rose-800' },
+  reversed: { label: 'Reversed', tone: 'bg-slate-100 text-slate-800' },
+};
 
+export default function MentorEarnings() {
   const [loading, setLoading] = useState(true);
-  const [earnings, setEarnings] = useState([]);
-  const [summary, setSummary] = useState({});
-  const [pagination, setPagination] = useState({});
-  const [period, setPeriod] = useState('all');
-  const [page, setPage] = useState(1);
+  const [balance, setBalance] = useState(0);
+  const [kycStatus, setKycStatus] = useState(null);
+  const [withdrawals, setWithdrawals] = useState([]);
 
-  // Load earnings data
-  const loadEarnings = async () => {
+  const [reqOpen, setReqOpen] = useState(false);
+  const [reqAmount, setReqAmount] = useState(0);
+  const [reqBusy, setReqBusy] = useState(false);
+  const [reqErr, setReqErr] = useState(null);
+
+  async function reload() {
+    setLoading(true);
     try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      params.append('period', period);
-      params.append('page', page);
-      params.append('limit', 20);
-
-      const response = await api.get(`/mentors/earnings?${params.toString()}`);
-      const data = response.data;
-      setEarnings(data.data.earnings || []);
-      setSummary(data.data.summary || {});
-      setPagination(data.data.pagination || {});
-    } catch (error) {
-      console.error('Failed to load earnings:', error);
-      toast.error(error.response?.data?.message || 'Failed to load earnings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle period change
-  const handlePeriodChange = (newPeriod) => {
-    setPeriod(newPeriod);
-    setPage(1);
-  };
-
-  // Handle page change
-  const handlePageChange = (newPage) => {
-    setPage(newPage);
-  };
-
-  // Load data when dependencies change
-  useEffect(() => {
-    if (isAuthenticated && isMentor()) {
-      loadEarnings();
-    }
-  }, [isAuthenticated, isMentor, period, page]);
-
-  // Redirect if not authenticated or not a mentor
-  if (!isAuthenticated) {
-    navigate('/login');
-    return null;
+      const [w, k, p] = await Promise.all([
+        walletApi.me(),
+        kycApi.getMine().catch(() => ({ kyc: null })),
+        payoutsApi.listMine({ limit: 50 }).catch(() => ({ items: [] })),
+      ]);
+      setBalance(w.balances?.mentor || 0);
+      setKycStatus(k.kyc?.status || null);
+      setWithdrawals(p.items || []);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to load earnings');
+    } finally { setLoading(false); }
   }
 
-  if (!isMentor()) {
-    navigate('/dashboard');
-    return null;
+  useEffect(() => { reload(); }, []);
+
+  async function submitWithdrawal() {
+    setReqErr(null);
+    if (!Number.isInteger(reqAmount) || reqAmount < MIN_PAYOUT_PAISE) {
+      setReqErr(`Minimum withdrawal is ₹${MIN_PAYOUT_PAISE / 100}`);
+      return;
+    }
+    if (reqAmount > balance) { setReqErr('More than your available balance'); return; }
+    setReqBusy(true);
+    try {
+      await payoutsApi.request(reqAmount);
+      toast.success(`Withdrawal of ₹${(reqAmount/100).toFixed(0)} requested`);
+      setReqOpen(false); setReqAmount(0);
+      reload();
+    } catch (e) {
+      setReqErr(e.response?.data?.error || 'Request failed');
+    } finally { setReqBusy(false); }
   }
 
-  const periodOptions = [
-    { value: 'all', label: 'All Time' },
-    { value: 'month', label: 'This Month' },
-    { value: 'year', label: 'This Year' }
-  ];
+  if (loading) return <PageSpinner />;
+
+  const canWithdraw = kycStatus === 'approved';
+  const totalEarned = withdrawals.reduce((s, w) => s + (w.status === 'succeeded' ? w.amount_paise : 0), 0);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-      {/* Header */}
-      <div className="bg-white shadow-lg border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Your Earnings</h1>
-              <p className="text-gray-600 mt-1">
-                Track your mentoring income and session history
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+      <header className="flex items-center justify-between flex-wrap gap-3 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Earnings</h1>
+          <p className="text-slate-600 mt-1">Withdraw your earnings to your bank account.</p>
+        </div>
+        <Button onClick={() => setReqOpen(true)} disabled={!canWithdraw || balance < MIN_PAYOUT_PAISE}>
+          <ArrowUpRight size={16} /> Request withdrawal
+        </Button>
+      </header>
+
+      {/* KYC banner */}
+      {kycStatus !== 'approved' && (
+        <Card className={`mb-4 border ${kycStatus === 'rejected' ? 'border-rose-300' : 'border-amber-300'}`}>
+          <CardBody className="flex items-start gap-3">
+            <AlertCircle className={kycStatus === 'rejected' ? 'text-rose-600' : 'text-amber-600'} size={20} />
+            <div className="flex-1">
+              <p className="font-semibold text-slate-900">KYC required to withdraw</p>
+              <p className="text-sm text-slate-600 mt-1">
+                {kycStatus === 'pending' && 'Your KYC submission is pending admin review.'}
+                {kycStatus === 'rejected' && 'Your previous KYC was rejected. Resubmit to continue.'}
+                {!kycStatus && 'Submit your PAN + bank details so we can pay you out.'}
               </p>
+              <Link to="/mentor/kyc" className="inline-block mt-3">
+                <Button size="sm" variant={kycStatus === 'rejected' ? 'danger' : 'primary'}>
+                  {kycStatus ? 'View KYC' : 'Submit KYC'}
+                </Button>
+              </Link>
             </div>
-            <button
-              onClick={() => navigate('/mentor/dashboard')}
-              className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-all duration-200"
-            >
-              ← Back to Dashboard
-            </button>
-          </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {kycStatus === 'approved' && (
+        <Card className="mb-4 border-emerald-300">
+          <CardBody className="flex items-center gap-3">
+            <ShieldCheck className="text-emerald-600" size={18} />
+            <span className="text-sm text-slate-700">KYC approved — withdrawals enabled.</span>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Balance cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="rounded-2xl text-white p-5 bg-gradient-to-br from-emerald-500 to-emerald-700">
+          <p className="text-xs uppercase tracking-wider text-white/80 flex items-center gap-1.5">
+            <WalletIcon size={14} /> Available to withdraw
+          </p>
+          <p className="text-3xl font-bold mt-1">{formatINR(balance)}</p>
+          <p className="text-xs text-white/80 mt-2">
+            Minimum withdrawal: ₹{MIN_PAYOUT_PAISE / 100}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <p className="text-xs uppercase tracking-wider text-slate-500">Total paid out</p>
+          <p className="text-3xl font-bold text-slate-900 mt-1">{formatINR(totalEarned)}</p>
+          <p className="text-xs text-slate-500 mt-2">Across {withdrawals.filter((w) => w.status === 'succeeded').length} withdrawals</p>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <LoadingSpinner size="xl" />
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Total Earnings</p>
-                    <p className="text-3xl font-bold text-gray-900 mt-1">
-                      ₹{summary.totalEarnings?.toFixed(2) || '0.00'}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Total Sessions</p>
-                    <p className="text-3xl font-bold text-gray-900 mt-1">
-                      {summary.totalSessions || 0}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Average per Session</p>
-                    <p className="text-3xl font-bold text-gray-900 mt-1">
-                      ₹{summary.averageEarnings?.toFixed(2) || '0.00'}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                    <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Filters */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <h2 className="text-xl font-bold text-gray-900">Earnings History</h2>
-                <div className="flex gap-2">
-                  {periodOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => handlePeriodChange(option.value)}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        period === option.value
-                          ? 'bg-green-600 text-white'
-                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Earnings Table */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Session
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Mentee
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Duration
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Earnings
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {earnings.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" className="px-6 py-12 text-center">
-                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                            </svg>
-                          </div>
-                          <p className="text-gray-500 text-lg mb-2">No earnings yet</p>
-                          <p className="text-gray-400 text-sm">
-                            Your completed sessions will appear here
-                          </p>
-                        </td>
-                      </tr>
-                    ) : (
-                      earnings.map((earning) => (
-                        <tr key={earning.sessionId} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
-                              {earning.title}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">
-                              {new Date(earning.scheduledAt).toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' })}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {new Date(earning.scheduledAt).toLocaleTimeString('en-US', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                timeZone: 'Asia/Kolkata'
-                              })}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">
-                              {earning.mentee.firstName} {earning.mentee.lastName}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">
-                              {earning.duration} min
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-green-600">
-                              ₹{earning.earnings.toFixed(2)}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              earning.status === 'completed'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {earning.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              {pagination.totalPages > 1 && (
-                <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm text-gray-700">
-                      Showing {((pagination.currentPage - 1) * pagination.limit) + 1} to{' '}
-                      {Math.min(pagination.currentPage * pagination.limit, pagination.totalItems)} of{' '}
-                      {pagination.totalItems} results
+      {/* History */}
+      <Card className="mt-6">
+        <CardHeader>
+          <h2 className="font-semibold text-slate-900">Withdrawal history</h2>
+        </CardHeader>
+        <CardBody className="!p-0">
+          {withdrawals.length === 0 ? (
+            <p className="text-sm text-slate-500 px-6 py-6 text-center">No withdrawals yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {withdrawals.map((w) => {
+                const s = STATUS_LABEL[w.status] || STATUS_LABEL.pending;
+                return (
+                  <li key={w.uuid} className="px-6 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{formatINR(w.amount_paise)}</p>
+                      <p className="text-xs text-slate-500">
+                        Requested {formatDate(w.requested_at)}
+                        {w.processed_at && <> · Processed {formatDate(w.processed_at)}</>}
+                      </p>
+                      {w.gateway_txn_id && (
+                        <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                          {w.gateway_txn_id}
+                        </p>
+                      )}
+                      {w.failure_reason && (
+                        <p className="text-xs text-rose-600 mt-0.5">{w.failure_reason}</p>
+                      )}
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handlePageChange(pagination.currentPage - 1)}
-                        disabled={pagination.currentPage <= 1}
-                        className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                      >
-                        Previous
-                      </button>
-                      <button
-                        onClick={() => handlePageChange(pagination.currentPage + 1)}
-                        disabled={pagination.currentPage >= pagination.totalPages}
-                        className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+                    <span className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap ${s.tone}`}>
+                      {s.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardBody>
+      </Card>
+
+      <Modal open={reqOpen} onClose={() => setReqOpen(false)} title="Request withdrawal">
+        <p className="text-sm text-slate-600">
+          We'll transfer this amount to your verified bank account. Withdrawals are processed in weekly batches.
+        </p>
+        <div className="mt-4">
+          <Field label="Amount (₹)" htmlFor="amt">
+            <Input id="amt" type="number" min={MIN_PAYOUT_PAISE / 100} step={100}
+              max={balance / 100}
+              value={reqAmount / 100 || ''}
+              onChange={(e) => setReqAmount(Math.round(Number(e.target.value) * 100) || 0)} />
+          </Field>
+          <p className="text-xs text-slate-500 mt-1">
+            Available: <strong>{formatINR(balance)}</strong> · Min: ₹{MIN_PAYOUT_PAISE / 100}
+          </p>
+        </div>
+        {reqErr && <p className="text-sm text-rose-600 mt-3">{reqErr}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setReqOpen(false)}>Cancel</Button>
+          <Button onClick={submitWithdrawal} loading={reqBusy}>Submit request</Button>
+        </div>
+      </Modal>
     </div>
   );
-};
-
-export default MentorEarnings;
+}

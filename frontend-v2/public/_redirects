@@ -1,5 +1,0 @@
-# SPA fallback — Render Static Sites (and Netlify) honor this file.
-# Every path that doesn't match a real asset is rewritten to index.html so
-# client-side React Router can pick it up. A hard-refresh on /mentors or
-# /bookings/abc would 404 otherwise.
-/*    /index.html   200

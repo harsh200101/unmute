@@ -1,562 +1,516 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { useNavigate, Navigate, useLocation } from 'react-router-dom';
-import LoadingSpinner from '../components/LoadingSpinner';
-import { toast } from 'react-hot-toast';
-import api from '../utils/api';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Calendar, Clock, Wallet, Sparkles, Video, ArrowRight,
+  Star, TrendingUp, Bell, Shield, Settings, Banknote, MessageSquare,
+} from 'lucide-react';
+import { useAuth } from '../auth/AuthContext.jsx';
+import {
+  bookings as bookingsApi,
+  wallet as walletApi,
+  notifications as notifsApi,
+  reviews as reviewsApi,
+  admin as adminApi,
+} from '../api/endpoints.js';
+import Card, { CardBody } from '../components/ui/Card.jsx';
+import Button from '../components/ui/Button.jsx';
+import Avatar from '../components/Avatar.jsx';
+import OnboardingAck from '../components/OnboardingAck.jsx';
+import { formatINR, formatDate, relativeTime } from '../lib/format.js';
 
-// Global flag to prevent multiple mentor redirects across component mounts
-let globalMentorRedirected = false;
+// Modern, data-rich dashboard. Mobile-first stack; on ≥768px reorganises
+// into a 12-col grid. All data is live from existing endpoints. Failures
+// degrade silently — a card that can't load just shows an empty state.
+export default function Dashboard() {
+  const { user } = useAuth();
+  const firstName = user.full_name.split(' ')[0];
 
-const Dashboard = () => {
-  const { user, isAuthenticated, isMentor, isMentee, isAdmin } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const [wallet, setWallet] = useState(null);
+  const [bookings, setBookings] = useState([]);
+  const [notifs, setNotifs] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Simple state management
-  const [loading, setLoading] = useState(false);
-  const [upcomingSessions, setUpcomingSessions] = useState([]);
-  const [recentSessions, setRecentSessions] = useState([]);
-  const [sessionStats, setSessionStats] = useState({});
-  const [dataLoaded, setDataLoaded] = useState(false);
-
-  // Refs to prevent excessive operations during OAuth flows
-  const processedStateRef = useRef('');
-  const navigationRef = useRef(false);
-  const dataLoadRef = useRef(false); // Prevent multiple data loads
-
-  // Load upcoming sessions
-  const loadUpcomingSessions = useCallback(async () => {
-    console.log('🔄 API CALL: loadUpcomingSessions at', new Date().toISOString());
-    try {
-      const response = await api.get('/sessions/upcoming', { params: { limit: 5 } });
-      console.log('✅ Sessions API success:', response.data);
-      setUpcomingSessions(response.data.data?.upcomingSessions || []);
-    } catch (error) {
-      console.error('❌ Sessions API error:', error.message);
-      setUpcomingSessions([]);
-    }
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      walletApi.me().catch(() => null),
+      bookingsApi.listMine({ limit: 30 }).catch(() => ({ items: [] })),
+      notifsApi.list({ limit: 5 }).catch(() => ({ items: [] })),
+      reviewsApi.received({ limit: 3 }).catch(() => ({ items: [] })),
+    ]).then(([w, b, n, r]) => {
+      if (cancelled) return;
+      setWallet(w);
+      setBookings(b.items || []);
+      setNotifs(n.items || []);
+      setReviews(r.items || []);
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
-  // Load session stats
-  const loadSessionStats = useCallback(async () => {
-    console.log('🔄 API CALL: loadSessionStats at', new Date().toISOString());
-    try {
-      const response = await api.get('/sessions/my-sessions/stats', { params: { timeframe: 'month' } });
-      console.log('✅ Stats API success:', response.data);
-      setSessionStats(response.data.data || {});
-    } catch (error) {
-      console.error('❌ Stats API error:', error.message);
-      setSessionStats({});
-    }
-  }, []);
+  // For mentees: walletApi.me() returns { balance_paise: ... } or similar.
+  // For mentors: same endpoint, but the mentor's earnings live under
+  // `balances.mentor` (kept across both roles). Derive once.
+  const menteeBalance = wallet?.balance_paise ?? wallet?.balances?.mentee ?? 0;
+  const mentorBalance = wallet?.balances?.mentor ?? 0;
 
-  // Load recent sessions for mentees
-  const loadRecentSessions = useCallback(async () => {
-    if (!isMentee()) return;
-
-    console.log('🔄 API CALL: loadRecentSessions at', new Date().toISOString());
-    try {
-      const response = await api.get('/sessions/mentee/recent', { params: { limit: 3 } });
-      console.log('✅ Recent sessions API success:', response.data);
-      setRecentSessions(response.data.data?.sessions || []);
-    } catch (error) {
-      console.error('❌ Recent sessions API error:', error.message);
-      setRecentSessions([]);
-    }
-  }, [isMentee]);
-
-  // Load all dashboard data
-  const loadDashboardData = useCallback(async () => {
-    // Prevent loading if not authenticated, already loaded, or if user is mentor (should be redirected)
-    if (!isAuthenticated || dataLoaded || isMentor() || dataLoadRef.current) {
-      console.log('🚫 Skipping dashboard data load:', {
-        isAuthenticated,
-        dataLoaded,
-        isMentor: isMentor(),
-        dataLoadInProgress: dataLoadRef.current
-      });
-      return;
-    }
-
-    // Prevent multiple simultaneous loads
-    if (loading) {
-      console.log('🚫 Dashboard data load already in progress');
-      return;
-    }
-
-    dataLoadRef.current = true;
-    setLoading(true);
-    console.log('🚀 Loading dashboard data...');
-
-    try {
-      await Promise.all([
-        loadUpcomingSessions(),
-        loadSessionStats(),
-        loadRecentSessions()
-      ]);
-      setDataLoaded(true);
-      console.log('✅ Dashboard data loaded successfully');
-    } catch (error) {
-      console.error('❌ Dashboard loading error:', error);
-      toast.error('Failed to load dashboard data');
-      // Don't set dataLoaded to true if loading failed
-    } finally {
-      setLoading(false);
-      dataLoadRef.current = false;
-    }
-  }, [isAuthenticated, dataLoaded, loading, loadUpcomingSessions, loadSessionStats, loadRecentSessions, isMentor]);
-
-  // Load data on mount and handle redirects
-  useEffect(() => {
-    // Create a stable state key to prevent excessive processing
-    const currentStateKey = `${isAuthenticated}-${user?.role || 'none'}-${dataLoaded}`;
-
-    if (processedStateRef.current !== currentStateKey) {
-      processedStateRef.current = currentStateKey;
-
-      if (!isAuthenticated) {
-        navigate('/login');
-        setDataLoaded(false);
-        return;
-      }
-
-      // Load dashboard data only if authenticated and not a mentor
-      if (!dataLoaded && !loading) {
-        loadDashboardData();
-      }
-    }
-  }, [isAuthenticated, user?.role, dataLoaded, loading, isMentor, navigate, loadDashboardData]);
-
-  // Reset redirect flag and data load ref when authentication state changes or navigation occurs
-  useEffect(() => {
-    if (!isAuthenticated) {
-      globalMentorRedirected = false;
-      dataLoadRef.current = false;
-      setDataLoaded(false);
-    }
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    globalMentorRedirected = false;
-    navigationRef.current = false;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.key]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      dataLoadRef.current = false;
-    };
-  }, []);
-
-  // Handle mentor redirect
-  useEffect(() => {
-    if (isMentor() && !globalMentorRedirected) {
-      console.log('🔄 [NAV] Redirecting mentor to /mentor/dashboard');
-      globalMentorRedirected = true;
-      navigate('/mentor/dashboard', { replace: true });
-    }
-  }, [isMentor, navigate, location.key]);
-
-  // Debug logging for navigation decisions
-  console.log('🔄 [NAV] Dashboard render check:', {
-    isAuthenticated,
-    isMentor: isMentor(),
-    userRole: user?.role,
-    userId: user?.id,
-    shouldRedirectMentor: isMentor(),
-    shouldRedirectUnauth: !isAuthenticated,
-    dataLoaded
-  });
-
-  // Redirect mentors to their dashboard (handled in useEffect)
-
-  // Handle unauthenticated redirect
-  useEffect(() => {
-    if (!isAuthenticated && !navigationRef.current) {
-      console.log('🔄 [NAV] Redirecting unauthenticated user to /login');
-      navigationRef.current = true;
-      navigate('/login', { replace: true });
-    }
-  }, [isAuthenticated, navigate]);
-
-  console.log('🔄 [NAV] Rendering Dashboard component for authenticated non-mentor user');
+  const now = Date.now();
+  const upcoming = useMemo(
+    () => bookings
+      .filter((b) => ['scheduled', 'in_call'].includes(b.status) && new Date(b.slot_end_at).getTime() > now)
+      .sort((a, b) => new Date(a.slot_start_at) - new Date(b.slot_start_at)),
+    [bookings, now]
+  );
+  const nextBooking = upcoming[0];
+  const completedCount = bookings.filter((b) => b.status === 'completed').length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold overflow-hidden">
-                {user?.avatarUrl ? (
-                  <img src={user.avatarUrl} alt="User Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-white text-2xl font-bold">
-                    {user?.first_name?.charAt(0).toUpperCase() || 'U'}
-                  </span>
-                )}
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">
-                  Welcome back, {user?.first_name}! 👋
-                </h1>
-                <p className="text-gray-600 mt-1">
-                  {isMentor() && "Ready to mentor and inspire today?"}
-                  {isMentee() && "Ready to learn and grow today?"}
-                  {isAdmin() && "Managing the platform like a pro!"}
-                </p>
-              </div>
-            </div>
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 animate-fade-in">
+      {/* First-time "this isn't licensed care" acknowledgement — mentees only */}
+      <OnboardingAck />
 
-            <div className="flex gap-3 mt-4 md:mt-0">
-              <button
-                onClick={() => {
-                  setDataLoaded(false);
-                  loadDashboardData();
-                }}
-                disabled={loading}
-                className="px-4 py-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 font-semibold rounded-xl transition-all duration-200 flex items-center gap-2"
-              >
-                {loading ? <LoadingSpinner size="sm" /> : '🔄'} Refresh
-              </button>
-              {isMentee() && (
-                <button
-                  onClick={() => navigate('/mentors')}
-                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center gap-2"
-                >
-                  🔍 Find Mentor
-                </button>
-              )}
-              {isMentor() && (
-                <button
-                  onClick={() => navigate('/mentor/schedule')}
-                  className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center gap-2"
-                >
-                  📅 Manage Schedule
-                </button>
-              )}
-              <button
-                onClick={() => navigate('/profile')}
-                className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-all duration-200 flex items-center gap-2"
-              >
-                ⚙️ Settings
-              </button>
-            </div>
-          </div>
+      {/* Hero greeting */}
+      <HeroGreeting user={user} firstName={firstName} />
+
+      {/* Stats strip — adapts: 2 cols mobile, 4 cols desktop */}
+      <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <Stat
+          icon={<Wallet size={18} />}
+          label={user.role === 'mentor' ? 'Wallet' : 'Wallet'}
+          value={wallet ? formatINR(menteeBalance) : '—'}
+          tone="brand"
+          href="/wallet"
+        />
+        <Stat
+          icon={<Calendar size={18} />}
+          label="Upcoming"
+          value={upcoming.length}
+          tone="sky"
+          href="/bookings"
+        />
+        <Stat
+          icon={<Sparkles size={18} />}
+          label="Sessions done"
+          value={completedCount}
+          tone="emerald"
+          href="/bookings"
+        />
+        {user.role === 'mentor' ? (
+          <Stat
+            icon={<TrendingUp size={18} />}
+            label="Earnings"
+            value={wallet ? formatINR(mentorBalance) : '—'}
+            tone="amber"
+            href="/mentor/earnings"
+          />
+        ) : (
+          <Stat
+            icon={<Bell size={18} />}
+            label="Unread"
+            value={notifs.filter((n) => !n.read_at).length}
+            tone="amber"
+            href="/me/notifications"
+          />
+        )}
+      </div>
+
+      {/* Main column layout */}
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
+        {/* Left column — primary content */}
+        <div className="lg:col-span-8 space-y-4 sm:space-y-6">
+          {/* Next session — big hero card if there is one */}
+          {nextBooking ? (
+            <NextSessionCard booking={nextBooking} user={user} />
+          ) : (
+            <EmptyNextSessionCard role={user.role} />
+          )}
+
+          {/* Recent activity */}
+          <ActivityCard notifications={notifs} />
+
+          {/* Recent reviews — only if mentor or any received */}
+          {reviews.length > 0 && <RecentReviewsCard reviews={reviews} />}
+        </div>
+
+        {/* Right column — quick actions / mentor tools */}
+        <div className="lg:col-span-4 space-y-4 sm:space-y-6">
+          <QuickActions user={user} />
+          {user.role === 'mentor' && <MentorTools mentorBalance={mentorBalance} />}
+          {user.role === 'mentee' && <BecomeMentorCTA />}
+          {user.role === 'admin' && <AdminCTA />}
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Sessions</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {sessionStats.totalSessions || 0}
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-sm text-green-600 mt-2">
-              Great progress!
-            </p>
-          </div>
+      {!loading && <FootnoteCard />}
+    </div>
+  );
+}
 
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  {isMentor() ? 'Avg Rating' : 'Hours Learned'}
-                </p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {isMentor()
-                    ? `${(sessionStats.averageRating || 4.8).toFixed(1)}★`
-                    : `${Math.round((sessionStats.averageSessionDuration || 60) / 60)}h`
-                  }
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
-                <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-sm text-green-600 mt-2">
-              {isMentor() ? 'Excellent feedback!' : 'Keep learning!'}
-            </p>
-          </div>
+// -- Hero greeting ----------------------------------------------------------
 
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  {isMentor() ? 'This Month' : 'Completed'}
-                </p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {isMentor()
-                    ? `$${sessionStats.totalMentorEarnings || 0}`
-                    : sessionStats.completedSessions || 0
-                  }
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-sm text-green-600 mt-2">
-              {isMentor() ? '+15% from last month' : 'Great progress!'}
-            </p>
-          </div>
+function HeroGreeting({ user, firstName }) {
+  const hour = new Date().getHours();
+  const part = hour < 5 ? 'Still up' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Success Rate</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {sessionStats.completionRate || 98}%
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
+  return (
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-700 to-brand-900 text-white px-5 sm:px-8 py-6 sm:py-9 shadow-floaty">
+      {/* Decorative blobs */}
+      <div aria-hidden className="absolute -top-12 -right-10 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
+      <div aria-hidden className="absolute -bottom-16 -left-12 h-56 w-56 rounded-full bg-brand-400/30 blur-3xl" />
+
+      <div className="relative flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-brand-200 text-sm font-medium">{part},</p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mt-0.5">
+            {firstName} 👋
+          </h1>
+          {!user.email_verified ? (
+            // High-contrast amber callout — readable on top of the brand
+            // gradient. The plain `text-brand-100/90` underneath was nearly
+            // invisible against the indigo bg.
+            <div className="mt-3 inline-flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900 max-w-md">
+              <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse-soft" />
+              <span>
+                Please verify your email to unlock bookings.{' '}
+                <Link to="/verify-email" className="underline font-semibold whitespace-nowrap">Resend link</Link>
+              </span>
             </div>
-            <p className="text-sm text-green-600 mt-2">Excellent performance!</p>
-          </div>
+          ) : (
+            <p className="mt-2 text-white/90 text-sm sm:text-base max-w-md">
+              {user.role === 'mentor'
+                ? "Here's how your mentorship is doing today."
+                : "Whatever's on your mind, you don't have to figure it out alone."}
+            </p>
+          )}
         </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Upcoming Sessions */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-              <div className="p-6 border-b border-gray-100">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                    📅 Upcoming Sessions
-                  </h2>
-                  <button
-                    onClick={() => navigate('/sessions')}
-                    className="text-blue-600 hover:text-blue-700 font-medium text-sm transition-colors"
-                  >
-                    View All
-                  </button>
-                </div>
-              </div>
-              
-              <div className="p-6">
-                {loading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <LoadingSpinner size="md" />
-                    <span className="ml-3 text-gray-600">Loading sessions...</span>
-                  </div>
-                ) : upcomingSessions.length > 0 ? (
-                  <div className="space-y-4">
-                    {upcomingSessions.slice(0, 3).map((session) => (
-                      <div key={session.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900">{session.title}</h3>
-                            <p className="text-sm text-gray-600 mt-1">
-                              {new Date(session.scheduledAt).toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' })} at {new Date(session.scheduledAt).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit', timeZone: 'Asia/Kolkata'})}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              With {session.participant?.firstName} {session.participant?.lastName}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              session.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                              session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {session.status}
-                            </span>
-                            {session.meetingUrl && (
-                              <button
-                                onClick={() => window.open(session.meetingUrl, '_blank')}
-                                className="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 transition-colors"
-                              >
-                                Join
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <p className="text-gray-500 text-lg mb-4">No upcoming sessions</p>
-                    {isMentee() && (
-                      <button
-                        onClick={() => navigate('/mentors')}
-                        className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors"
-                      >
-                        Book Your First Session
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Recent Activity */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100">
-              <div className="p-6 border-b border-gray-100">
-                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  📊 Recent Activity
-                </h2>
-              </div>
-              <div className="p-6">
-                {loading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <LoadingSpinner size="md" />
-                    <span className="ml-3 text-gray-600">Loading recent activity...</span>
-                  </div>
-                ) : recentSessions.length > 0 ? (
-                  <div className="space-y-4">
-                    {recentSessions.map((session) => (
-                      <div key={session.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-gray-900">{session.title}</p>
-                          <p className="text-sm text-gray-500">
-                            With {session.mentor?.firstName} {session.mentor?.lastName} • {session.status.replace('_', ' ')}
-                            {session.completedAt && ` • ${new Date(session.completedAt).toLocaleDateString()}`}
-                          </p>
-                          {session.review && (
-                            <div className="flex items-center gap-1 mt-1">
-                              <span className="text-yellow-500">★</span>
-                              <span className="text-sm text-gray-600">{session.review.overallRating}/5</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
-                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                        <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900">Welcome to your dashboard!</p>
-                        <p className="text-sm text-gray-500">Start exploring mentoring opportunities</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Quick Actions */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">🚀 Quick Actions</h3>
-              <div className="space-y-3">
-                {isMentee() && (
-                  <>
-                    <button
-                      onClick={() => navigate('/mentors')}
-                      className="w-full text-left p-3 rounded-xl bg-blue-50 hover:bg-blue-100 transition-colors group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-blue-600">🔍</span>
-                        <span className="font-medium text-gray-900 group-hover:text-blue-700">Find Mentors</span>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => navigate('/sessions')}
-                      className="w-full text-left p-3 rounded-xl bg-green-50 hover:bg-green-100 transition-colors group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-green-600">📅</span>
-                        <span className="font-medium text-gray-900 group-hover:text-green-700">My Sessions</span>
-                      </div>
-                    </button>
-                  </>
-                )}
-                {isMentor() && (
-                  <>
-                    <button
-                      onClick={() => navigate('/mentor/schedule')}
-                      className="w-full text-left p-3 rounded-xl bg-purple-50 hover:bg-purple-100 transition-colors group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-purple-600">⏰</span>
-                        <span className="font-medium text-gray-900 group-hover:text-purple-700">Manage Schedule</span>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => navigate('/mentor/earnings')}
-                      className="w-full text-left p-3 rounded-xl bg-green-50 hover:bg-green-100 transition-colors group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-green-600">💰</span>
-                        <span className="font-medium text-gray-900 group-hover:text-green-700">View Earnings</span>
-                      </div>
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Support */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">❓ Need Help?</h3>
-              <div className="space-y-3">
-                <button
-                  onClick={() => navigate('/support')}
-                  className="w-full text-left p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span>📖</span>
-                    <span className="font-medium text-gray-900">Help Center</span>
-                  </div>
-                </button>
-                <button
-                  onClick={() => navigate('/contact')}
-                  className="w-full text-left p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span>💬</span>
-                    <span className="font-medium text-gray-900">Contact Support</span>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Avatar
+          src={user.avatar_url}
+          name={user.full_name}
+          size={56}
+          className="ring-2 ring-white/30 shrink-0 hidden sm:block !text-brand-900 !bg-white"
+        />
       </div>
     </div>
   );
+}
+
+// -- Stat tile --------------------------------------------------------------
+
+function Stat({ icon, label, value, tone = 'brand', href }) {
+  const tones = {
+    brand:   'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300',
+    emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+    amber:   'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+    sky:     'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
+  };
+  const Comp = href ? Link : 'div';
+  return (
+    <Comp to={href || undefined}
+      className="block bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-soft p-3 sm:p-4 hover:shadow-elev hover:border-slate-300 dark:hover:border-slate-700 transition-all">
+      <div className={`inline-flex items-center justify-center h-9 w-9 rounded-xl ${tones[tone] || tones.brand}`}>
+        {icon}
+      </div>
+      <p className="mt-2 text-xs sm:text-sm text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-slate-100 mt-0.5 tabular-nums truncate">
+        {value}
+      </p>
+    </Comp>
+  );
+}
+
+// -- Next session card ------------------------------------------------------
+
+function NextSessionCard({ booking, user }) {
+  const isMentor = user.id === booking.mentor.id;
+  const other = isMentor ? booking.mentee : booking.mentor;
+  const startMs = new Date(booking.slot_start_at).getTime();
+  const minutesUntil = Math.round((startMs - Date.now()) / 60000);
+  const canJoin = minutesUntil <= 5 && Date.now() < new Date(booking.slot_end_at).getTime();
+
+  let countdownLabel;
+  if (canJoin)              countdownLabel = 'Open to join now';
+  else if (minutesUntil < 60)        countdownLabel = `Starts in ${minutesUntil} min`;
+  else if (minutesUntil < 60 * 24)   countdownLabel = `Starts in ${Math.round(minutesUntil / 60)} hr`;
+  else                                countdownLabel = `In ${Math.round(minutesUntil / (60 * 24))} days`;
+
+  return (
+    <Card className="overflow-hidden">
+      <div className={`px-5 sm:px-6 py-2 text-xs font-medium ${canJoin ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-brand-50 text-brand-800 dark:bg-brand-500/15 dark:text-brand-300'}`}>
+        {canJoin ? '● Live — both can join' : 'Your next session'}
+      </div>
+      <CardBody>
+        <div className="flex items-start gap-4">
+          <Avatar src={other.avatar_url} name={other.full_name} size={52} />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-slate-500 dark:text-slate-400">{isMentor ? 'with mentee' : 'with mentor'}</p>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 truncate">{other.full_name}</h3>
+            <div className="mt-1 flex items-center flex-wrap gap-2 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+              <span className="inline-flex items-center gap-1">
+                <Calendar size={14} /> {formatDate(booking.slot_start_at)}
+              </span>
+              <span className="text-slate-300">·</span>
+              <span className="inline-flex items-center gap-1 font-medium text-slate-900 dark:text-slate-100">
+                <Clock size={14} /> {countdownLabel}
+              </span>
+            </div>
+            {booking.mentee_title && (
+              <p className="mt-2 text-sm text-slate-700 dark:text-slate-300 line-clamp-2 italic">"{booking.mentee_title}"</p>
+            )}
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {canJoin ? (
+            <Link to={`/meetings/${booking.uuid}`} className="flex-1 sm:flex-none">
+              <Button className="w-full sm:w-auto">
+                <Video size={16} /> Join meeting
+              </Button>
+            </Link>
+          ) : (
+            <Link to={`/bookings/${booking.uuid}`} className="flex-1 sm:flex-none">
+              <Button variant="secondary" className="w-full sm:w-auto">
+                View details <ArrowRight size={14} />
+              </Button>
+            </Link>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function EmptyNextSessionCard({ role }) {
+  return (
+    <Card>
+      <CardBody className="text-center py-10">
+        <div className="mx-auto h-12 w-12 rounded-2xl bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300 flex items-center justify-center">
+          <Calendar size={22} />
+        </div>
+        <h3 className="mt-3 font-semibold text-slate-900 dark:text-slate-100">
+          {role === 'mentor' ? 'No upcoming sessions' : "Let's book your first session"}
+        </h3>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300 max-w-sm mx-auto">
+          {role === 'mentor'
+            ? 'When a mentee books with you, it will show up here.'
+            : 'Find a mentor or guide you vibe with. Pay only for the minutes you talk.'}
+        </p>
+        {role !== 'mentor' && (
+          <Link to="/mentors" className="inline-block mt-4">
+            <Button>Browse mentors</Button>
+          </Link>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+// -- Activity ---------------------------------------------------------------
+
+const NOTIF_ICON = {
+  booking_confirmed:    Calendar,
+  booking_cancelled:    Calendar,
+  review_received:      Star,
+  kyc_approved:         Shield,
+  kyc_rejected:         Shield,
+  mentor_approved:      Sparkles,
+  mentor_rejected:      Sparkles,
+  topup_succeeded:      Wallet,
+  refund_issued:        Banknote,
+  withdrawal_succeeded: Banknote,
+  withdrawal_failed:    Banknote,
 };
 
-export default Dashboard;
+function ActivityCard({ notifications }) {
+  return (
+    <Card>
+      <div className="px-5 sm:px-6 pt-5 pb-3 flex items-center justify-between">
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Recent activity</h2>
+        <Link to="/me/notifications" className="text-xs font-medium text-brand-700 dark:text-brand-300 hover:underline">
+          See all
+        </Link>
+      </div>
+      {notifications.length === 0 ? (
+        <CardBody className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">
+          Nothing yet. Activity from your sessions, wallet, and reviews shows here.
+        </CardBody>
+      ) : (
+        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+          {notifications.map((n) => {
+            const Icon = NOTIF_ICON[n.kind] || Bell;
+            return (
+              <li key={n.id} className={`flex items-start gap-3 px-5 sm:px-6 py-3 ${!n.read_at ? 'bg-brand-50/40 dark:bg-brand-500/10' : ''}`}>
+                <span className="mt-0.5 h-8 w-8 shrink-0 rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 flex items-center justify-center">
+                  <Icon size={15} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{n.title}</p>
+                  {n.body && <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 line-clamp-2">{n.body}</p>}
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{relativeTime(n.created_at)}</p>
+                </div>
+                {!n.read_at && <span className="mt-2 h-2 w-2 rounded-full bg-brand-500 shrink-0" />}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+// -- Recent reviews (for mentors mainly) ------------------------------------
+
+function RecentReviewsCard({ reviews }) {
+  return (
+    <Card>
+      <div className="px-5 sm:px-6 pt-5 pb-3 flex items-center justify-between">
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Recent reviews</h2>
+        <Link to="/me/reviews/received" className="text-xs font-medium text-brand-700 dark:text-brand-300 hover:underline">See all</Link>
+      </div>
+      <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+        {reviews.map((r) => (
+          <li key={r.id} className="px-5 sm:px-6 py-3">
+            <div className="flex items-center gap-2 text-amber-500">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <Star key={n} size={14} fill={n <= r.rating ? 'currentColor' : 'transparent'} />
+              ))}
+              <span className="text-xs text-slate-500 dark:text-slate-400 ml-1">{relativeTime(r.created_at)}</span>
+            </div>
+            {r.body && <p className="mt-1.5 text-sm text-slate-800 dark:text-slate-200 line-clamp-2">"{r.body}"</p>}
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">— {r.is_anonymous ? 'Anonymous' : (r.reviewer?.full_name || 'A mentee')}</p>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+// -- Quick actions ----------------------------------------------------------
+
+function QuickActions({ user }) {
+  return (
+    <Card>
+      <CardBody>
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Quick actions</h2>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <QA to="/mentors" icon={<Sparkles size={16} />} label="Browse mentors" />
+          <QA to="/bookings" icon={<Calendar size={16} />} label="My bookings" />
+          <QA to="/wallet" icon={<Wallet size={16} />} label="Wallet" />
+          <QA to="/me/profile" icon={<Settings size={16} />} label="Profile" />
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+function QA({ to, icon, label }) {
+  return (
+    <Link to={to}
+      className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 hover:border-slate-300 dark:hover:bg-slate-800 dark:hover:border-slate-600 transition-colors">
+      <span className="text-slate-500 dark:text-slate-400">{icon}</span>
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+}
+
+// -- Mentor tools -----------------------------------------------------------
+
+function MentorTools({ mentorBalance }) {
+  return (
+    <Card>
+      <CardBody>
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">Mentor tools</h2>
+        <div className="mt-3 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/60 p-3 dark:from-emerald-500/10 dark:to-emerald-600/5 dark:border-emerald-500/20">
+          <p className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">Available to withdraw</p>
+          <p className="text-2xl font-bold text-emerald-900 dark:text-emerald-200 mt-1 tabular-nums">{formatINR(mentorBalance)}</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">Minus pending withdrawals</p>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <QA to="/mentor/settings"     icon={<Settings size={16} />}     label="Profile" />
+          <QA to="/mentor/availability" icon={<Calendar size={16} />}     label="Availability" />
+          <QA to="/mentor/earnings"     icon={<Banknote size={16} />}     label="Earnings" />
+          <QA to="/mentor/reviews"      icon={<MessageSquare size={16} />} label="Reviews" />
+          <QA to="/mentor/kyc"          icon={<Shield size={16} />}        label="KYC" />
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+// -- Mentee become-mentor CTA ----------------------------------------------
+
+function BecomeMentorCTA() {
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-slate-900 text-white p-5 shadow-elev">
+      <div aria-hidden className="absolute -top-10 -right-6 h-32 w-32 rounded-full bg-brand-500/30 blur-3xl" />
+      <div className="relative">
+        <Sparkles size={18} className="text-amber-300" />
+        <h3 className="mt-2 font-semibold">Become a mentor</h3>
+        <p className="mt-1 text-sm text-slate-300">Set your rate, keep 70%. Admin reviews in 1-2 business days.</p>
+        <Link to="/mentor/apply" className="inline-block mt-3">
+          <Button size="sm" className="!bg-white !text-slate-900 hover:!bg-slate-100">
+            Apply <ArrowRight size={14} />
+          </Button>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function AdminCTA() {
+  const [stats, setStats] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    adminApi.stats().then((s) => { if (!cancelled) setStats(s); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const queue = (stats?.mentor_apps_pending || 0)
+              + (stats?.kyc_pending || 0)
+              + (stats?.withdrawals?.pending || 0);
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="px-5 sm:px-6 py-2 text-xs font-medium bg-slate-900 text-amber-300">
+        ● Admin overview
+      </div>
+      <CardBody>
+        {stats ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Mini label="Users"    value={stats.users.total} sub={`${stats.users.mentees}m · ${stats.users.mentors}g`} />
+            <Mini label="Bookings" value={stats.bookings.total} sub={`${stats.bookings.completed} done · ${stats.bookings.scheduled} upcoming`} />
+            <Mini label="Live now" value={stats.meetings.live_now} sub="active calls" tone={stats.meetings.live_now > 0 ? 'emerald' : 'slate'} />
+            <Mini label="Queue"    value={queue} sub={`${stats.mentor_apps_pending} apps · ${stats.kyc_pending} KYC · ${stats.withdrawals.pending} payouts`} tone={queue > 0 ? 'amber' : 'slate'} />
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500 dark:text-slate-400">Loading platform stats…</p>
+        )}
+        <Link to="/admin" className="block mt-4">
+          <Button className="w-full">Open admin panel <ArrowRight size={14} /></Button>
+        </Link>
+      </CardBody>
+    </Card>
+  );
+}
+
+function Mini({ label, value, sub, tone = 'slate' }) {
+  const tones = {
+    slate:   'text-slate-900 dark:text-slate-100',
+    emerald: 'text-emerald-700 dark:text-emerald-300',
+    amber:   'text-amber-700 dark:text-amber-300',
+  };
+  return (
+    <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3">
+      <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 font-semibold">{label}</p>
+      <p className={`mt-1 text-xl font-bold tabular-nums ${tones[tone] || tones.slate}`}>{value}</p>
+      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{sub}</p>
+    </div>
+  );
+}
+
+// -- Footnote ---------------------------------------------------------------
+
+function FootnoteCard() {
+  return (
+    <p className="mt-8 text-center text-xs text-slate-400 dark:text-slate-500">
+      Built with care for the moments that matter.
+    </p>
+  );
+}
