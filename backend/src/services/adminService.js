@@ -508,10 +508,33 @@ async function getRecentActivity({ limit = 20 } = {}) {
   return { items: r.rows };
 }
 
+// --- Email audit log (debug deliverability) --------------------------------
+
+async function listEmailLog({ status, kind, to_email, limit = 100, offset = 0 } = {}) {
+  const limitN = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  const offsetN = Math.max(Number(offset) || 0, 0);
+  const where = [];
+  const params = [];
+  if (status)   { params.push(status);   where.push(`status = $${params.length}`); }
+  if (kind)     { params.push(kind);     where.push(`kind = $${params.length}`); }
+  if (to_email) { params.push(to_email); where.push(`to_email = $${params.length}`); }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const r = await query(
+    `SELECT id, to_email, subject, kind, provider, provider_msg_id,
+            status, error_message, created_at
+       FROM email_log
+       ${whereSql}
+       ORDER BY id DESC
+       LIMIT ${limitN} OFFSET ${offsetN}`,
+    params
+  );
+  return { items: r.rows, limit: limitN, offset: offsetN };
+}
+
 module.exports = {
   listUsers, patchUser,
   listMentorApplications, approveMentor, rejectMentor,
   listActiveMeetings, forceEndMeeting,
-  refundBooking, listAuditLog,
+  refundBooking, listAuditLog, listEmailLog,
   getStats, getRecentActivity,
 };

@@ -105,6 +105,19 @@ async function listAuditLog(req, res, next) {
   } catch (e) { next(e); }
 }
 
+async function listEmailLog(req, res, next) {
+  try {
+    const result = await svc.listEmailLog({
+      status: req.query.status,
+      kind: req.query.kind,
+      to_email: req.query.to_email,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    res.json(result);
+  } catch (e) { next(e); }
+}
+
 async function getStats(_req, res, next) {
   try {
     const stats = await svc.getStats();
@@ -122,6 +135,6 @@ async function getRecentActivity(req, res, next) {
 module.exports = {
   listUsers, patchUser,
   listMentorApplications, approveMentor, rejectMentor,
-  listActiveMeetings, forceEndMeeting, refundBooking, listAuditLog,
+  listActiveMeetings, forceEndMeeting, refundBooking, listAuditLog, listEmailLog,
   getStats, getRecentActivity,
 };
