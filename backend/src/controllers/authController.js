@@ -12,16 +12,28 @@ const { bad, unauthorized } = require('../utils/errors');
 // Cookie name + options for the refresh token.
 const REFRESH_COOKIE = 'unmute_refresh';
 function refreshCookieOpts() {
-  // The frontend and backend live on different render.com subdomains
-  // (unmute-frontend.onrender.com ↔ unmute-backend-...onrender.com), so the
-  // refresh cookie is cross-site. Browsers only send cross-site cookies on
-  // XHR/fetch when `sameSite=none`, and `sameSite=none` requires `secure`.
+  // The frontend and backend live on different sites — `onrender.com` is on
+  // the Public Suffix List, so `unmute-frontend.onrender.com` and
+  // `unmute-backend-...onrender.com` count as separate sites. That makes the
+  // refresh cookie cross-site / third-party.
+  //
+  // Three attributes work together in prod:
+  //   - SameSite=None — required to send cookies on cross-site XHR at all.
+  //   - Secure        — required by browsers whenever SameSite=None.
+  //   - Partitioned   — CHIPS. Lets Chrome accept the cookie in incognito
+  //                     and as third-party cookie deprecation rolls out
+  //                     elsewhere. Each top-level site gets its own
+  //                     partition of this cookie, which is fine because
+  //                     the only site that calls /api/auth/refresh is
+  //                     our own frontend.
+  //
   // Locally we keep `lax` because dev uses Vite's proxy → same-origin.
   const crossSite = env.NODE_ENV === 'production';
   return {
     httpOnly: true,
     secure: crossSite,
     sameSite: crossSite ? 'none' : 'lax',
+    partitioned: crossSite,
     path: '/api/auth',
     maxAge: env.JWT_REFRESH_TTL_SECONDS * 1000,
   };
