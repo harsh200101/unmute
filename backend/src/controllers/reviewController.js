@@ -15,29 +15,10 @@ async function submit(req, res, next) {
       body: req.body?.body,
       is_anonymous: req.body?.is_anonymous,
     });
-    // Best-effort email notification
-    try {
-      const b = (await query(
-        `SELECT b.uuid, mu.email AS mentor_email, mu.full_name AS mentor_name,
-                me.email AS mentee_email, me.full_name AS mentee_name
-           FROM bookings b
-           JOIN users mu ON mu.id = b.mentor_user_id
-           JOIN users me ON me.id = b.mentee_user_id
-          WHERE b.uuid = $1`,
-        [req.params.uuid]
-      )).rows[0];
-      const isToMentor = result.direction === 'mentee_to_mentor';
-      await email.sendEmail({
-        to: isToMentor ? b.mentor_email : b.mentee_email,
-        subject: isToMentor
-          ? `New review from ${result.review.is_anonymous ? 'a mentee' : b.mentee_name}`
-          : `Your mentor left a note on your session`,
-        text: [
-          `You received a ${result.review.rating}-star review:`,
-          result.review.body || '(no comment)',
-        ].join('\n'),
-      });
-    } catch (_) { /* swallow */ }
+    // Email notification is fired inside reviewService.submitReview via
+    // notify.notify({ send_email: true, kind: 'review_received' }) — same
+    // pipeline used for mentor_approved, kyc_status, etc. Keeping a single
+    // path makes it easier to audit in email_log.
     res.status(201).json(result);
   } catch (e) { next(e); }
 }
