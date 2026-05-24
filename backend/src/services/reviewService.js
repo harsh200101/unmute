@@ -49,6 +49,7 @@ async function submitReview({ user_id, booking_uuid, rating, body, is_anonymous 
         link_url: '/me/reviews/received',
         reference_table: 'reviews',
         reference_id: ins.rows[0].id,
+        send_email: true,
       });
       return { review: publicReview(ins.rows[0], { include_internal: true }), direction };
     } catch (err) {
