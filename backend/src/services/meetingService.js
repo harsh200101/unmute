@@ -72,6 +72,23 @@ async function issueCredentials({ booking_uuid, user_id }) {
     const ttl = Math.max(60, Math.floor((new Date(booking.slot_end_at).getTime() - Date.now()) / 1000) + 60);
     const creds = agora.buildToken({ booking_uuid: booking.uuid, user_id, ttl_seconds: ttl });
 
+    // Look up both display names so the room UI can label the local tile
+    // ("You — Alice") and the remote tile ("Bob"), plus banner copy when
+    // the remote drops ("Bob disconnected — billing paused").
+    const names = (await client.query(
+      `SELECT mu.full_name AS mentor_name, mu.avatar_url AS mentor_avatar,
+              cu.full_name AS mentee_name, cu.avatar_url AS mentee_avatar
+         FROM bookings b
+         JOIN users mu ON mu.id = b.mentor_user_id
+         JOIN users cu ON cu.id = b.mentee_user_id
+        WHERE b.id = $1`,
+      [booking.id]
+    )).rows[0];
+    const self_name        = role === 'mentor' ? names.mentor_name   : names.mentee_name;
+    const self_avatar      = role === 'mentor' ? names.mentor_avatar : names.mentee_avatar;
+    const counterpart_name = role === 'mentor' ? names.mentee_name   : names.mentor_name;
+    const counterpart_avatar = role === 'mentor' ? names.mentee_avatar : names.mentor_avatar;
+
     return {
       meeting_uuid: meeting.uuid,
       booking_uuid: booking.uuid,
@@ -79,6 +96,11 @@ async function issueCredentials({ booking_uuid, user_id }) {
       slot_start_at: booking.slot_start_at,
       slot_end_at: booking.slot_end_at,
       per_minute_paise: booking.per_minute_paise_snapshot,
+      self_name,
+      self_avatar,
+      counterpart_name,
+      counterpart_avatar,
+      counterpart_role: role === 'mentor' ? 'mentee' : 'mentor',
       ...creds,
     };
   });
@@ -97,19 +119,20 @@ async function recordPresence({ booking_uuid, user_id, kind }) {
     const meeting = await getOrCreateMeeting(client, booking);
 
     const now = new Date();
-    const presentCol = role === 'mentor' ? 'mentor_present' : 'mentee_present';
+    const presentCol   = role === 'mentor' ? 'mentor_present'         : 'mentee_present';
     const firstJoinCol = role === 'mentor' ? 'mentor_first_joined_at' : 'mentee_first_joined_at';
+    const lastSeenCol  = role === 'mentor' ? 'mentor_last_seen_at'    : 'mentee_last_seen_at';
 
     if (kind === 'joined') {
-      // Idempotent: if already true, no-op (but still log the event)
-      if (!meeting[presentCol]) {
-        await client.query(
-          `UPDATE meetings SET ${presentCol} = TRUE,
-              ${firstJoinCol} = COALESCE(${firstJoinCol}, $1)
-           WHERE id = $2`,
-          [now, meeting.id]
-        );
-      }
+      // Idempotent: if already true, no-op (but still log the event). Always
+      // stamp last_seen_at so the staleness sweep doesn't immediately fire.
+      await client.query(
+        `UPDATE meetings SET ${presentCol} = TRUE,
+            ${firstJoinCol} = COALESCE(${firstJoinCol}, $1),
+            ${lastSeenCol} = $1
+         WHERE id = $2`,
+        [now, meeting.id]
+      );
       await client.query(
         `INSERT INTO meeting_events (meeting_id, kind, payload)
          VALUES ($1, $2, $3)`,
