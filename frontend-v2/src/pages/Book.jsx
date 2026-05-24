@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Calendar, Clock } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock } from 'lucide-react';
 import { mentors as mentorsApi, availability as avApi, bookings as bookingsApi } from '../api/endpoints.js';
 import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import { Field, Input } from '../components/ui/Field.jsx';
 import { PageSpinner } from '../components/ui/Spinner.jsx';
+import MonthCalendar from '../components/ui/calendar.jsx';
 import Avatar from '../components/Avatar.jsx';
 import { formatPerMinute, formatDate, formatTime } from '../lib/format.js';
 
@@ -60,12 +61,11 @@ export default function Book() {
     return buckets;
   }, [slots]);
 
-  // 14-day strip
-  const days = useMemo(() => Array.from({ length: 14 }, (_, i) => {
-    const d = startOfDay(new Date());
-    d.setDate(d.getDate() + i);
-    return d;
-  }), []);
+  // Day keys (toDateString) with at least one slot — feeds the calendar.
+  const availableDates = useMemo(
+    () => new Set(slotsByDay.keys()),
+    [slotsByDay]
+  );
 
   const slotsForSelected = slotsByDay.get(selectedDay.toDateString()) || [];
 
@@ -115,37 +115,19 @@ export default function Book() {
 
       <Card>
         <CardHeader>
-          <h2 className="font-semibold text-slate-900 flex items-center gap-2">
-            <Calendar size={16} /> Pick a date
+          <h2 className="font-semibold text-foreground flex items-center gap-2">
+            <CalendarIcon size={16} /> Pick a date
           </h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            Indigo days have available slots in the next 14 days.
+          </p>
         </CardHeader>
         <CardBody>
-          <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-            {days.map((d) => {
-              const has = (slotsByDay.get(d.toDateString()) || []).length;
-              const isSelected = d.toDateString() === selectedDay.toDateString();
-              return (
-                <button
-                  key={d.toISOString()}
-                  onClick={() => { setSelectedDay(d); setPicked(null); }}
-                  className={`shrink-0 px-3 py-2 rounded-lg border text-sm min-w-[88px] ${
-                    isSelected
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : has
-                        ? 'border-slate-300 bg-white hover:border-slate-400'
-                        : 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
-                  }`}
-                  disabled={!has && !isSelected}
-                >
-                  <div className="text-xs uppercase">{d.toLocaleDateString('en-IN', { weekday: 'short' })}</div>
-                  <div className="font-semibold">{d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}</div>
-                  <div className={`text-[10px] ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                    {has ? `${has} slot${has > 1 ? 's' : ''}` : '—'}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <MonthCalendar
+            selected={selectedDay}
+            onSelect={(d) => { setSelectedDay(d); setPicked(null); }}
+            availableDates={availableDates}
+          />
         </CardBody>
       </Card>
 

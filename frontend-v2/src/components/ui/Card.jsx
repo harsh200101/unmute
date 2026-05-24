@@ -3,9 +3,8 @@ import clsx from 'clsx';
 export default function Card({ className, children, interactive = false }) {
   return (
     <div className={clsx(
-      'bg-white border border-slate-200/80 rounded-2xl shadow-soft',
-      'dark:bg-slate-900 dark:border-slate-800',
-      interactive && 'transition-all hover:shadow-elev hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer',
+      'bg-card text-card-foreground border border-border rounded-2xl shadow-soft',
+      interactive && 'transition-all hover:shadow-elev hover:border-ring/40 cursor-pointer',
       className,
     )}>
       {children}
@@ -14,7 +13,7 @@ export default function Card({ className, children, interactive = false }) {
 }
 
 export function CardHeader({ children, className }) {
-  return <div className={clsx('px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800', className)}>{children}</div>;
+  return <div className={clsx('px-5 sm:px-6 py-4 border-b border-border', className)}>{children}</div>;
 }
 
 export function CardBody({ children, className }) {
@@ -22,5 +21,5 @@ export function CardBody({ children, className }) {
 }
 
 export function CardFooter({ children, className }) {
-  return <div className={clsx('px-5 sm:px-6 py-4 border-t border-slate-100 bg-slate-50/60 rounded-b-2xl dark:border-slate-800 dark:bg-slate-800/40', className)}>{children}</div>;
+  return <div className={clsx('px-5 sm:px-6 py-4 border-t border-border bg-muted/40 rounded-b-2xl', className)}>{children}</div>;
 }

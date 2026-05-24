@@ -6,16 +6,12 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
-      fontFamily: {
-        // Inter is loaded in index.css; system stack is the fallback.
-        sans: [
-          'Inter', 'ui-sans-serif', 'system-ui', '-apple-system',
-          'Segoe UI', 'Roboto', 'sans-serif',
-        ],
-      },
       colors: {
-        // Brand: warm indigo. Calming + professional for a mental-health
-        // platform. We use this as the primary CTA / link / focus colour.
+        // ---------------------------------------------------------------
+        // Brand palette (literal indigo). Still used for explicit accents
+        // (logo gradient, charts, etc). For everything that needs to
+        // re-skin with dark mode, prefer the *semantic* tokens below.
+        // ---------------------------------------------------------------
         brand: {
           50:  '#eef2ff',
           100: '#e0e7ff',
@@ -29,6 +25,74 @@ export default {
           900: '#312e81',
           950: '#1e1b4b',
         },
+
+        // ---------------------------------------------------------------
+        // Semantic design tokens.
+        // Each value reads from a CSS variable defined in index.css under
+        // :root (light) / html.dark (dark). This is the shadcn-style
+        // contract — `bg-card`, `text-foreground`, `border-border`,
+        // `bg-primary text-primary-foreground`, `ring-ring`, `bg-sidebar`,
+        // etc. all resolve through these vars and re-skin for free when
+        // ThemeProvider toggles the `.dark` class.
+        // ---------------------------------------------------------------
+        border:       'var(--border)',
+        input:        'var(--input)',
+        ring:         'var(--ring)',
+        background:   'var(--background)',
+        foreground:   'var(--foreground)',
+        primary: {
+          DEFAULT:    'var(--primary)',
+          foreground: 'var(--primary-foreground)',
+        },
+        secondary: {
+          DEFAULT:    'var(--secondary)',
+          foreground: 'var(--secondary-foreground)',
+        },
+        destructive: {
+          DEFAULT:    'var(--destructive)',
+          foreground: 'var(--destructive-foreground)',
+        },
+        muted: {
+          DEFAULT:    'var(--muted)',
+          foreground: 'var(--muted-foreground)',
+        },
+        accent: {
+          DEFAULT:    'var(--accent)',
+          foreground: 'var(--accent-foreground)',
+        },
+        popover: {
+          DEFAULT:    'var(--popover)',
+          foreground: 'var(--popover-foreground)',
+        },
+        card: {
+          DEFAULT:    'var(--card)',
+          foreground: 'var(--card-foreground)',
+        },
+        sidebar: {
+          DEFAULT:    'var(--sidebar)',
+          foreground: 'var(--sidebar-foreground)',
+          primary:    'var(--sidebar-primary)',
+          'primary-foreground':       'var(--sidebar-primary-foreground)',
+          accent:                     'var(--sidebar-accent)',
+          'accent-foreground':        'var(--sidebar-accent-foreground)',
+          border:                     'var(--sidebar-border)',
+          ring:                       'var(--sidebar-ring)',
+        },
+        chart: {
+          1: 'var(--chart-1)',
+          2: 'var(--chart-2)',
+          3: 'var(--chart-3)',
+          4: 'var(--chart-4)',
+          5: 'var(--chart-5)',
+        },
+      },
+      fontFamily: {
+        // `sans` keeps Inter as the global default (loaded in index.css).
+        // `serif` / `mono` come from the design-token sheet for the rare
+        // occasions a page needs them (e.g. code blocks, editorial copy).
+        sans:  ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        serif: ['Merriweather', 'ui-serif', 'Georgia', 'serif'],
+        mono:  ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       borderRadius: {
         // Slightly chunkier than Tailwind defaults — modern SaaS feel.

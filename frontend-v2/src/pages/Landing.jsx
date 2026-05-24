@@ -1,6 +1,23 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, Heart, Shield, Clock, Sparkles } from 'lucide-react';
+import {
+  ArrowRight, Heart, Shield, Clock, Sparkles,
+  Briefcase, Users, Brain, Mic, Compass, Flame,
+} from 'lucide-react';
 import Button from '../components/ui/Button.jsx';
+import StaggeredDropdown from '../components/ui/staggered-dropdown.jsx';
+import GradientCard from '../components/ui/gradient-card.jsx';
+
+// Topics shown in the hero "Browse by topic" dropdown. Each navigates to the
+// mentor list with a tag query — the page can honor it now or later without
+// breaking the link.
+const HERO_TOPICS = [
+  { label: 'Career & work',     tag: 'career',        icon: Briefcase },
+  { label: 'Relationships',     tag: 'relationships', icon: Users },
+  { label: 'Stress & burnout',  tag: 'stress',        icon: Flame },
+  { label: 'Confidence',        tag: 'confidence',    icon: Brain },
+  { label: 'Public speaking',   tag: 'public-speaking', icon: Mic },
+  { label: 'Life transitions',  tag: 'transitions',   icon: Compass },
+];
 
 export default function Landing() {
   return (
@@ -26,17 +43,27 @@ export default function Landing() {
                 Book a 1-on-1 video session with a verified mentor or guide.
                 Pay only for the minutes you talk — no minimums, no commitment.
               </p>
-              <div className="mt-7 flex flex-col sm:flex-row gap-3 sm:gap-3 justify-center lg:justify-start">
+              <div className="mt-7 flex flex-col sm:flex-row gap-3 sm:gap-3 justify-center lg:justify-start sm:items-center">
                 <Link to="/register" className="contents">
                   <Button size="lg" className="w-full sm:w-auto">
                     Get started <ArrowRight size={16} />
                   </Button>
                 </Link>
-                <Link to="/mentors" className="contents">
-                  <Button size="lg" variant="secondary" className="w-full sm:w-auto">
-                    Browse mentors
-                  </Button>
-                </Link>
+                {/* Topic browser — opens to a staggered list of common things people */}
+                {/* come here to talk about; each navigates to the mentor list page. */}
+                <StaggeredDropdown
+                  label="Browse by topic"
+                  variant="secondary"
+                  size="lg"
+                  align="left"
+                  triggerClassName="w-full sm:w-auto"
+                  items={HERO_TOPICS.map((t) => ({
+                    type: 'link',
+                    to: `/mentors?tag=${t.tag}`,
+                    label: t.label,
+                    icon: t.icon,
+                  }))}
+                />
               </div>
               <div className="mt-6 flex items-center justify-center lg:justify-start gap-5 text-xs text-slate-500 dark:text-slate-400">
                 <span className="inline-flex items-center gap-1.5"><Shield size={13} /> Verified mentors</span>
@@ -78,42 +105,64 @@ export default function Landing() {
       {/* ----------------- VALUE PROPS ----------------- */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20">
         <div className="text-center max-w-2xl mx-auto">
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Built for moments that matter</h2>
-          <p className="mt-3 text-slate-600 dark:text-slate-300">No subscriptions. No long commitments. Just real human conversations when you need them.</p>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Built for moments that matter</h2>
+          <p className="mt-3 text-muted-foreground">No subscriptions. No long commitments. Just real human conversations when you need them.</p>
         </div>
 
-        <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-5">
-          <Feature
-            icon={<Clock />}
-            tone="brand"
+        <div className="mt-10 flex flex-wrap justify-center items-stretch gap-x-6 gap-y-12 sm:gap-x-10 sm:gap-y-16">
+          <GradientCard
             title="Pay by the minute"
-            body="Booking is free. We only charge while you and your mentor are both on the call. Leave anytime — billing stops the second you do."
+            desc="Booking is free. We only charge while you and your mentor are both on the call. Leave anytime — billing stops the second you do."
+            gradientFrom="#6366f1"
+            gradientTo="#312e81"
+            icon={<Clock size={18} />}
           />
-          <Feature
-            icon={<Shield />}
-            tone="emerald"
+          <GradientCard
             title="Verified mentors, real people"
-            body="Every mentor and guide passes admin review. Identity, experience, and approach — all checked before they appear here."
+            desc="Every mentor and guide passes admin review. Identity, experience, and approach — all checked before they appear here."
+            gradientFrom="#10b981"
+            gradientTo="#4338ca"
+            icon={<Shield size={18} />}
           />
-          <Feature
-            icon={<Heart />}
-            tone="rose"
+          <GradientCard
             title="Talk up to 60 minutes"
-            body="Sessions cap at 60 minutes. No surprise charges, no overruns. End early when you've said what you needed to say."
+            desc="Sessions cap at 60 minutes. No surprise charges, no overruns. End early when you've said what you needed to say."
+            gradientFrom="#f43f5e"
+            gradientTo="#7c3aed"
+            icon={<Heart size={18} />}
           />
         </div>
       </section>
 
       {/* ----------------- HOW IT WORKS ----------------- */}
-      <section className="bg-gradient-to-br from-slate-50 to-brand-50/40 border-y border-slate-200/70 dark:from-slate-900 dark:to-brand-950/30 dark:border-slate-800">
+      <section className="bg-gradient-to-br from-muted to-card border-y border-border">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20">
           <div className="text-center max-w-xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Three steps. Sixty seconds.</h2>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Three steps. Sixty seconds.</h2>
+            <p className="mt-3 text-muted-foreground">From browsing to talking — that's all it takes.</p>
           </div>
-          <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-            <Step n="1" title="Find someone you vibe with" body="Browse verified mentors, coaches, and peer guides. Filter by topic, language, or audience." />
-            <Step n="2" title="Pick a time, top up" body="Open slots show in your timezone. Top up your wallet — pay only for the minutes you talk." />
-            <Step n="3" title="Show up & talk" body="Join the video room 5 min before. End anytime. Bills stop the second the call ends." />
+          <div className="mt-10 flex flex-wrap justify-center items-stretch gap-x-6 gap-y-12 sm:gap-x-10 sm:gap-y-16">
+            <GradientCard
+              step="1"
+              title="Find someone you vibe with"
+              desc="Browse verified mentors, coaches, and peer guides. Filter by topic, language, or audience."
+              gradientFrom="#818cf8"
+              gradientTo="#4338ca"
+            />
+            <GradientCard
+              step="2"
+              title="Pick a time, top up"
+              desc="Open slots show in your timezone. Top up your wallet — pay only for the minutes you talk."
+              gradientFrom="#6366f1"
+              gradientTo="#3730a3"
+            />
+            <GradientCard
+              step="3"
+              title="Show up & talk"
+              desc="Join the video room 5 min before. End anytime. Bills stop the second the call ends."
+              gradientFrom="#4f46e5"
+              gradientTo="#1e1b4b"
+            />
           </div>
         </div>
       </section>
@@ -146,29 +195,3 @@ export default function Landing() {
   );
 }
 
-function Feature({ icon, title, body, tone = 'brand' }) {
-  const tones = {
-    brand:   'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300',
-    emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
-    rose:    'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
-  };
-  return (
-    <div className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-soft hover:shadow-elev hover:border-slate-300 dark:hover:border-slate-700 transition-all">
-      <div className={`inline-flex items-center justify-center h-12 w-12 rounded-2xl ${tones[tone]} group-hover:scale-105 transition-transform`}>
-        {icon}
-      </div>
-      <h3 className="mt-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{body}</p>
-    </div>
-  );
-}
-
-function Step({ n, title, body }) {
-  return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 shadow-soft">
-      <div className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-brand-600 text-white font-semibold">{n}</div>
-      <h3 className="mt-3 font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-      <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{body}</p>
-    </div>
-  );
-}

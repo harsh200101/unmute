@@ -7,13 +7,11 @@ export const Input = forwardRef(function Input({ className, error, ...rest }, re
     <input
       ref={ref}
       className={clsx(
-        'w-full rounded-lg border bg-white px-3 py-2 text-sm text-slate-900',
-        'placeholder:text-slate-400 focus:outline-none focus:ring-2',
-        // Dark variants
-        'dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500',
+        'w-full rounded-lg border bg-card text-foreground px-3 py-2 text-sm',
+        'placeholder:text-muted-foreground focus:outline-none focus:ring-2',
         error
-          ? 'border-rose-400 focus:ring-rose-400/30 dark:border-rose-500'
-          : 'border-slate-300 focus:border-brand-500 focus:ring-brand-500/20 dark:border-slate-700 dark:focus:border-brand-500',
+          ? 'border-destructive focus:border-destructive focus:ring-destructive/20'
+          : 'border-input focus:border-ring focus:ring-ring/20',
         className
       )}
       {...rest}
@@ -23,7 +21,7 @@ export const Input = forwardRef(function Input({ className, error, ...rest }, re
 
 export function Label({ children, htmlFor, className }) {
   return (
-    <label htmlFor={htmlFor} className={clsx('block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1', className)}>
+    <label htmlFor={htmlFor} className={clsx('block text-sm font-medium text-foreground mb-1', className)}>
       {children}
     </label>
   );
@@ -31,7 +29,7 @@ export function Label({ children, htmlFor, className }) {
 
 export function FieldError({ children }) {
   if (!children) return null;
-  return <p className="mt-1 text-xs text-rose-600">{children}</p>;
+  return <p className="mt-1 text-xs text-destructive">{children}</p>;
 }
 
 // Password input with a show/hide eye toggle. Falls through every prop the
@@ -54,7 +52,7 @@ export const PasswordInput = forwardRef(function PasswordInput(
         onClick={() => setShow((s) => !s)}
         tabIndex={-1}
         aria-label={show ? 'Hide password' : 'Show password'}
-        className="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-slate-700"
+        className="absolute inset-y-0 right-0 px-3 flex items-center text-muted-foreground hover:text-foreground"
       >
         {show ? <EyeOff size={16} /> : <Eye size={16} />}
       </button>

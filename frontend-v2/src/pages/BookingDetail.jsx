@@ -11,6 +11,7 @@ import Avatar from '../components/Avatar.jsx';
 import { Field, Input } from '../components/ui/Field.jsx';
 import { PageSpinner } from '../components/ui/Spinner.jsx';
 import { formatDate, formatTime, formatPerMinute, relativeTime } from '../lib/format.js';
+import { getDisplayStatus, isCancellable as canCancelBooking } from '../lib/booking-status.js';
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 const JOIN_WINDOW_BEFORE_MS = 5 * 60 * 1000;
@@ -101,8 +102,13 @@ export default function BookingDetail() {
   const inJoinWindow = now >= startMs - JOIN_WINDOW_BEFORE_MS && now < endMs;
   const msToStart = startMs - now;
   const lateCancel = msToStart < FOUR_HOURS_MS;
-  const isCancellable = booking.status === 'scheduled';
+  // Cancelling a stale "scheduled" booking (slot_end_at already in the past) is
+  // a no-op — gate it through the shared helper so this stays consistent with
+  // how the list page classifies the same booking.
+  const isCancellable = canCancelBooking(booking, now);
   const isReschedulable = booking.status === 'scheduled' && msToStart > FOUR_HOURS_MS && !booking.reschedule_to_at;
+  const displayStatus = getDisplayStatus(booking, now);
+  const StatusIcon = displayStatus.icon;
   const isRescheduleTarget = !!booking.reschedule_to_at && booking.reschedule_proposed_by_user_id !== user.id;
   const isReschedulingProposer = !!booking.reschedule_to_at && booking.reschedule_proposed_by_user_id === user.id;
 
@@ -168,8 +174,12 @@ export default function BookingDetail() {
             </p>
           )}
         </div>
-        <span className="text-xs font-medium px-2 py-1 rounded-full bg-slate-100 text-slate-700 capitalize">
-          {booking.status.replaceAll('_', ' ')}
+        <span
+          className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border ${displayStatus.tone}`}
+          title={displayStatus.key === 'past_pending' ? 'The session ended; awaiting server-side wrap-up.' : undefined}
+        >
+          <StatusIcon size={12} />
+          {displayStatus.label}
         </span>
       </header>
 

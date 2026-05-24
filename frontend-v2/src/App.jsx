@@ -73,8 +73,6 @@ export default function App() {
         <Route path="/terms"   element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/crisis"  element={<Crisis />} />
-
-        <Route path="*" element={<NotFound />} />
       </Route>
 
       {/* Meeting room: no Layout/header — uses its own full-screen dark UI */}
@@ -88,6 +86,10 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+
+      {/* 404 — full-screen, chromeless. Sits outside <Layout> so the header */}
+      {/* and footer don't fight the canvas wash + stick-figure animation.   */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }

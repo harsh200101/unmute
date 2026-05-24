@@ -1,12 +1,13 @@
 import clsx from 'clsx';
 
+// Variants are expressed in semantic design tokens (see index.css + tailwind
+// config). They re-skin automatically when the `.dark` class flips on <html>.
 const VARIANTS = {
-  primary:   'bg-brand-600 text-white shadow-soft hover:bg-brand-700 active:bg-brand-800 disabled:bg-brand-300 dark:disabled:bg-brand-900',
-  secondary: 'bg-white text-slate-900 border border-slate-200 shadow-soft hover:bg-slate-50 hover:border-slate-300 disabled:opacity-60 ' +
-             'dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-slate-700 dark:hover:border-slate-600',
-  ghost:     'bg-transparent text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
-  danger:    'bg-rose-600 text-white shadow-soft hover:bg-rose-700 disabled:bg-rose-300',
-  outline:   'bg-transparent text-brand-700 border border-brand-200 hover:bg-brand-50 dark:text-brand-300 dark:border-brand-700 dark:hover:bg-brand-500/10',
+  primary:   'bg-primary text-primary-foreground shadow-soft hover:bg-primary/90 active:bg-primary/80 disabled:opacity-60',
+  secondary: 'bg-secondary text-secondary-foreground border border-border shadow-soft hover:bg-muted disabled:opacity-60',
+  ghost:     'bg-transparent text-foreground hover:bg-muted',
+  danger:    'bg-destructive text-destructive-foreground shadow-soft hover:bg-destructive/90 disabled:opacity-60',
+  outline:   'bg-transparent text-foreground border border-input hover:bg-accent hover:text-accent-foreground',
 };
 
 const SIZES = {
@@ -25,7 +26,7 @@ export default function Button({
       disabled={disabled || loading}
       className={clsx(
         'inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-150',
-        'focus:outline-none focus:ring-4 focus:ring-brand-500/20 disabled:cursor-not-allowed',
+        'focus:outline-none focus:ring-4 focus:ring-ring/30 disabled:cursor-not-allowed',
         'active:scale-[0.98]',
         VARIANTS[variant], SIZES[size], className
       )}
