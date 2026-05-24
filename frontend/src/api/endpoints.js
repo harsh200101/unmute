@@ -62,6 +62,10 @@ export const meetings = {
   joined:      (booking_uuid) => api.post(`/meetings/${booking_uuid}/events/joined`).then((r) => r.data),
   left:        (booking_uuid) => api.post(`/meetings/${booking_uuid}/events/left`).then((r) => r.data),
   end:         (booking_uuid, reason) => api.post(`/meetings/${booking_uuid}/end`, { reason }).then((r) => r.data),
+  listMessages: (booking_uuid, since_id = 0) =>
+    api.get(`/meetings/${booking_uuid}/messages`, { params: { since_id } }).then((r) => r.data),
+  sendMessage:  (booking_uuid, body) =>
+    api.post(`/meetings/${booking_uuid}/messages`, { body }).then((r) => r.data),
 };
 
 export const wallet = {
