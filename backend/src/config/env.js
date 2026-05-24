@@ -19,8 +19,10 @@ const schema = z.object({
   GOOGLE_REDIRECT_URI: z.string().optional().default(''),
 
   EMAIL_FROM: z.string().default('no-reply@unmute.local'),
-  EMAIL_PROVIDER: z.enum(['stub', 'resend', 'smtp']).default('stub'),
+  EMAIL_FROM_NAME: z.string().optional().default('unmute'),
+  EMAIL_PROVIDER: z.enum(['stub', 'resend', 'smtp', 'sendgrid']).default('stub'),
   RESEND_API_KEY: z.string().optional().default(''),
+  SENDGRID_API_KEY: z.string().optional().default(''),
   SMTP_HOST: z.string().optional().default(''),
   SMTP_PORT: z.coerce.number().int().optional(),
   SMTP_USER: z.string().optional().default(''),

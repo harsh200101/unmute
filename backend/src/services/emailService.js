@@ -40,7 +40,68 @@ async function sendEmail({ to, subject, text, html, attachments }) {
     return sendViaResend({ to, subject, text, html, attachments });
   }
 
+  if (env.EMAIL_PROVIDER === 'sendgrid') {
+    return sendViaSendGrid({ to, subject, text, html, attachments });
+  }
+
   throw new Error(`Email provider '${env.EMAIL_PROVIDER}' is not wired yet`);
+}
+
+// --- SendGrid (HTTPS API) --------------------------------------------------
+//
+// Like Resend, SendGrid's v3 API runs over plain HTTPS so it works around
+// Render's outbound-SMTP block. Free tier: 100 emails/day forever, allows a
+// single verified sender (e.g. a Gmail address) without needing a domain.
+//
+// Get an API key at https://app.sendgrid.com/settings/api_keys (scopes:
+// "Mail Send" is enough). Verify the FROM address at Settings → Sender
+// Authentication → Single Sender Verification before the first send.
+async function sendViaSendGrid({ to, subject, text, html, attachments }) {
+  if (!env.SENDGRID_API_KEY) throw new Error('SENDGRID_API_KEY is required when EMAIL_PROVIDER=sendgrid');
+  if (!env.EMAIL_FROM) throw new Error('EMAIL_FROM is required when EMAIL_PROVIDER=sendgrid');
+
+  const content = [];
+  if (text) content.push({ type: 'text/plain', value: text });
+  if (html) content.push({ type: 'text/html',  value: html });
+  if (content.length === 0) content.push({ type: 'text/plain', value: ' ' }); // SendGrid rejects empty body
+
+  const body = {
+    personalizations: [{
+      to: (Array.isArray(to) ? to : [to]).map((email) => ({ email })),
+    }],
+    from: { email: env.EMAIL_FROM, name: env.EMAIL_FROM_NAME || 'unmute' },
+    subject,
+    content,
+    ...(attachments?.length
+      ? {
+          attachments: attachments.map((a) => ({
+            filename: a.filename,
+            content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : a.content,
+            type: a.contentType,
+            disposition: 'attachment',
+          })),
+        }
+      : {}),
+  };
+
+  const resp = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.SENDGRID_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!resp.ok) {
+    let detail = '';
+    try { detail = JSON.stringify(await resp.json()); } catch { /* ignore */ }
+    throw new Error(`SendGrid API ${resp.status} ${resp.statusText}: ${detail}`);
+  }
+  // SendGrid returns 202 Accepted with empty body. Use the X-Message-Id header
+  // as the id we return.
+  const id = resp.headers.get('X-Message-Id') || `sendgrid-${Date.now()}`;
+  return { provider: 'sendgrid', id };
 }
 
 // --- Resend (HTTPS API) ----------------------------------------------------
