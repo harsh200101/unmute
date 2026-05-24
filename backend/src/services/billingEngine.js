@@ -294,6 +294,12 @@ async function billingSnapshot({ meeting_id, user_id }) {
     throw forbidden('not_a_party');
   }
 
+  // Heartbeat: stamp the caller's last_seen_at so the staleness sweep in
+  // tickBilling can tell who's still alive. Fire-and-forget — a failure
+  // here must not block the snapshot.
+  const lastSeenCol = b.mentor_user_id === user_id ? 'mentor_last_seen_at' : 'mentee_last_seen_at';
+  query(`UPDATE meetings SET ${lastSeenCol} = NOW() WHERE id = $1`, [meeting_id]).catch(() => {});
+
   const rate = b.per_minute_paise_snapshot;
   const now = Date.now();
   const wall_start = new Date(b.slot_start_at).getTime();
@@ -356,8 +362,57 @@ async function billingSnapshot({ meeting_id, user_id }) {
 //        - If grace_started_at older than GRACE_PERIOD_SECONDS → finalize with
 //          end_reason='balance_depleted'.
 
+// How stale a participant's last_seen timestamp can be before we consider
+// them "gone" and force-pause billing. Frontend polls /billing every 5 s,
+// so 30 s gives ~6 missed polls of slack — enough to ride out transient
+// network blips but tight enough that a force-quit pauses billing fast.
+const PRESENCE_STALENESS_SECONDS = 30;
+
 async function tickBilling({ now = new Date() } = {}) {
-  const result = { warned: [], entered_grace: [], exited_grace: [], finalized: [] };
+  const result = { warned: [], entered_grace: [], exited_grace: [], finalized: [], force_paused: [] };
+
+  // 0. Presence-staleness sweep. If a participant's last_seen_at falls more
+  //    than PRESENCE_STALENESS_SECONDS behind wall clock while billing is
+  //    `active`, their browser likely died without firing /events/left.
+  //    Treat them as no-longer-present, roll the open interval into billed_*
+  //    and transition to `paused`. Mirrors the pause path in
+  //    meetingService.recordPresence so the symmetry holds.
+  const staleCandidates = await query(
+    `SELECT id, mentor_present, mentee_present, mentor_last_seen_at, mentee_last_seen_at
+       FROM meetings
+      WHERE billing_state = 'active'
+        AND (
+              (mentor_present = TRUE AND (mentor_last_seen_at IS NULL OR mentor_last_seen_at < $1))
+           OR (mentee_present = TRUE AND (mentee_last_seen_at IS NULL OR mentee_last_seen_at < $1))
+        )`,
+    [new Date(now.getTime() - PRESENCE_STALENESS_SECONDS * 1000)]
+  );
+  for (const row of staleCandidates.rows) {
+    const mentorStale = row.mentor_present && (!row.mentor_last_seen_at
+      || new Date(row.mentor_last_seen_at).getTime() < now.getTime() - PRESENCE_STALENESS_SECONDS * 1000);
+    const menteeStale = row.mentee_present && (!row.mentee_last_seen_at
+      || new Date(row.mentee_last_seen_at).getTime() < now.getTime() - PRESENCE_STALENESS_SECONDS * 1000);
+    try {
+      await withTransaction(async (client) => {
+        await rollIntoBilled(client, row.id);
+        const setCols = [];
+        if (mentorStale) setCols.push('mentor_present = FALSE');
+        if (menteeStale) setCols.push('mentee_present = FALSE');
+        setCols.push("billing_state = 'paused'", 'billing_active_since = NULL');
+        await client.query(`UPDATE meetings SET ${setCols.join(', ')} WHERE id = $1 AND billing_state = 'active'`, [row.id]);
+        await client.query(
+          `INSERT INTO meeting_events (meeting_id, kind, payload)
+           VALUES ($1, 'billing_pause', $2)`,
+          [row.id, {
+            ts: now.toISOString(),
+            reason: 'presence_stale',
+            stale_roles: [mentorStale && 'mentor', menteeStale && 'mentee'].filter(Boolean),
+          }]
+        );
+      });
+      result.force_paused.push(row.id);
+    } catch (_) { /* keep ticking */ }
+  }
 
   // 1. Warnings
   const warnCandidates = await query(
