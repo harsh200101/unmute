@@ -17,6 +17,7 @@ const ERROR_MESSAGES = {
   missing_code_or_state: 'Google did not return the expected parameters.',
   google_oauth_failed: 'Something went wrong signing in with Google.',
   access_denied: 'You declined the Google sign-in.',
+  invalid_exchange_token: 'The sign-in link expired before we could finish. Please try again.',
 };
 
 export default function OAuthCallback() {
@@ -30,7 +31,15 @@ export default function OAuthCallback() {
     let cancelled = false;
     (async () => {
       try {
-        const r = await authApi.refresh();
+        // Backend now redirects here with a one-time `exchange` JWT. POSTing
+        // it from this origin causes the resulting Set-Cookie to land in the
+        // frontend's cookie partition — fixing Chrome's third-party cookie
+        // blocking on the OAuth flow. If `exchange` isn't present (e.g. an
+        // older redirect, or some other auth flow), fall back to /refresh.
+        const exchange = params.get('exchange');
+        const r = exchange
+          ? await authApi.oauthExchange(exchange)
+          : await authApi.refresh();
         if (cancelled) return;
         setAccessToken(r.access_token);
         const m = await meApi.get();
@@ -38,7 +47,11 @@ export default function OAuthCallback() {
         const next = params.get('next') || '/dashboard';
         navigate(next, { replace: true });
       } catch (e) {
-        if (!cancelled) setError('refresh_failed');
+        if (!cancelled) {
+          // Surface the backend error code if present (e.g. invalid_exchange_token).
+          const code = e?.response?.data?.error || 'refresh_failed';
+          setError(code);
+        }
       }
     })();
     return () => { cancelled = true; };

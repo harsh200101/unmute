@@ -21,5 +21,8 @@ router.post('/change-password',       authJwt, authStrict, c.changePassword);
 
 router.get ('/google',                general,        c.googleStart);
 router.get ('/google/callback',       general,        c.googleCallback);
+// Frontend POSTs the short-lived JWT it received in the callback URL to
+// finalise the OAuth flow. See googleCallback for the partition rationale.
+router.post('/oauth-exchange',        general,        c.oauthExchange);
 
 module.exports = router;

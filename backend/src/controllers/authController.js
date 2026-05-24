@@ -247,18 +247,72 @@ async function googleCallback(req, res, next) {
     if (!profile.email_verified) return fail('google_email_unverified');
 
     const session = await auth.loginOrCreateGoogleUser(profile);
-    setRefreshCookie(res, session.refresh_token);
 
-    // Redirect to frontend /oauth/callback which will call /api/auth/refresh
-    // to mint an access token + load user, then push to nextUrl.
+    // ⚠️ We CAN'T setRefreshCookie + redirect here in production, because:
+    //   * frontend.onrender.com and backend.onrender.com are different sites
+    //     (onrender.com is on the Public Suffix List).
+    //   * Our refresh cookie is `SameSite=None; Secure; Partitioned`.
+    //   * Partitioned cookies are keyed by the *top-level site at write time*.
+    //     During Google's redirect to /api/auth/google/callback the top-level
+    //     site is the backend; the cookie would be stored under the backend's
+    //     partition. The frontend then tries to send it on a third-party XHR
+    //     under the FRONTEND's partition → cookie not found → 400.
+    //
+    // Fix: redirect to the frontend with a short-lived signed `exchange` JWT.
+    // The frontend XHRs back to /api/auth/oauth-exchange — that request runs
+    // under the frontend's partition, so the cookie we set there lands in
+    // the right partition for all future XHRs.
+    const exchange_token = jwt.sign(
+      {
+        kind: 'oauth-exchange',
+        user_id: session.user.id,
+        refresh_token: session.refresh_token,
+        access_token: session.access_token,
+      },
+      env.JWT_SECRET,
+      {
+        expiresIn: 60,
+        issuer: 'unmute-v2',
+        audience: 'unmute-oauth-exchange',
+      }
+    );
     res.redirect(
-      `${env.FRONTEND_URL}/oauth/callback?next=${encodeURIComponent(nextUrl)}`
+      `${env.FRONTEND_URL}/oauth/callback?exchange=${encodeURIComponent(exchange_token)}&next=${encodeURIComponent(nextUrl)}`
     );
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error('[google callback]', e.message);
     return fail('google_oauth_failed');
   }
+}
+
+// Companion to googleCallback above. The frontend POSTs the short-lived
+// exchange JWT here from its own origin, so the Set-Cookie response is
+// stored under the frontend's partition — where future XHRs will find it.
+async function oauthExchange(req, res, next) {
+  try {
+    const { exchange_token } = req.body || {};
+    if (!exchange_token || typeof exchange_token !== 'string') {
+      throw bad('missing_exchange_token', 'exchange_token is required');
+    }
+    let decoded;
+    try {
+      decoded = jwt.verify(exchange_token, env.JWT_SECRET, {
+        issuer: 'unmute-v2',
+        audience: 'unmute-oauth-exchange',
+      });
+    } catch (_) {
+      throw bad('invalid_exchange_token', 'This sign-in link expired. Please try again.');
+    }
+    if (decoded.kind !== 'oauth-exchange' || !decoded.refresh_token || !decoded.access_token) {
+      throw bad('invalid_exchange_token', 'This sign-in link expired. Please try again.');
+    }
+    setRefreshCookie(res, decoded.refresh_token);
+    res.json({
+      access_token: decoded.access_token,
+      access_expires_in: env.JWT_ACCESS_TTL_SECONDS,
+    });
+  } catch (e) { next(e); }
 }
 
 module.exports = {
@@ -273,5 +327,6 @@ module.exports = {
   changePassword,
   googleStart,
   googleCallback,
+  oauthExchange,
   REFRESH_COOKIE,
 };

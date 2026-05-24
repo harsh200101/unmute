@@ -53,6 +53,12 @@ function getSmtpTransport() {
     auth: env.SMTP_USER
       ? { user: env.SMTP_USER, pass: env.SMTP_PASS }
       : undefined,
+    // Render's free/starter tiers block outbound SMTP, and other hosts
+    // throttle aggressively. Cap every step at ~10 s so a bad SMTP host
+    // can't hang user-facing requests for 30 s before failing.
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 10_000,
   });
   return _smtpTransport;
 }

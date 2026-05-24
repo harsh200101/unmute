@@ -7,6 +7,11 @@ export const auth = {
   login:    (body) => api.post('/auth/login', body).then((r) => r.data),
   logout:   ()     => api.post('/auth/logout').then((r) => r.data),
   refresh:  ()     => api.post('/auth/refresh').then((r) => r.data),
+  // OAuth exchange: trade the short-lived token from the Google-callback URL
+  // for a refresh cookie set under the FRONTEND's partition + an access token.
+  // See backend googleCallback for the partition rationale.
+  oauthExchange: (exchange_token) =>
+    api.post('/auth/oauth-exchange', { exchange_token }).then((r) => r.data),
   verifyEmail:        (token) => api.post('/auth/verify-email', { token }).then((r) => r.data),
   resendVerification: (email) => api.post('/auth/resend-verification', { email }).then((r) => r.data),
   forgotPassword:     (email) => api.post('/auth/forgot-password', { email }).then((r) => r.data),

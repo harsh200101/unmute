@@ -55,8 +55,15 @@ async function register({ email, password, full_name }) {
     [user.id]
   );
 
-  // Send verification email
-  await issueVerificationEmail(user);
+  // In production: fire-and-forget. SMTP from Render's free/starter tiers is
+  // unreliable (port blocking, throttling), and a 10–30 s hang on register
+  // is unusable. Users can always re-trigger /api/auth/resend-verification.
+  // In dev/test: await so tests can assert on the captured email.
+  const emailP = issueVerificationEmail(user).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[verification-email] send failed for', user.email, '-', err.message);
+  });
+  if (env.NODE_ENV !== 'production') await emailP;
 
   return publicUser(user);
 }
@@ -230,7 +237,12 @@ async function forgotPassword({ email }) {
   );
 
   const link = `${env.FRONTEND_URL}/reset-password?token=${encodeURIComponent(token)}`;
-  await sendEmail(passwordResetEmail({ to: user.email, full_name: user.full_name, link }));
+  // Fire-and-forget in prod — same reasoning as register.
+  const emailP = sendEmail(passwordResetEmail({ to: user.email, full_name: user.full_name, link })).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[password-reset-email] send failed for', user.email, '-', err.message);
+  });
+  if (env.NODE_ENV !== 'production') await emailP;
   return { sent: true };
 }
 

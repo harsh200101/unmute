@@ -32,6 +32,13 @@ const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
+// We sit behind Render's edge proxy (which sets X-Forwarded-For / X-Forwarded-
+// Proto). Without `trust proxy`, express-rate-limit complains and req.ip is
+// always the loopback address. `1` = trust the single hop in front of us.
+if (env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 app.use(helmet());
 app.use(compression());
 app.use(cookieParser());
