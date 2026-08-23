@@ -32,7 +32,7 @@ const MeetingRoom = lazy(() => import('./pages/MeetingRoom.jsx'));
 import NotFound from './pages/NotFound.jsx';
 import Terms from './pages/Terms.jsx';
 import Privacy from './pages/Privacy.jsx';
-import ReturnPolicy from './pages/ReturnPolicy.jsx';
+import RefundPolicy from './pages/RefundPolicy.jsx';
 import Crisis from './pages/Crisis.jsx';
 
 export default function App() {
@@ -73,7 +73,7 @@ export default function App() {
         {/* Static legal + safety pages — public */}
         <Route path="/terms"       element={<Terms />} />
         <Route path="/privacy"     element={<Privacy />} />
-        <Route path="/return-policy" element={<ReturnPolicy />} />
+        <Route path="/refund-policy" element={<RefundPolicy />} />
         <Route path="/crisis"      element={<Crisis />} />
       </Route>
 

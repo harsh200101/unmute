@@ -20,7 +20,7 @@ const productLinks = [
 const companyLinks = [
   { text: 'Terms',          to: '/terms' },
   { text: 'Privacy',        to: '/privacy' },
-  { text: 'Return Policy',  to: '/return-policy' },
+  { text: 'Refund Policy',  to: '/refund-policy' },
 ];
 
 const supportLinks = [
