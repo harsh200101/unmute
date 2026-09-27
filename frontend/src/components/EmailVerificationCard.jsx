@@ -34,7 +34,12 @@ export default function EmailVerificationCard({ className }) {
     try {
       await authApi.resendVerification(user.email);
       setSentTo(user.email);
-      toast.success('Verification email sent');
+      // Deliberately non-committal. /resend-verification is unauthenticated so
+      // that someone who cannot sign in can still recover their account, which
+      // means it cannot confirm the address exists - it answers {sent:true}
+      // even when it skipped. Claiming "sent" here is how a verified user ends
+      // up staring at an inbox that will never receive anything.
+      toast.success('If that address needs verifying, a fresh link is on its way');
     } catch (e) {
       toast.error(e.response?.data?.error || 'Could not send verification email');
     } finally {
@@ -89,11 +94,16 @@ export default function EmailVerificationCard({ className }) {
         {sentTo ? (
           <div className="rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-3">
             <p className="text-sm text-emerald-900 dark:text-emerald-100">
-              ✓ Sent to <strong className="break-words">{sentTo}</strong>
+              If <strong className="break-words">{sentTo}</strong> still needs verifying, a link
+              is on its way.
             </p>
             <p className="text-xs text-emerald-800/80 dark:text-emerald-200/80 mt-1">
               Check your inbox <strong>and spam folder</strong> — the first email from a new sender
-              often lands in spam. Click the link inside, then tap “I've verified”.
+              often lands in spam. Click the link inside, then tap &ldquo;I&rsquo;ve verified&rdquo;.
+            </p>
+            <p className="text-xs text-emerald-800/80 dark:text-emerald-200/80 mt-1">
+              Already confirmed the address? Nothing will arrive — tap &ldquo;I&rsquo;ve verified&rdquo;
+              to refresh your status.
             </p>
           </div>
         ) : null}
