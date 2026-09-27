@@ -198,6 +198,13 @@ function getSmtpTransport() {
     auth: env.SMTP_USER
       ? { user: env.SMTP_USER, pass: env.SMTP_PASS }
       : undefined,
+    // Force IPv4. Node 18+ (autoSelectFamily) and many container hosts will
+    // happily resolve smtp.gmail.com to its AAAA record and then try to
+    // connect over IPv6 on a network that has no route for it. The result is
+    // "connect ENETUNREACH <ipv6>:587 - Local (:::0)" after burning the full
+    // connection timeout, on a host whose IPv4 egress works fine. Gmail has
+    // both A and AAAA records, so the address family is chosen by us, not DNS.
+    family: 4,
     // Cap every step at ~10 s. Render and Gmail both throttle or drop
     // connections, and a hung SMTP socket would otherwise stall a
     // user-facing request for the full 30 s socket default.
@@ -233,32 +240,60 @@ async function sendViaSmtp({ to, subject, text, html, attachments }) {
 
 /**
  * Turn a raw nodemailer/Gmail failure into something actionable in a log.
- * Gmail's auth errors are famously opaque, and a connect timeout on Render is
- * almost always the free-tier SMTP block rather than bad credentials.
+ *
+ * Matching has to consider the *message* as well as `err.code`, because
+ * nodemailer wraps socket-level failures in an ESOCKET error and puts the
+ * real code (ENETUNREACH, ETIMEDOUT, ECONNREFUSED) only in the message text.
+ * A previous version matched on `err.code` alone, so every wrapped network
+ * failure fell through to the bare message and the log said nothing useful.
  */
 function describeSmtpError(err) {
   const code = err?.code || '';
-  if (code === 'EAUTH' || /535|Invalid credentials/i.test(err?.response || '')) {
+  const msg = err?.message || String(err);
+  const response = err?.response || '';
+  // Nodemailer surfaces the underlying socket error's code here.
+  const inner = err?.cause?.code || err?.originalError?.code || '';
+  const haystack = `${code} ${inner} ${msg}`;
+
+  if (code === 'EAUTH' || /535|Invalid credentials|Username and Password not accepted/i.test(`${msg} ${response}`)) {
     return (
-      `${err.message} — Gmail rejected the credentials. SMTP_PASS must be a ` +
-      '16-character App Password from https://myaccount.google.com/apppasswords, ' +
-      'not the Gmail account password.'
+      `${msg} - Gmail rejected the credentials. SMTP_PASS must be a 16-character ` +
+      'App Password from https://myaccount.google.com/apppasswords, not the Gmail account password.'
     );
   }
-  if (code === 'ETIMEDOUT' || code === 'ECONNREFUSED' || code === 'ENETUNREACH') {
+
+  // Distinguish "no route at all" from "blocked" from "hung". These have
+  // genuinely different fixes and lumping them together sends people down the
+  // wrong path (paying for a Render instance when the real problem is a
+  // missing IPv6 route).
+  const isIpv6Unreachable = /ENETUNREACH/.test(haystack) && /:\s*[0-9a-f]{0,4}:/.test(msg);
+  if (isIpv6Unreachable) {
     return (
-      `${err.message} — could not reach ${env.SMTP_HOST}:${env.SMTP_PORT}. ` +
-      'Render blocks outbound SMTP (25/465/587) on FREE web services; this needs a paid instance.'
+      `${msg} - resolved to an IPv6 address that this host has no route to. ` +
+      'The transport is pinned to IPv4 (family: 4); if this persists the host ' +
+      'has no IPv4 egress either.'
     );
   }
-  if (/421|4\.7\.0|unavailable/i.test(err?.response || '')) {
+  if (/ECONNREFUSED/.test(haystack)) {
     return (
-      `${err.message} — Gmail is rate-limiting or temporarily blocking this ` +
-      'account. Consumer Gmail caps out around 500 messages/day and will start ' +
-      'refusing sends well before that.'
+      `${msg} - the connection to ${env.SMTP_HOST}:${env.SMTP_PORT} was actively refused. ` +
+      'Render blocks outbound SMTP (25/465/587) on FREE web services, so this needs a paid instance.'
     );
   }
-  return err.message;
+  if (/ETIMEDOUT|ESOCKET|ECONNRESET|EHOSTUNREACH/.test(haystack) && !code.match(/^E?AUTH/)) {
+    return (
+      `${msg} - could not establish a connection to ${env.SMTP_HOST}:${env.SMTP_PORT} within the ` +
+      '10s timeout. Render blocks outbound SMTP (25/465/587) on FREE web services, so this ' +
+      'usually means a free instance; otherwise check the host firewall.'
+    );
+  }
+  if (/421|4\.7\.0|unavailable|rate/i.test(response)) {
+    return (
+      `${msg} - Gmail is rate-limiting or temporarily blocking this account. ` +
+      'Consumer Gmail caps out around 500 messages/day.'
+    );
+  }
+  return msg;
 }
 
 // --- Convenience builders ---------------------------------------------------
