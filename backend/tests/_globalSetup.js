@@ -19,18 +19,22 @@
 const path = require('path');
 const { Client } = require('pg');
 
-// The suite must never touch a real mail provider. env.js now hard-requires
-// RESEND_API_KEY whenever EMAIL_PROVIDER is not "stub", and sendEmail()
+// The suite must never talk to a real mail server. env.js now hard-requires
+// SMTP_USER/SMTP_PASS whenever EMAIL_PROVIDER is not "stub", and sendEmail()
 // short-circuits on NODE_ENV=test, so pin both before anything imports env.js.
 process.env.NODE_ENV = 'test';
 process.env.EMAIL_PROVIDER = 'stub';
-delete process.env.RESEND_API_KEY;
+delete process.env.SMTP_HOST;
+delete process.env.SMTP_PORT;
+delete process.env.SMTP_USER;
+delete process.env.SMTP_PASS;
+delete process.env.EMAIL_FROM;
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 // dotenv does NOT override already-set vars, but a developer's local .env could
-// still flip these. Re-assert after loading so a stray RESEND_API_KEY in .env
-// can never cause a live send from the test suite.
+// still re-introduce SMTP credentials. Re-assert after loading so the suite can
+// never attempt a live send.
 process.env.NODE_ENV = 'test';
 process.env.EMAIL_PROVIDER = 'stub';
 

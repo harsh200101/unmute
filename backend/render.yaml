@@ -52,22 +52,33 @@ services:
       - key: AGORA_APP_CERTIFICATE
         sync: false
 
-      # Email — Resend. This was the production bug: EMAIL_PROVIDER was pinned
-      # to "stub", which prints each message to the log and DISCARDS it. So
-      # /register returned 201, users got no verification link, and nothing
-      # errored anywhere. EMAIL_PROVIDER now defaults to "resend" in env.js and
-      # the server refuses to boot if the key or sender is missing.
+      # Email — Gmail over SMTP. This is the transport now.
       #
-      # Set these two in the Render dashboard (Dashboard → your service →
-      # Environment). Nothing else is required.
-      - key: RESEND_API_KEY
-        sync: false                 # re_...  from https://resend.com → API Keys
-      - key: EMAIL_FROM
-        sync: false                 # verified sender, e.g. no-reply@yourdomain.com
+      # Why Gmail: SendGrid retired its free tier, and Resend's free tier can
+      # only send from onboarding@resend.dev, which delivers solely to the
+      # Resend account owner's inbox. Neither can send from a real Gmail
+      # address, which is what this project needs. Both are removed from the
+      # code.
+      #
+      # ⚠️ Render blocks outbound SMTP (ports 25/465/587) on FREE web services
+      # since 26 Sep 2025. This service MUST be on a paid instance or every
+      # send will time out on connect.
+      #
+      # SMTP_HOST / SMTP_PORT / EMAIL_FROM are derived automatically from
+      # SMTP_USER (smtp.gmail.com:587, and From = the Gmail address), so set
+      # only these two in the Render dashboard:
+      - key: SMTP_USER
+        sync: false                 # the Gmail address, e.g. you@gmail.com
+      - key: SMTP_PASS
+        sync: false                 # 16-char Google App Password, spaces removed
+      - key: EMAIL_PROVIDER
+        value: smtp
       - key: EMAIL_FROM_NAME
         value: unmute
-      - key: EMAIL_PROVIDER
-        value: resend
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
 
       # Google OAuth (optional) — leave empty to disable
       - key: GOOGLE_CLIENT_ID

@@ -817,7 +817,7 @@ Each phase ends in a green CI run + a working demo of that slice.
 These are things that came up while writing the spec that I want explicit answers on, but they only block phases 5+ so we have time:
 
 1. **PhonePe inline checkout**: do you already have a PhonePe merchant account in good standing? Their developer docs are gated. If not, I'll prototype against a sandbox first.
-2. **Email provider**: SES, Resend, Mailgun, SendGrid? They all work the same code-wise. Resend is the simplest API. Pick one before phase 1. **Resolved: Resend** (SendGrid's free tier was retired; Render also blocks outbound SMTP on free tiers).
+2. **Email provider**: SES, Resend, Mailgun, SendGrid? They all work the same code-wise. Resend is the simplest API. Pick one before phase 1. **Resolved: Gmail over SMTP (nodemailer)** — SendGrid retired its free tier, and Resend's free tier can only send from `onboarding@resend.dev` to the account owner's own inbox, so neither can send from a real Gmail address.
 3. **Hosting**: current backend is on Render (per the frontend `proxy` URL). Stay on Render for v2? It works fine; just want to confirm.
 4. **Profile photo storage**: S3 / Cloudflare R2 / hosted somewhere else? Affects the mentor profile upload flow in phase 2.
 5. **Agora App ID & certificate**: same Agora project as today, or new one for v2? (Helps with cleaner billing / metrics separation.)

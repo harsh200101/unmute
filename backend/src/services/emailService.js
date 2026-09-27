@@ -1,21 +1,30 @@
 'use strict';
 
-// Email service — Resend is the only real transport.
+// Email service — Gmail over SMTP (nodemailer) is the only transport.
 //
-// Why Resend and nothing else:
+// Why Gmail and nothing else:
 //   - SendGrid: removed. Its free tier was retired, so it can no longer be the
 //     zero-cost default for a project at this stage.
-//   - Raw SMTP: still supported (see sendViaSmtp) for local dev, but Render
-//     blocks outbound SMTP on its free tiers, so it cannot be relied on in
-//     production.
-//   - Resend: plain HTTPS + bearer auth, a free tier that still exists, and
-//     nothing to install — we POST to the REST API with global fetch, so
-//     there is no extra dependency to keep patched.
+//   - Resend: removed. Its free tier can only send from onboarding@resend.dev,
+//     which delivers exclusively to the address owning the Resend account.
+//     That makes it impossible to send from a real Gmail address like
+//     theunmute24@gmail.com, which is what this project needs.
+//
+// Operational notes for whoever deploys this:
+//   * SMTP_PASS must be a 16-character Google App Password
+//     (https://myaccount.google.com/apppasswords, requires 2-Step Verification),
+//     never the Gmail account password. Gmail rejects the latter.
+//   * Render blocks outbound SMTP on ports 25/465/587 for FREE web services
+//     (since 26 Sep 2025). Paid instances may use 465/587. A free instance
+//     will hang on connect and every send will fail with a timeout.
+//   * A consumer Gmail account has a hard daily send cap (~500/day) and will
+//     start rejecting or quarantining mail well before a product needs it. Fine
+//     for launch, not for scale.
 //
 // Every send is logged to `email_log` so we have a server-side audit trail
-// independent of the provider dashboard, and mirrored to stdout with a
-// greppable `[email:...]` prefix so a delivery failure is visible in the host's
-// log stream. Tests skip logging to keep the test DB clean (they assert on
+// independent of the mail provider, and mirrored to stdout with a greppable
+// `[email:...]` prefix so a delivery failure is visible in the host's log
+// stream. Tests skip logging to keep the test DB clean (they assert on
 // global.__SENT_EMAILS__).
 
 const env = require('../config/env');
@@ -73,22 +82,31 @@ async function sendEmail({ to, subject, text, html, attachments, kind }) {
       });
     } else if (env.EMAIL_PROVIDER === 'smtp') {
       result = await sendViaSmtp({ to, subject, text, html, attachments });
-    } else if (env.EMAIL_PROVIDER === 'resend') {
-      result = await sendViaResend({ to, subject, text, html, attachments });
     } else {
       throw new Error(`Email provider '${env.EMAIL_PROVIDER}' is not wired yet`);
     }
   } catch (err) {
-    errMsg = err.message;
-    errMeta = { stack: (err.stack || '').slice(0, 1000) };
+    // Gmail's raw errors ("Invalid credentials: 535 ...") rarely say what to
+    // actually do, and a Render connect timeout looks nothing like a bad
+    // password. Replace the message with the actionable version before it
+    // reaches the log or the email_log table.
+    const readable = describeSmtpError(err);
+    errMsg = readable;
+    errMeta = {
+      code: err.code || null,
+      command: err.command || null,
+      responseCode: err.responseCode || null,
+      stack: (err.stack || '').slice(0, 1000),
+    };
     logSend('error', {
       stage: 'send-failed',
       kind,
       to: recipient,
       subject,
       provider: env.EMAIL_PROVIDER || 'stub',
+      smtp_code: err.code || null,
       ms: Date.now() - startedAt,
-      error: errMsg,
+      error: readable,
     });
     // Re-throw after logging so callers (fire-and-forget paths) still see it.
     logEmailAttempt({ to, subject, kind, status: 'failed', provider: env.EMAIL_PROVIDER || 'stub', provider_msg_id: null, error_message: errMsg, meta: errMeta });
@@ -142,76 +160,30 @@ function logEmailAttempt({ to, subject, kind, status, provider, provider_msg_id,
   });
 }
 
-// --- Resend (HTTPS REST API) ------------------------------------------------
+// --- Gmail over SMTP (nodemailer) -------------------------------------------
 //
-// Resend's v2 API is plain HTTPS with a bearer token, so it works around
-// Render's outbound-SMTP block without any extra npm dependency — global
-// fetch is enough.
+// Setup, in order:
+//   1. Turn on 2-Step Verification at https://myaccount.google.com/security
+//   2. Create a 16-character App Password at
+//      https://myaccount.google.com/apppasswords
+//   3. Set SMTP_USER to the Gmail address and SMTP_PASS to that App Password
+//      (spaces removed). env.js fills in SMTP_HOST=smtp.gmail.com,
+//      SMTP_PORT=587 and EMAIL_FROM=SMTP_USER automatically.
 //
-// Get an API key at https://resend.com → API Keys. Then, for `EMAIL_FROM`:
-//   * while setting up, use the testing-only `onboarding@resend.dev` — it can
-//     ONLY deliver to the address that owns the Resend account, so use it to
-//     prove the flow works end to end, not for real users;
-//   * for real sending, verify your own domain in Resend → Domains and use
-//     any address on it.
-//
-// The single most common failure here is a 403 with
-// "The `from` address does not match a verified Sender Identity". It is
-// surfaced verbatim below and recorded in `email_log`.
+// Gotchas encoded below:
+//   * 587 is STARTTLS (secure: false, then upgrade), 465 is implicit TLS
+//     (secure: true). Picking the wrong pairing fails the handshake.
+//   * Gmail refuses the real account password, so a 535 here almost always
+//     means "that's not an App Password".
+//   * A From address other than the authenticated account is silently
+//     rewritten by Gmail. env.js now rejects that mismatch at boot.
+//   * Render blocks SMTP ports on free web services, so a connect timeout
+//     (ECONNREFUSED / ETIMEDOUT) usually means the instance is on the free
+//     tier rather than a credential problem.
 //
 // An earlier version of this file defaulted EMAIL_FROM to
-// 'no-reply@unmute.local', so the `!env.EMAIL_FROM` guard below could never
-// fire and every send was rejected by the provider with a 403 that only
-// appeared in a fire-and-forget catch block. env.js now defaults it to ''.
-
-async function sendViaResend({ to, subject, text, html, attachments }) {
-  if (!env.RESEND_API_KEY) throw new Error('RESEND_API_KEY is required when EMAIL_PROVIDER=resend');
-  if (!env.EMAIL_FROM) throw new Error('EMAIL_FROM is required when EMAIL_PROVIDER=resend');
-  if (/\bre_/.test(env.EMAIL_FROM)) {
-    throw new Error(
-      'EMAIL_FROM looks like a Resend API key, not a sender address. ' +
-      'Set EMAIL_FROM to a verified sender (e.g. "no-reply@yourdomain.com"), ' +
-      'and put the re_... key in RESEND_API_KEY.'
-    );
-  }
-
-  const body = {
-    from: env.EMAIL_FROM,
-    to: Array.isArray(to) ? to : [to],
-    subject,
-    ...(html ? { html } : {}),
-    ...(text ? { text } : {}),
-    ...(attachments?.length
-      ? {
-          attachments: attachments.map((a) => ({
-            filename: a.filename,
-            content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : a.content,
-            content_type: a.contentType,
-          })),
-        }
-      : {}),
-  };
-
-  const resp = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    // Cap network call at 10 s — same rationale as SMTP timeouts.
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!resp.ok) {
-    let detail = '';
-    try { detail = JSON.stringify(await resp.json()); } catch { /* ignore */ }
-    throw new Error(`Resend API ${resp.status} ${resp.statusText}: ${detail}`);
-  }
-  const data = await resp.json();
-  return { provider: 'resend', id: data.id };
-}
-
-// --- SMTP (nodemailer) ------------------------------------------------------
+// 'no-reply@unmute.local', which made the `!env.EMAIL_FROM` guard dead code —
+// the value was never empty. env.js now defaults it to ''.
 
 let _smtpTransport = null;
 function getSmtpTransport() {
@@ -221,13 +193,14 @@ function getSmtpTransport() {
   _smtpTransport = nodemailer.createTransport({
     host: env.SMTP_HOST,
     port: env.SMTP_PORT,
-    secure: env.SMTP_PORT === 465, // false for 587 (STARTTLS), true for 465 (TLS)
+    // 465 = implicit TLS; 587 = STARTTLS after plaintext greeting.
+    secure: env.SMTP_PORT === 465,
     auth: env.SMTP_USER
       ? { user: env.SMTP_USER, pass: env.SMTP_PASS }
       : undefined,
-    // Render's free/starter tiers block outbound SMTP, and other hosts
-    // throttle aggressively. Cap every step at ~10 s so a bad SMTP host
-    // can't hang user-facing requests for 30 s before failing.
+    // Cap every step at ~10 s. Render and Gmail both throttle or drop
+    // connections, and a hung SMTP socket would otherwise stall a
+    // user-facing request for the full 30 s socket default.
     connectionTimeout: 10_000,
     greetingTimeout: 10_000,
     socketTimeout: 10_000,
@@ -237,9 +210,14 @@ function getSmtpTransport() {
 
 async function sendViaSmtp({ to, subject, text, html, attachments }) {
   if (!env.SMTP_HOST) throw new Error('SMTP_HOST is required when EMAIL_PROVIDER=smtp');
+  if (!env.SMTP_USER) throw new Error('SMTP_USER is required when EMAIL_PROVIDER=smtp');
+  if (!env.SMTP_PASS) throw new Error('SMTP_PASS is required when EMAIL_PROVIDER=smtp');
+
   const t = getSmtpTransport();
   const info = await t.sendMail({
-    from: env.EMAIL_FROM,
+    // Gmail rewrites any From that isn't the authenticated account, so pin
+    // them together and make the display name explicit.
+    from: { name: env.EMAIL_FROM_NAME || 'unmute', address: env.EMAIL_FROM || env.SMTP_USER },
     to,
     subject,
     text,
@@ -250,7 +228,37 @@ async function sendViaSmtp({ to, subject, text, html, attachments }) {
       contentType: a.contentType,
     })),
   });
-  return { provider: 'smtp', id: info.messageId };
+  return { provider: 'smtp', id: info.messageId, response: info.response };
+}
+
+/**
+ * Turn a raw nodemailer/Gmail failure into something actionable in a log.
+ * Gmail's auth errors are famously opaque, and a connect timeout on Render is
+ * almost always the free-tier SMTP block rather than bad credentials.
+ */
+function describeSmtpError(err) {
+  const code = err?.code || '';
+  if (code === 'EAUTH' || /535|Invalid credentials/i.test(err?.response || '')) {
+    return (
+      `${err.message} — Gmail rejected the credentials. SMTP_PASS must be a ` +
+      '16-character App Password from https://myaccount.google.com/apppasswords, ' +
+      'not the Gmail account password.'
+    );
+  }
+  if (code === 'ETIMEDOUT' || code === 'ECONNREFUSED' || code === 'ENETUNREACH') {
+    return (
+      `${err.message} — could not reach ${env.SMTP_HOST}:${env.SMTP_PORT}. ` +
+      'Render blocks outbound SMTP (25/465/587) on FREE web services; this needs a paid instance.'
+    );
+  }
+  if (/421|4\.7\.0|unavailable/i.test(err?.response || '')) {
+    return (
+      `${err.message} — Gmail is rate-limiting or temporarily blocking this ` +
+      'account. Consumer Gmail caps out around 500 messages/day and will start ' +
+      'refusing sends well before that.'
+    );
+  }
+  return err.message;
 }
 
 // --- Convenience builders ---------------------------------------------------
