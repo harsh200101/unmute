@@ -47,14 +47,36 @@ async function initiateTopup({ amount_paise, user_id }) {
   //   merchantId, merchantTransactionId, merchantUserId, amount, redirectUrl,
   //   redirectMode, callbackUrl, mobileNumber?, paymentInstrument: { type: 'PAY_PAGE' }
   // }
+  // redirectMode must be 'REDIRECT', not 'POST'.
+  //
+  // With 'POST', PhonePe submits the payment result to redirectUrl as an HTTP
+  // POST. The frontend is a static SPA, so a POST to /wallet returns no HTML
+  // and the user lands on a blank page - which is exactly what a timed-out
+  // checkout did. 'REDIRECT' is a GET, so the SPA boots and can report the
+  // outcome itself.
+  //
+  // callbackUrl is PhonePe's server-to-server webhook and must point at THIS
+  // service. It is not derivable from FRONTEND_URL: the old
+  // FRONTEND_URL.replace(/^https?/, 'https://api.') rewrite produced
+  // https://api.unmute-frontend.onrender.com, a host that does not exist, so
+  // the webhook was silently dropped and successful payments never credited the
+  // wallet. Fail loudly instead of sending PhonePe to a dead host.
+  if (!env.API_PUBLIC_URL) {
+    throw bad(
+      'api_public_url_missing',
+      'API_PUBLIC_URL is not set. It must be this backend\'s public origin, ' +
+      'e.g. https://your-backend.onrender.com, so PhonePe can deliver the payment webhook.'
+    );
+  }
+
   const payload = {
     merchantId: env.PHONEPE_MERCHANT_ID,
     merchantTransactionId: gateway_order_id,
     merchantUserId: `u_${user_id}`,
     amount: amount_paise,
     redirectUrl: `${env.FRONTEND_URL}/wallet?topup=${gateway_order_id}`,
-    redirectMode: 'POST',
-    callbackUrl: `${env.FRONTEND_URL.replace(/^https?:\/\//, env.NODE_ENV === 'production' ? 'https://api.' : 'http://')}/api/webhooks/phonepe`,
+    redirectMode: 'REDIRECT',
+    callbackUrl: `${env.API_PUBLIC_URL.replace(/\/$/, '')}/api/webhooks/phonepe`,
     paymentInstrument: { type: 'PAY_PAGE' },
   };
   const base64 = Buffer.from(JSON.stringify(payload)).toString('base64');

@@ -46,6 +46,17 @@ services:
       - key: PHONEPE_HOST
         value: https://api.phonepe.com/apis/hermes
 
+      # This backend's own public origin. PhonePe POSTs the payment result to
+      # ${API_PUBLIC_URL}/api/webhooks/phonepe, and that webhook is the ONLY
+      # thing that credits a top-up. It cannot be derived from FRONTEND_URL:
+      # the old FRONTEND_URL.replace(/^https?/, 'https://api.') rewrite
+      # produced https://api.unmute-frontend.onrender.com, which resolves
+      # nowhere, so no payment could ever settle. Top-ups are now refused
+      # outright (api_public_url_missing) rather than silently started against
+      # a dead webhook host.
+      - key: API_PUBLIC_URL
+        sync: false                 # e.g. https://unmute-backend-4x1x.onrender.com
+
       # Agora — set in dashboard
       - key: AGORA_APP_ID
         sync: false

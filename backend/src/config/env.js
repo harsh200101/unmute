@@ -102,6 +102,13 @@ const schema = z.object({
 
   FRONTEND_URL: z.string().default('http://localhost:5173'),
 
+  // Public origin of THIS backend, used to build the PhonePe webhook callback.
+  // It cannot be derived from FRONTEND_URL: the previous code assumed an
+  // `api.` subdomain and produced https://api.unmute-frontend.onrender.com,
+  // which resolves nowhere, so no webhook was ever delivered and no payment
+  // could settle. Set it to the backend's own deployed origin.
+  API_PUBLIC_URL: z.string().optional().default(''),
+
   PHONEPE_MERCHANT_ID: z.string().optional().default(''),
   PHONEPE_SALT_KEY: z.string().optional().default(''),
   PHONEPE_SALT_INDEX: z.coerce.number().int().default(1),

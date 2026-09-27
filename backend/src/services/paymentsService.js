@@ -199,13 +199,41 @@ async function handleWebhook({ headers, body }) {
   });
 }
 
+// PhonePe shows a countdown on its checkout page. If the user lets it run out,
+// closes the tab, or hits back, PhonePe never fires a webhook, so the row sits
+// in 'created' forever and the wallet never learns the checkout was abandoned.
+// Fifteen minutes is comfortably past PhonePe's own timer while still short
+// enough that a user who comes back to a stale tab gets a real answer.
+const CHECKOUT_TTL_MINUTES = 15;
+
+function isStaleCheckout(payment) {
+  if (payment.status !== 'created' && payment.status !== 'pending') return false;
+  const age = Date.now() - new Date(payment.created_at).getTime();
+  return age > CHECKOUT_TTL_MINUTES * 60_000;
+}
+
 async function getPaymentByOrderId({ user_id, gateway_order_id }) {
   const r = await query(
     `SELECT * FROM payments WHERE gateway_order_id = $1 AND user_id = $2`,
     [gateway_order_id, user_id]
   );
-  if (!r.rows[0]) throw notFound('payment_not_found');
-  return publicPayment(r.rows[0]);
+  const payment = r.rows[0];
+  if (!payment) throw notFound('payment_not_found');
+
+  // Report 'expired' to the caller WITHOUT writing it to the row.
+  //
+  // This is deliberately not an UPDATE to 'failed'. handleWebhook() treats
+  // 'failed' as terminal and returns early without crediting, so eagerly
+  // failing a stale order would silently swallow a real payment from a user
+  // who completed checkout just after the window appeared to close. That is
+  // money taken and not credited. The row also stays 'created'/'pending'
+  // because the webhook may still arrive at any point and must be allowed to
+  // settle it. A cleanup job can expire these later, once it can also check
+  // PhonePe for a terminal state first.
+  if (isStaleCheckout(payment)) {
+    return { ...publicPayment(payment), status: 'expired', failure_reason: 'checkout_expired' };
+  }
+  return publicPayment(payment);
 }
 
 async function listMyPayments({ user_id, limit = 50, offset = 0 }) {

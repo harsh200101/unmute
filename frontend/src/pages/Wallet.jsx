@@ -28,10 +28,19 @@ export default function Wallet() {
   const [topupBusy, setTopupBusy] = useState(false);
   const [topupErr, setTopupErr] = useState(null);
 
-  // Status polling if returned from PhonePe with ?order_id=...
-  const orderIdFromQuery = params.get('order_id');
+  // Returning from PhonePe. The backend builds the redirect as
+  // /wallet?topup=<gateway_order_id> (phonepeService.js), so `topup` is the
+  // param that actually carries the order id. This used to read `order_id`,
+  // which the gateway never sends, so the effect below returned early and the
+  // user was never told whether the payment succeeded or failed.
+  // `order_id` is still accepted for older links and for the dev stub.
+  const orderIdFromQuery = params.get('topup') || params.get('order_id');
   const [polling, setPolling] = useState(false);
   const [pollingStatus, setPollingStatus] = useState(null);
+  // Terminal outcome, kept as persistent UI state rather than a toast. A toast
+  // disappears in four seconds, which is indistinguishable from "nothing
+  // happened" - the exact confusion this flow needs to avoid.
+  const [payResult, setPayResult] = useState(null);
 
   async function reload() {
     setLoading(true);
@@ -56,28 +65,63 @@ export default function Wallet() {
     let cancelled = false;
     let attempts = 0;
     setPolling(true);
+    setPayResult(null);
+
+    const finish = (next) => {
+      // Drop the query param so a refresh or a shared link does not re-enter
+      // the payment flow for an order that already reached a verdict.
+      const clean = new URLSearchParams(window.location.search);
+      clean.delete('topup');
+      clean.delete('order_id');
+      setParams(clean, { replace: true });
+      if (!cancelled) setPayResult(next);
+    };
+
     const tick = async () => {
       try {
         const r = await paymentsApi.status(orderIdFromQuery);
         if (cancelled) return;
-        setPollingStatus(r.payment.status);
-        if (r.payment.status === 'succeeded') {
-          toast.success(`₹${(r.payment.amount_paise/100).toFixed(0)} added to your wallet`);
+        const status = r?.payment?.status;
+        setPollingStatus(status || 'unknown');
+
+        if (status === 'succeeded') {
+          setPolling(false);
           await reload();
-          setPolling(false);
-          const next = new URLSearchParams(params);
-          next.delete('order_id'); next.delete('topup');
-          setParams(next, { replace: true });
+          finish({ kind: 'success', amount_paise: r.payment.amount_paise });
           return;
         }
-        if (r.payment.status === 'failed') {
-          toast.error('Top-up failed: ' + (r.payment.failure_reason || 'unknown'));
+        if (status === 'failed') {
           setPolling(false);
+          finish({ kind: 'failed', reason: r.payment.failure_reason });
           return;
         }
-        if (++attempts < 12) setTimeout(tick, 2000); // up to ~24s
-        else setPolling(false);
-      } catch (_) { setPolling(false); }
+        if (status === 'expired') {
+          setPolling(false);
+          finish({ kind: 'expired' });
+          return;
+        }
+        if (++attempts < 15) setTimeout(tick, 2000); // up to ~30s
+        else {
+          // Give up polling but SAY so. Previously this just stopped, which
+          // read as a hung page.
+          setPolling(false);
+          finish({ kind: 'unconfirmed' });
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setPolling(false);
+        // Never swallow this. A bare setPolling(false) left the user staring
+        // at a normal-looking wallet with no idea the payment had failed.
+        const code = e.response?.data?.code;
+        const status = e.response?.status;
+        if (status === 404 || code === 'payment_not_found') {
+          finish({ kind: 'unknown_order' });
+        } else if (status === 401) {
+          finish({ kind: 'signed_out' });
+        } else {
+          finish({ kind: 'unreachable' });
+        }
+      }
     };
     tick();
     return () => { cancelled = true; };
@@ -136,6 +180,8 @@ export default function Wallet() {
           </CardBody>
         </Card>
       )}
+
+      {payResult && <PaymentResultBanner result={payResult} onDismiss={() => setPayResult(null)} onRetry={() => setTopupOpen(true)} />}
 
       {pending_penalty_paise > 0 && (
         <Card className="border-amber-300 mb-4">
@@ -242,6 +288,84 @@ export default function Wallet() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+function PaymentResultBanner({ result, onDismiss, onRetry }) {
+  // Every branch must tell the user what happened AND what to do next. The
+  // failure this replaces showed nothing at all.
+  const copy = {
+    success: {
+      tone: 'border-emerald-300',
+      icon: 'text-emerald-600',
+      title: 'Payment received',
+      body: `We've added ${result.amount_paise ? formatINR(result.amount_paise) : 'your top-up'} to your wallet.`,
+    },
+    failed: {
+      tone: 'border-rose-300',
+      icon: 'text-rose-600',
+      title: 'Payment failed',
+      body: result.reason
+        ? `Your payment did not go through (${result.reason}). You have not been charged.`
+        : 'Your payment did not go through. You have not been charged.',
+    },
+    expired: {
+      tone: 'border-amber-300',
+      icon: 'text-amber-600',
+      title: 'Payment timed out',
+      body: 'The payment window closed before it was completed, so nothing was charged. You can start a new top-up.',
+    },
+    unconfirmed: {
+      tone: 'border-amber-300',
+      icon: 'text-amber-600',
+      title: "We couldn't confirm your payment",
+      body: "We stopped waiting for PhonePe to respond. If you completed the payment it will still be applied — check your balance again shortly. If not, you can try again.",
+    },
+    unknown_order: {
+      tone: 'border-amber-300',
+      icon: 'text-amber-600',
+      title: "We couldn't find that payment",
+      body: 'This link refers to an order we have no record of. If you were charged, contact support and we will trace it.',
+    },
+    unreachable: {
+      tone: 'border-amber-300',
+      icon: 'text-amber-600',
+      title: "We couldn't reach the server",
+      body: 'We could not check your payment status. Check your balance again in a moment, or retry the top-up.',
+    },
+    signed_out: {
+      tone: 'border-amber-300',
+      icon: 'text-amber-600',
+      title: 'Session expired',
+      body: 'Sign in again to check the status of your payment.',
+    },
+  }[result.kind] || {
+    tone: 'border-amber-300', icon: 'text-amber-600',
+    title: 'Payment status unknown', body: 'We could not determine the outcome of your payment.',
+  };
+
+  const canRetry = ['failed', 'expired', 'unconfirmed', 'unreachable'].includes(result.kind);
+
+  return (
+    <Card className={`${copy.tone} mb-4`} data-testid="payment-result">
+      <CardBody>
+        <div className="flex items-start gap-3">
+          <AlertCircle className={`${copy.icon} mt-0.5 shrink-0`} size={18} />
+          <div className="min-w-0 flex-1">
+            <p className="font-medium text-slate-900">{copy.title}</p>
+            <p className="text-sm text-slate-700 mt-1">{copy.body}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {canRetry && (
+                <Button size="sm" onClick={onRetry}>
+                  <Plus size={14} /> Try again
+                </Button>
+              )}
+              <Button size="sm" variant="secondary" onClick={onDismiss}>Dismiss</Button>
+            </div>
+          </div>
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 
