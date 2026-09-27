@@ -61,14 +61,14 @@ async function register({ email, password, full_name }) {
   // In dev/test: await so tests can assert on the captured email.
   //
   // The catch is deliberately loud. This used to be a bare
-  // `console.error(... err.message)` with no user or provider context, which
+  // `console.error(... err.message)` with no user or transport context, which
   // is why a total mail outage looked identical to "user never checked spam".
   const emailP = issueVerificationEmail(user).catch((err) => {
     // eslint-disable-next-line no-console
     console.error(
       `[email:verify] SEND FAILED user_id=${user.id} to=${user.email} ` +
       `provider=${env.EMAIL_PROVIDER} error=${err.message} ` +
-      `— registration succeeded but NO link was sent. Full provider response is in the email_log table.`
+      `- registration succeeded but NO link was sent. Full transport response is in the email_log table.`
     );
   });
   if (env.NODE_ENV !== 'production') await emailP;
@@ -123,15 +123,15 @@ async function resendVerification({ email }) {
     console.log(`[email:verify] user_id=${user.id} to=${email} resend skipped=already_verified`);
     return { sent: true };
   }
-  // Fire-and-forget in prod so a blocked SMTP / slow provider can't hang the
+  // Fire-and-forget in prod so a slow or refused SMTP handshake can't hang the
   // user-facing response for 10+ seconds. Token row IS written synchronously
   // inside issueVerificationEmail.
   const emailP = issueVerificationEmail(user).catch((err) => {
     // eslint-disable-next-line no-console
     console.error(
-      `[email:verify] RESEND FAILED user_id=${user.id} to=${user.email} ` +
+      `[email:verify] REISSUE FAILED user_id=${user.id} to=${user.email} ` +
       `provider=${env.EMAIL_PROVIDER} error=${err.message} ` +
-      `— the user will NOT receive a link. Full provider response is in the email_log table.`
+      `- the user will NOT receive a link. Full transport response is in the email_log table.`
     );
   });
   if (env.NODE_ENV !== 'production') await emailP;

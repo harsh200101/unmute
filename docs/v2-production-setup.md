@@ -53,36 +53,54 @@ Without these, `backend-v2` falls back to **stub mode** — credentials endpoint
 
 ## 3. Email
 
-Currently set to `EMAIL_PROVIDER=stub` — every sent email is logged to the server console. Verification + password-reset links appear there, copy-paste to test the flows.
+Default is `EMAIL_PROVIDER=smtp` (Gmail). Locally you can set
+`EMAIL_PROVIDER=stub` to have every email logged to the server console instead of
+sent — useful for testing flows without spending quota. Never do this in
+production; the server prints a loud warning at boot if you do.
 
-**Pick a provider:**
+**Provider: Gmail over SMTP (nodemailer).** Already implemented in
+`backend-v2/src/services/emailService.js` — no code changes needed, just env vars.
 
-| Provider | Free tier | Setup time | Best for |
-|---|---|---|---|
-| **Resend** (recommended) | 3k/month | 5 min | Simplest API, modern |
-| **SES** | 62k/month (from EC2) | 30 min | AWS-native, cheap at scale |
-| **Mailgun** | 100/day | 15 min | EU residency |
-| **SMTP (Gmail)** | very limited | 10 min | Personal projects only |
+| Provider | Verdict |
+|---|---|
+| **Gmail SMTP** | **In use.** Sends as a real Gmail address, no signup, no domain. |
+| SendGrid | Removed. Free tier retired. |
+| Resend | Removed. Free tier can only send from `onboarding@resend.dev`, which delivers solely to the Resend account owner's inbox — it cannot send as your Gmail address. |
+| SES | Viable at scale, but needs an AWS account + domain verification. |
 
-Plumbing point: `backend-v2/src/services/emailService.js` already has a provider switch. Adding Resend = ~10 lines:
+Setup:
 
-```js
-} else if (env.EMAIL_PROVIDER === 'resend') {
-  const { Resend } = require('resend');
-  const resend = new Resend(env.RESEND_API_KEY);
-  const r = await resend.emails.send({
-    from: env.EMAIL_FROM, to, subject, text, html, attachments,
-  });
-  return { provider: 'resend', id: r.data.id };
-}
+1. Enable 2-Step Verification → create a 16-character App Password at
+   https://myaccount.google.com/apppasswords. Google rejects the real Gmail
+   account password, so this step is not optional.
+2. In Render's environment, set:
+
+   ```
+   SMTP_USER=you@gmail.com
+   SMTP_PASS=<16-char app password, spaces removed>
+   EMAIL_PROVIDER=smtp
+   ```
+
+`SMTP_HOST` (`smtp.gmail.com`), `SMTP_PORT` (`587`) and `EMAIL_FROM` (defaults to
+`SMTP_USER`) are derived automatically. The server **refuses to boot** without
+`SMTP_USER` and `SMTP_PASS`, so a deploy can't silently lose email again.
+
+⚠️ **Render blocks outbound SMTP (25/465/587) on free web services.** The service
+must be on a paid instance or every send fails on connect with a timeout.
+
+⚠️ Consumer Gmail caps around **500 messages/day**. Fine at launch; replace with
+SES or Postmark before real growth.
+
+Confirm it took effect without reading logs — `GET /healthz` now reports the
+resolved provider and whether credentials are present:
+
+```json
+{"ok":true,"email":{"provider":"smtp","host":"smtp.gmail.com:587",
+  "from":"you@gmail.com","authenticated":true}}
 ```
 
-Plus add to `.env`:
-```
-EMAIL_PROVIDER=resend
-EMAIL_FROM=hello@yourdomain.com
-RESEND_API_KEY=re_...
-```
+`"authenticated": true` only checks that the variables are non-empty; it does not
+prove Gmail accepted them. The real proof is an actual verification email.
 
 ---
 
@@ -193,7 +211,11 @@ Copy this into a GitHub issue or wherever you track launch work.
   - [ ] `FRONTEND_URL` = your production frontend URL
   - [ ] `PHONEPE_MERCHANT_ID` / `PHONEPE_SALT_KEY` / `PHONEPE_HOST` (production values)
   - [ ] `AGORA_APP_ID` / `AGORA_APP_CERTIFICATE`
-  - [ ] `EMAIL_PROVIDER=resend` (or smtp) + provider credentials
+  - [ ] `SMTP_USER` + `SMTP_PASS` (Google App Password — **no spaces**)
+  - [ ] `EMAIL_PROVIDER=smtp`
+  - [ ] Confirm service is on a **paid** instance (free tiers block outbound SMTP)
+  - [ ] Verify `GET /healthz` reports `"provider":"smtp","authenticated":true`
+  - [ ] Send a real verification email — the only true proof credentials work
   - [ ] `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (if enabling Google sign-in)
   - [ ] `ADMIN_EMAIL` + `ADMIN_PASSWORD` (one-time, then remove)
 - [ ] Run migrations on prod DB

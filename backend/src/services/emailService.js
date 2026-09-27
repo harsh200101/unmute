@@ -78,7 +78,7 @@ async function sendEmail({ to, subject, text, html, attachments, kind }) {
         to: recipient,
         provider: 'stub',
         outcome: 'NOT_DELIVERED',
-        hint: 'set EMAIL_PROVIDER + EMAIL_FROM + API key on your host to actually send',
+        hint: 'set EMAIL_PROVIDER=smtp plus SMTP_USER and SMTP_PASS (Google App Password) on your host to actually send',
       });
     } else if (env.EMAIL_PROVIDER === 'smtp') {
       result = await sendViaSmtp({ to, subject, text, html, attachments });

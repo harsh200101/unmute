@@ -54,8 +54,24 @@ if (env.NODE_ENV !== 'test') {
   app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 }
 
+// Report the resolved mailer so "is email actually configured?" is answerable
+// without digging through Render logs. env.js refuses to boot when smtp is
+// selected without SMTP_USER/SMTP_PASS, so a healthy /healthz already implies
+// the mailer is configured — this just names it. Never expose SMTP_PASS.
 app.get('/healthz', (_req, res) => {
-  res.json({ ok: true, service: 'unmute-backend-v2', env: env.NODE_ENV });
+  res.json({
+    ok: true,
+    service: 'unmute-backend-v2',
+    env: env.NODE_ENV,
+    email: {
+      provider: env.EMAIL_PROVIDER,
+      host: env.EMAIL_PROVIDER === 'smtp' ? `${env.SMTP_HOST}:${env.SMTP_PORT}` : null,
+      from: env.EMAIL_FROM || null,
+      // Distinguishes "credentials present" from "credentials missing" without
+      // revealing them. Only meaningful for the smtp provider.
+      authenticated: env.EMAIL_PROVIDER === 'smtp' ? Boolean(env.SMTP_USER && env.SMTP_PASS) : null,
+    },
+  });
 });
 
 app.get('/readyz', async (_req, res) => {
