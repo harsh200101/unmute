@@ -59,6 +59,13 @@ const schema = z.object({
   JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   JWT_REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(2592000),
 
+  // How long an uncompleted checkout is treated as abandoned by the status
+  // endpoint. PhonePe's own timer is ~15 min, so the default must stay above
+  // that or we would report 'expired' while PhonePe still accepts payment.
+  // Overridable so the expiry path can be verified in minutes rather than by
+  // sitting on a checkout page for a quarter of an hour.
+  CHECKOUT_TTL_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
+
   GOOGLE_CLIENT_ID: z.string().optional().default(''),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
   GOOGLE_REDIRECT_URI: z.string().optional().default(''),

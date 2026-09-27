@@ -1,6 +1,7 @@
 'use strict';
 
 const { query, withTransaction } = require('../config/db');
+const env = require('../config/env');
 const { bad, notFound } = require('../utils/errors');
 const phonepe = require('./phonepeService');
 const notify = require('./notificationService');
@@ -204,12 +205,20 @@ async function handleWebhook({ headers, body }) {
 // in 'created' forever and the wallet never learns the checkout was abandoned.
 // Fifteen minutes is comfortably past PhonePe's own timer while still short
 // enough that a user who comes back to a stale tab gets a real answer.
-const CHECKOUT_TTL_MINUTES = 15;
+// Overridable via CHECKOUT_TTL_MINUTES so this branch can be exercised without
+// waiting a quarter of an hour; the floor is enforced in config/env.js.
+const CHECKOUT_TTL_MINUTES = env.CHECKOUT_TTL_MINUTES;
 
 function isStaleCheckout(payment) {
   if (payment.status !== 'created' && payment.status !== 'pending') return false;
-  const age = Date.now() - new Date(payment.created_at).getTime();
-  return age > CHECKOUT_TTL_MINUTES * 60_000;
+  // If we cannot date the row we cannot claim the window closed. Saying
+  // 'expired' would assert "nothing was charged" on a guess; leaving it as
+  // 'created' makes the caller fall through to its own give-up path, which
+  // only claims that we stopped waiting.
+  if (!payment.created_at) return false;
+  const created = new Date(payment.created_at).getTime();
+  if (!Number.isFinite(created)) return false;
+  return Date.now() - created > CHECKOUT_TTL_MINUTES * 60_000;
 }
 
 async function getPaymentByOrderId({ user_id, gateway_order_id }) {

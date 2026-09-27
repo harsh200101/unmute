@@ -34,7 +34,16 @@ export default function Wallet() {
   // which the gateway never sends, so the effect below returned early and the
   // user was never told whether the payment succeeded or failed.
   // `order_id` is still accepted for older links and for the dev stub.
-  const orderIdFromQuery = params.get('topup') || params.get('order_id');
+  const orderIdRaw = params.get('topup') || params.get('order_id');
+  // A real gateway_order_id is 'unmute_<epoch_ms>_<hex>'. Anything else in the
+  // query string is a hand-edited, truncated or chat-mangled link, and polling
+  // it would only produce a malformed request. Reject it up front with a real
+  // message instead of a spinner that never resolves.
+  // The trimmed value is what we validate AND request, so trailing whitespace
+  // from a copy-paste cannot leak into the request path.
+  const orderIdFromQuery = orderIdRaw ? orderIdRaw.trim() : null;
+  const orderIdLooksValid =
+    !orderIdFromQuery || /^unmute_\d{1,16}_[0-9a-f]{6,32}$/i.test(orderIdFromQuery);
   const [polling, setPolling] = useState(false);
   const [pollingStatus, setPollingStatus] = useState(null);
   // Terminal outcome, kept as persistent UI state rather than a toast. A toast
@@ -62,6 +71,11 @@ export default function Wallet() {
   // If returned from PhonePe — poll status until succeeded/failed
   useEffect(() => {
     if (!orderIdFromQuery) return;
+    if (!orderIdLooksValid) {
+      setPolling(false);
+      setPayResult({ kind: 'bad_link' });
+      return;
+    }
     let cancelled = false;
     let attempts = 0;
     setPolling(true);
@@ -332,6 +346,12 @@ function PaymentResultBanner({ result, onDismiss, onRetry }) {
       icon: 'text-amber-600',
       title: "We couldn't reach the server",
       body: 'We could not check your payment status. Check your balance again in a moment, or retry the top-up.',
+    },
+    bad_link: {
+      tone: 'border-amber-300',
+      icon: 'text-amber-600',
+      title: 'That payment link is incomplete',
+      body: 'The return link from PhonePe is missing or malformed, so we cannot look up this payment. If you completed a top-up it will still be applied - check your balance, otherwise start a new one.',
     },
     signed_out: {
       tone: 'border-amber-300',

@@ -57,6 +57,15 @@ services:
       - key: API_PUBLIC_URL
         sync: false                 # e.g. https://unmute-backend-4x1x.onrender.com
 
+      # How long GET /api/payments/status/:order_id keeps reporting 'created' or
+      # 'pending' before reporting 'expired' for an abandoned checkout. This is
+      # response-only: the row is never written, so a late PhonePe webhook can
+      # still settle a real payment. Must stay >= PhonePe's own ~15 min timer.
+      # Lower it (e.g. 2) to verify the expired banner without waiting, then
+      # put it back to 15.
+      - key: CHECKOUT_TTL_MINUTES
+        sync: false                 # default 15
+
       # Agora — set in dashboard
       - key: AGORA_APP_ID
         sync: false

@@ -75,7 +75,11 @@ export const wallet = {
 
 export const payments = {
   topup:    (amount_paise) => api.post('/payments/topup', { amount_paise }).then((r) => r.data),
-  status:   (order_id) => api.get(`/payments/status/${order_id}`).then((r) => r.data),
+  // The order id reaches us from a query string the user may have hand-edited,
+  // pasted or had mangled by a chat client. Interpolating it raw would let a
+  // '#', '?', '&' or space truncate or reshape the path, which the edge rejects
+  // as "Bad request for URL" before the request ever reaches the API.
+  status:   (order_id) => api.get(`/payments/status/${encodeURIComponent(order_id)}`).then((r) => r.data),
   history:  (params) => api.get('/payments/me', { params }).then((r) => r.data),
   // Dev-only: simulates a PhonePe webhook callback. The backend's stub provider
   // accepts the body shape directly when env vars aren't set.
