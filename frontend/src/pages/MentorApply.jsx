@@ -400,7 +400,11 @@ function NeedsEmailVerification({ user, onCheckAgain }) {
           )}
 
           <p className="text-xs text-muted-foreground pt-2">
-            Wrong email? <Link to="/me/profile" className="underline">Update it in your profile.</Link>
+            {/* This used to read "Wrong email? Update it in your profile" and
+                link to /me/profile — but the email field there is `disabled`
+                and PATCH /me doesn't accept `email`, so it was a dead end. */}
+            Need a different email? Contact support — the address on file can't be
+            changed from this page.
           </p>
         </CardBody>
       </Card>

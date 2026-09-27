@@ -59,9 +59,17 @@ async function register({ email, password, full_name }) {
   // unreliable (port blocking, throttling), and a 10–30 s hang on register
   // is unusable. Users can always re-trigger /api/auth/resend-verification.
   // In dev/test: await so tests can assert on the captured email.
+  //
+  // The catch is deliberately loud. This used to be a bare
+  // `console.error(... err.message)` with no user or provider context, which
+  // is why a total mail outage looked identical to "user never checked spam".
   const emailP = issueVerificationEmail(user).catch((err) => {
     // eslint-disable-next-line no-console
-    console.error('[verification-email] send failed for', user.email, '-', err.message);
+    console.error(
+      `[email:verify] SEND FAILED user_id=${user.id} to=${user.email} ` +
+      `provider=${env.EMAIL_PROVIDER} error=${err.message} ` +
+      `— registration succeeded but NO link was sent. Full provider response is in the email_log table.`
+    );
   });
   if (env.NODE_ENV !== 'production') await emailP;
 
@@ -71,7 +79,11 @@ async function register({ email, password, full_name }) {
 // --- Email verification -----------------------------------------------------
 
 async function issueVerificationEmail(user) {
-  if (user.email_verified_at) return; // already verified, no-op
+  if (user.email_verified_at) {
+    // eslint-disable-next-line no-console
+    console.log(`[email:verify] user_id=${user.id} to=${user.email} skipped=already_verified`);
+    return;
+  }
 
   const token = generateToken();
   const token_hash = hashToken(token);
@@ -83,7 +95,16 @@ async function issueVerificationEmail(user) {
     [user.id, token_hash, expires_at]
   );
 
-  const link = `${env.FRONTEND_URL}/verify-email?token=${encodeURIComponent(token)}`;
+  // Carry the address in the link so /verify-email can prefill its "resend to"
+  // box. Without it a user who lost the first email had to retype their own
+  // address, which is exactly the moment they're most likely to give up.
+  const link =
+    `${env.FRONTEND_URL}/verify-email?token=${encodeURIComponent(token)}` +
+    `&email=${encodeURIComponent(user.email)}`;
+
+  // eslint-disable-next-line no-console
+  console.log(`[email:verify] user_id=${user.id} to=${user.email} token_issued=yes expires_at=${expires_at.toISOString()} frontend_url=${env.FRONTEND_URL}`);
+
   await sendEmail(verificationEmail({ to: user.email, full_name: user.full_name, link }));
 }
 
@@ -92,14 +113,26 @@ async function resendVerification({ email }) {
   const res = await query(`SELECT * FROM users WHERE email = $1`, [email]);
   const user = res.rows[0];
   // Quiet response: don't leak whether the email exists
-  if (!user) return { sent: true };
-  if (user.email_verified_at) return { sent: true };
+  if (!user) {
+    // eslint-disable-next-line no-console
+    console.log(`[email:verify] resend requested for unknown address to=${email} issued=no`);
+    return { sent: true };
+  }
+  if (user.email_verified_at) {
+    // eslint-disable-next-line no-console
+    console.log(`[email:verify] user_id=${user.id} to=${email} resend skipped=already_verified`);
+    return { sent: true };
+  }
   // Fire-and-forget in prod so a blocked SMTP / slow provider can't hang the
   // user-facing response for 10+ seconds. Token row IS written synchronously
   // inside issueVerificationEmail.
   const emailP = issueVerificationEmail(user).catch((err) => {
     // eslint-disable-next-line no-console
-    console.error('[resend-verification] send failed for', user.email, '-', err.message);
+    console.error(
+      `[email:verify] RESEND FAILED user_id=${user.id} to=${user.email} ` +
+      `provider=${env.EMAIL_PROVIDER} error=${err.message} ` +
+      `— the user will NOT receive a link. Full provider response is in the email_log table.`
+    );
   });
   if (env.NODE_ENV !== 'production') await emailP;
   return { sent: true };
@@ -127,6 +160,8 @@ async function verifyEmail({ token }) {
       `UPDATE users SET email_verified_at = NOW() WHERE id = $1 RETURNING *`,
       [t.user_id]
     );
+    // eslint-disable-next-line no-console
+    console.log(`[email:verify] VERIFIED user_id=${t.user_id} to=${u.rows[0]?.email}`);
     return { user: publicUser(u.rows[0]) };
   });
 }

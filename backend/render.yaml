@@ -52,21 +52,22 @@ services:
       - key: AGORA_APP_CERTIFICATE
         sync: false
 
-      # Email — set in dashboard once you've picked a provider
-      - key: EMAIL_PROVIDER
-        value: stub                  # set to 'resend' or 'smtp' in dashboard
-      - key: EMAIL_FROM
-        value: no-reply@unmute.local # update in dashboard
+      # Email — Resend. This was the production bug: EMAIL_PROVIDER was pinned
+      # to "stub", which prints each message to the log and DISCARDS it. So
+      # /register returned 201, users got no verification link, and nothing
+      # errored anywhere. EMAIL_PROVIDER now defaults to "resend" in env.js and
+      # the server refuses to boot if the key or sender is missing.
+      #
+      # Set these two in the Render dashboard (Dashboard → your service →
+      # Environment). Nothing else is required.
       - key: RESEND_API_KEY
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
+        sync: false                 # re_...  from https://resend.com → API Keys
+      - key: EMAIL_FROM
+        sync: false                 # verified sender, e.g. no-reply@yourdomain.com
+      - key: EMAIL_FROM_NAME
+        value: unmute
+      - key: EMAIL_PROVIDER
+        value: resend
 
       # Google OAuth (optional) — leave empty to disable
       - key: GOOGLE_CLIENT_ID

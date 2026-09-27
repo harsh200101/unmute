@@ -1,21 +1,43 @@
 'use strict';
 
-// Provider-agnostic email service.
+// Email service — Resend is the only real transport.
 //
-// Providers wired:
-//   - stub      (dev: logs to stdout)
-//   - sendgrid  (HTTPS, works on Render where SMTP is blocked)
-//   - resend    (HTTPS, alternative to SendGrid)
-//   - smtp      (nodemailer — only works off Render, e.g. local dev)
+// Why Resend and nothing else:
+//   - SendGrid: removed. Its free tier was retired, so it can no longer be the
+//     zero-cost default for a project at this stage.
+//   - Raw SMTP: still supported (see sendViaSmtp) for local dev, but Render
+//     blocks outbound SMTP on its free tiers, so it cannot be relied on in
+//     production.
+//   - Resend: plain HTTPS + bearer auth, a free tier that still exists, and
+//     nothing to install — we POST to the REST API with global fetch, so
+//     there is no extra dependency to keep patched.
 //
-// Every send is logged to `email_log` so we have a server-side audit
-// trail independent of any provider dashboard. Tests skip logging to
-// keep the test DB clean (they assert on global.__SENT_EMAILS__).
+// Every send is logged to `email_log` so we have a server-side audit trail
+// independent of the provider dashboard, and mirrored to stdout with a
+// greppable `[email:...]` prefix so a delivery failure is visible in the host's
+// log stream. Tests skip logging to keep the test DB clean (they assert on
+// global.__SENT_EMAILS__).
 
 const env = require('../config/env');
 const { query } = require('../config/db');
 
+// --- Logging helpers --------------------------------------------------------
+//
+// One line per send attempt, always, on every provider. Written to stdout so
+// it lands in Render's log stream, where it can be grepped/filtered by the
+// `kind` (e.g. `[email:send] kind=verification`).
+function logSend(level, fields) {
+  const parts = Object.entries(fields)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${k}=${typeof v === 'string' && /\s/.test(v) ? JSON.stringify(v) : v}`);
+  // eslint-disable-next-line no-console
+  console[level](`[email:${fields.stage || 'send'}] ${parts.join(' ')}`);
+}
+
 async function sendEmail({ to, subject, text, html, attachments, kind }) {
+  const startedAt = Date.now();
+  const recipient = Array.isArray(to) ? to.join(',') : to;
+
   if (env.NODE_ENV === 'test') {
     // Capture in a global for tests to assert on
     global.__SENT_EMAILS__ = global.__SENT_EMAILS__ || [];
@@ -29,7 +51,7 @@ async function sendEmail({ to, subject, text, html, attachments, kind }) {
   try {
     if (env.EMAIL_PROVIDER === 'stub' || !env.EMAIL_PROVIDER) {
       // eslint-disable-next-line no-console
-      console.log('\n=== EMAIL (stub provider) ===');
+      console.log('\n=== EMAIL (stub provider — NOT DELIVERED) ===');
       // eslint-disable-next-line no-console
       console.log('To:     ', to);
       // eslint-disable-next-line no-console
@@ -37,24 +59,52 @@ async function sendEmail({ to, subject, text, html, attachments, kind }) {
       // eslint-disable-next-line no-console
       console.log('Body:\n', text || html);
       // eslint-disable-next-line no-console
-      console.log('=============================\n');
+      console.log('===========================================\n');
       result = { provider: 'stub', id: `stub-${Date.now()}` };
+      // This is the line that would have saved hours: stub means the mail was
+      // printed and thrown away, so nobody ever receives a verification link.
+      logSend('warn', {
+        stage: 'send',
+        kind,
+        to: recipient,
+        provider: 'stub',
+        outcome: 'NOT_DELIVERED',
+        hint: 'set EMAIL_PROVIDER + EMAIL_FROM + API key on your host to actually send',
+      });
     } else if (env.EMAIL_PROVIDER === 'smtp') {
       result = await sendViaSmtp({ to, subject, text, html, attachments });
     } else if (env.EMAIL_PROVIDER === 'resend') {
       result = await sendViaResend({ to, subject, text, html, attachments });
-    } else if (env.EMAIL_PROVIDER === 'sendgrid') {
-      result = await sendViaSendGrid({ to, subject, text, html, attachments });
     } else {
       throw new Error(`Email provider '${env.EMAIL_PROVIDER}' is not wired yet`);
     }
   } catch (err) {
     errMsg = err.message;
     errMeta = { stack: (err.stack || '').slice(0, 1000) };
+    logSend('error', {
+      stage: 'send-failed',
+      kind,
+      to: recipient,
+      subject,
+      provider: env.EMAIL_PROVIDER || 'stub',
+      ms: Date.now() - startedAt,
+      error: errMsg,
+    });
     // Re-throw after logging so callers (fire-and-forget paths) still see it.
     logEmailAttempt({ to, subject, kind, status: 'failed', provider: env.EMAIL_PROVIDER || 'stub', provider_msg_id: null, error_message: errMsg, meta: errMeta });
     throw err;
   }
+
+  logSend('info', {
+    stage: 'send',
+    kind,
+    to: recipient,
+    subject,
+    provider: result.provider,
+    provider_msg_id: result.id,
+    ms: Date.now() - startedAt,
+    outcome: result.provider === 'stub' ? 'NOT_DELIVERED' : 'accepted',
+  });
 
   // Don't block the caller on the audit-log write — it's best-effort.
   logEmailAttempt({
@@ -92,76 +142,38 @@ function logEmailAttempt({ to, subject, kind, status, provider, provider_msg_id,
   });
 }
 
-// --- SendGrid (HTTPS API) --------------------------------------------------
+// --- Resend (HTTPS REST API) ------------------------------------------------
 //
-// Like Resend, SendGrid's v3 API runs over plain HTTPS so it works around
-// Render's outbound-SMTP block. Free tier: 100 emails/day forever, allows a
-// single verified sender (e.g. a Gmail address) without needing a domain.
+// Resend's v2 API is plain HTTPS with a bearer token, so it works around
+// Render's outbound-SMTP block without any extra npm dependency — global
+// fetch is enough.
 //
-// Get an API key at https://app.sendgrid.com/settings/api_keys (scopes:
-// "Mail Send" is enough). Verify the FROM address at Settings → Sender
-// Authentication → Single Sender Verification before the first send.
-async function sendViaSendGrid({ to, subject, text, html, attachments }) {
-  if (!env.SENDGRID_API_KEY) throw new Error('SENDGRID_API_KEY is required when EMAIL_PROVIDER=sendgrid');
-  if (!env.EMAIL_FROM) throw new Error('EMAIL_FROM is required when EMAIL_PROVIDER=sendgrid');
-
-  const content = [];
-  if (text) content.push({ type: 'text/plain', value: text });
-  if (html) content.push({ type: 'text/html',  value: html });
-  if (content.length === 0) content.push({ type: 'text/plain', value: ' ' }); // SendGrid rejects empty body
-
-  const body = {
-    personalizations: [{
-      to: (Array.isArray(to) ? to : [to]).map((email) => ({ email })),
-    }],
-    from: { email: env.EMAIL_FROM, name: env.EMAIL_FROM_NAME || 'unmute' },
-    subject,
-    content,
-    ...(attachments?.length
-      ? {
-          attachments: attachments.map((a) => ({
-            filename: a.filename,
-            content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : a.content,
-            type: a.contentType,
-            disposition: 'attachment',
-          })),
-        }
-      : {}),
-  };
-
-  const resp = await fetch('https://api.sendgrid.com/v3/mail/send', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.SENDGRID_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!resp.ok) {
-    let detail = '';
-    try { detail = JSON.stringify(await resp.json()); } catch { /* ignore */ }
-    throw new Error(`SendGrid API ${resp.status} ${resp.statusText}: ${detail}`);
-  }
-  // SendGrid returns 202 Accepted with empty body. Use the X-Message-Id header
-  // as the id we return.
-  const id = resp.headers.get('X-Message-Id') || `sendgrid-${Date.now()}`;
-  return { provider: 'sendgrid', id };
-}
-
-// --- Resend (HTTPS API) ----------------------------------------------------
+// Get an API key at https://resend.com → API Keys. Then, for `EMAIL_FROM`:
+//   * while setting up, use the testing-only `onboarding@resend.dev` — it can
+//     ONLY deliver to the address that owns the Resend account, so use it to
+//     prove the flow works end to end, not for real users;
+//   * for real sending, verify your own domain in Resend → Domains and use
+//     any address on it.
 //
-// Render's free/starter tier blocks outbound SMTP, but HTTPS is always open.
-// Resend gives us 3,000 emails/month on the free plan with a simple POST.
-// Get an API key at https://resend.com → API Keys.
+// The single most common failure here is a 403 with
+// "The `from` address does not match a verified Sender Identity". It is
+// surfaced verbatim below and recorded in `email_log`.
 //
-// `EMAIL_FROM` must either be on a domain you've verified in Resend, OR you
-// can use the testing-only address `onboarding@resend.dev` to send to YOUR
-// own address while a domain is being set up.
+// An earlier version of this file defaulted EMAIL_FROM to
+// 'no-reply@unmute.local', so the `!env.EMAIL_FROM` guard below could never
+// fire and every send was rejected by the provider with a 403 that only
+// appeared in a fire-and-forget catch block. env.js now defaults it to ''.
 
 async function sendViaResend({ to, subject, text, html, attachments }) {
   if (!env.RESEND_API_KEY) throw new Error('RESEND_API_KEY is required when EMAIL_PROVIDER=resend');
   if (!env.EMAIL_FROM) throw new Error('EMAIL_FROM is required when EMAIL_PROVIDER=resend');
+  if (/\bre_/.test(env.EMAIL_FROM)) {
+    throw new Error(
+      'EMAIL_FROM looks like a Resend API key, not a sender address. ' +
+      'Set EMAIL_FROM to a verified sender (e.g. "no-reply@yourdomain.com"), ' +
+      'and put the re_... key in RESEND_API_KEY.'
+    );
+  }
 
   const body = {
     from: env.EMAIL_FROM,

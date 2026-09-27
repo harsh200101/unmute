@@ -7,6 +7,7 @@ import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import { Field, Input, PasswordInput } from '../components/ui/Field.jsx';
 import { PageSpinner } from '../components/ui/Spinner.jsx';
+import EmailVerificationCard from '../components/EmailVerificationCard.jsx';
 
 export default function UserProfile() {
   const { user, reloadMe } = useAuth();
@@ -71,6 +72,11 @@ export default function UserProfile() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
       <h1 className="text-2xl font-bold text-slate-900">Profile</h1>
       <p className="text-slate-600 mt-1">Your account details. Email and role are managed by admin.</p>
+
+      {/* Verification state lives at the top of the profile: it gates bookings
+          and mentor applications, so it should be the first thing a mentee sees
+          if it isn't done. */}
+      <EmailVerificationCard className="mt-6" />
 
       <form onSubmit={onSave} className="mt-6 space-y-4">
         <Card>

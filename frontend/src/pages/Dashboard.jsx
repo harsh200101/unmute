@@ -4,6 +4,7 @@ import {
   Calendar, Clock, Wallet, Sparkles, Video, ArrowRight,
   Star, TrendingUp, Bell, Shield, Settings, Banknote, MessageSquare,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../auth/AuthContext.jsx';
 import {
   bookings as bookingsApi,
@@ -11,6 +12,7 @@ import {
   notifications as notifsApi,
   reviews as reviewsApi,
   admin as adminApi,
+  auth as authApi,
 } from '../api/endpoints.js';
 import Card, { CardBody } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -149,8 +151,38 @@ export default function Dashboard() {
 // -- Hero greeting ----------------------------------------------------------
 
 function HeroGreeting({ user, firstName }) {
+  const { reloadMe } = useAuth();
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
   const hour = new Date().getHours();
   const part = hour < 5 ? 'Still up' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+  // This used to be a plain <Link to="/verify-email"> labelled "Resend link".
+  // It wasn't a resend — it just navigated, and the destination page's resend
+  // box arrived EMPTY (the emailed link carried no ?email=), so the user had
+  // to retype the address they were already logged in as. Now it actually
+  // calls /auth/resend-verification with the signed-in user's own address.
+  async function resendVerification() {
+    if (!user?.email) return;
+    setResending(true);
+    try {
+      await authApi.resendVerification(user.email);
+      setResent(true);
+      toast.success(`Verification email sent to ${user.email}`);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not send verification email');
+    } finally {
+      setResending(false);
+    }
+  }
+
+  async function checkAgain() {
+    try {
+      await reloadMe();
+    } catch (e) {
+      toast.error('Could not refresh your status');
+    }
+  }
 
   return (
     <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-700 to-brand-900 text-white px-5 sm:px-8 py-6 sm:py-9 shadow-floaty">
@@ -168,12 +200,37 @@ function HeroGreeting({ user, firstName }) {
             // High-contrast amber callout — readable on top of the brand
             // gradient. The plain `text-brand-100/90` underneath was nearly
             // invisible against the indigo bg.
-            <div className="mt-3 inline-flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900 max-w-md">
-              <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse-soft" />
-              <span>
-                Please verify your email to unlock bookings.{' '}
-                <Link to="/verify-email" className="underline font-semibold whitespace-nowrap">Resend link</Link>
-              </span>
+            <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900 max-w-md">
+              <div className="flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0 animate-pulse-soft" />
+                <div className="min-w-0">
+                  <p>
+                    Please verify your email to unlock bookings.{' '}
+                    <span className="break-words">{user.email}</span>
+                  </p>
+                  {resent ? (
+                    <p className="mt-1.5 text-xs text-amber-800">
+                      Sent — check your inbox and spam folder.{' '}
+                      <button
+                        type="button"
+                        onClick={checkAgain}
+                        className="underline font-semibold"
+                      >
+                        I&apos;ve verified
+                      </button>
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={resendVerification}
+                      disabled={resending}
+                      className="mt-1.5 underline font-semibold disabled:opacity-60"
+                    >
+                      {resending ? 'Sending…' : 'Resend verification email'}
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <p className="mt-2 text-white/90 text-sm sm:text-base max-w-md">

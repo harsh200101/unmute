@@ -19,7 +19,20 @@
 const path = require('path');
 const { Client } = require('pg');
 
+// The suite must never touch a real mail provider. env.js now hard-requires
+// RESEND_API_KEY whenever EMAIL_PROVIDER is not "stub", and sendEmail()
+// short-circuits on NODE_ENV=test, so pin both before anything imports env.js.
+process.env.NODE_ENV = 'test';
+process.env.EMAIL_PROVIDER = 'stub';
+delete process.env.RESEND_API_KEY;
+
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
+// dotenv does NOT override already-set vars, but a developer's local .env could
+// still flip these. Re-assert after loading so a stray RESEND_API_KEY in .env
+// can never cause a live send from the test suite.
+process.env.NODE_ENV = 'test';
+process.env.EMAIL_PROVIDER = 'stub';
 
 function deriveTestUrl() {
   if (process.env.TEST_DATABASE_URL) return process.env.TEST_DATABASE_URL;
