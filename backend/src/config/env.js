@@ -29,10 +29,22 @@ if (raw.SMTP_USER) {
   // left over from a previous provider therefore cannot be honoured, and
   // crashing the whole deploy over a display-string field is the wrong trade:
   // adopt the authenticated address so mail still sends from a real account.
-  // `mismatchedFrom` is reported at boot rather than silently swallowed.
+  // `__EMAIL_FROM_MISMATCH__` is reported at boot rather than silently swallowed.
   if (raw.EMAIL_FROM && raw.EMAIL_FROM.toLowerCase() !== raw.SMTP_USER.toLowerCase()) {
     raw.__EMAIL_FROM_MISMATCH__ = raw.EMAIL_FROM;
     raw.EMAIL_FROM = raw.SMTP_USER;
+  }
+
+  // Google displays App Passwords in groups of four ("abcd efgh ijkl mnop"), and
+  // copy-pasting from that page frequently carries the spaces into a dashboard
+  // value. Gmail then rejects an otherwise-valid password with
+  // "535-5.7.8 Username and Password not accepted", which is indistinguishable
+  // from a genuinely wrong password in the response. Strip them here so the
+  // pasted form and the bare form behave identically.
+  if (raw.SMTP_PASS && /\s/.test(raw.SMTP_PASS)) {
+    const stripped = raw.SMTP_PASS.replace(/\s+/g, '');
+    raw.__SMTP_PASS_HAD_WHITESPACE__ = true;
+    raw.SMTP_PASS = stripped;
   }
 }
 
@@ -191,8 +203,27 @@ if (module.exports.EMAIL_PROVIDER === 'stub') {
   console.log(
     `[email] provider=smtp host=${module.exports.SMTP_HOST}:${module.exports.SMTP_PORT} ` +
     `from="${module.exports.EMAIL_FROM_NAME} <${module.exports.EMAIL_FROM}>" ` +
-    `as=${module.exports.SMTP_USER}`
+    `as=${module.exports.SMTP_USER} ` +
+    `pass_len=${module.exports.SMTP_PASS.length}`
   );
+  // Never print the password itself, but the length is the single most useful
+  // signal: a Google App Password is always exactly 16 characters, so anything
+  // else is an account password or a truncated paste.
+  if (module.exports.SMTP_PASS && module.exports.SMTP_PASS.length !== 16) {
+    console.warn(
+      `[email] WARNING: SMTP_PASS is ${module.exports.SMTP_PASS.length} characters. ` +
+      'A Google App Password is always 16. Gmail will reject this with ' +
+      '"535-5.7.8 Username and Password not accepted".'
+    );
+  }
+  if (raw.__SMTP_PASS_HAD_WHITESPACE__) {
+    // Never mutate a secret without saying so.
+    console.warn(
+      '[email] NOTE: SMTP_PASS contained whitespace and was stripped. ' +
+      'Google displays app passwords in groups of four, so a copy-paste often ' +
+      'includes spaces. Store it without them to silence this.'
+    );
+  }
   // A legacy value was silently remapped to smtp above. Say so, so the stale
   // dashboard entry gets cleaned up rather than lingering indefinitely.
   if (raw.__LEGACY_PROVIDER__) {

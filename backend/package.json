@@ -10,6 +10,7 @@
     "start": "node src/migrator.js up && node src/server.js",
     "migrate": "node src/migrator.js up",
     "migrate:status": "node src/migrator.js status",
+    "check:smtp": "node scripts/check-smtp.js",
     "seed": "node src/seed.js",
     "dev:seed": "node src/dev-seed.js",
     "dev:instant-booking": "node src/dev-instant-booking.js",
