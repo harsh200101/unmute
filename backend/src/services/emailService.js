@@ -306,21 +306,116 @@ function describeSmtpError(err) {
 
 // --- Convenience builders ---------------------------------------------------
 
+// --- HTML email shell -------------------------------------------------------
+//
+// Every template below was plain text, so Gmail showed a raw 150-character
+// URL sitting under the body copy. It looked broken and it wrapped mid-token.
+// Both text and html are always sent: the HTML is for humans, and the plain
+// text part is what keeps deliverability high and gives non-HTML clients
+// something readable.
+//
+// Constraints that shaped this, all of them Gmail-specific:
+//   * Tables for layout, not flex/grid. Gmail strips modern CSS.
+//   * Inline styles only. A <style> block is unreliable across clients.
+//   * A bulletproof CTA: a real <a> styled as a button, with the raw link as
+//     visible fallback text underneath. If the button styling is dropped the
+//     link is still clickable.
+//   * webfont-safe system font stack; no external CSS, images or webfonts,
+//     since those are blocked by default and would delay or suppress the mail.
+//   * A plain-text part is mandatory, or Gmail marks it as a partial message.
+const BRAND = 'Unmute';
+
+// Escape before interpolating anything a user controls into HTML. full_name
+// comes straight from the signup form, so without this a mentee could inject
+// markup into every email they receive. The link is escaped for attribute
+// context: the token contains '&' separators, and a bare '&' followed by text
+// that looks like an entity is parsed as one, which truncates the URL.
+function esc(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function emailShell({ heading, intro, ctaLabel, link, footnote, mutedNote }) {
+  // href must be attribute-escaped; the visible fallback text is the same
+  // escaped string, which is also what the recipient should copy.
+  const href = esc(link);
+  return `<!DOCTYPE html>
+<html lang="en">
+<body style="margin:0;padding:0;background:#f6f7f9;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f9;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;">
+
+          <tr>
+            <td style="padding:28px 32px 20px;border-bottom:1px solid #eef0f3;">
+              <span style="font:600 20px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;letter-spacing:-0.2px;">${esc(BRAND)}</span>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:28px 32px 8px;">
+              <h1 style="margin:0 0 16px;font:600 20px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;">${esc(heading)}</h1>
+              <p style="margin:0;font:400 15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#374151;">${esc(intro)}</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:24px 32px 8px;">
+              <a href="${href}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;font:600 15px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:14px 28px;border-radius:8px;">${esc(ctaLabel)}</a>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:20px 32px 0;font:400 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#9ca3af;word-break:break-all;">
+              If the button does not work, paste this link into your browser:<br>
+              <a href="${href}" style="color:#4b5563;">${esc(link)}</a>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:24px 32px 28px;">
+              <p style="margin:0;font:400 13px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#6b7280;">${esc(footnote)}</p>
+              ${mutedNote ? `<p style="margin:12px 0 0;font:400 13px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#9ca3af;">${esc(mutedNote)}</p>` : ''}
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
 function verificationEmail({ to, full_name, link }) {
+  const name = full_name ? `Hi ${full_name},` : 'Hi there,';
   return {
     to,
     kind: 'verification',
-    subject: 'Verify your unmute email',
+    subject: `Verify your ${BRAND} email address`,
     text: [
-      `Hi ${full_name || ''},`,
+      name,
       '',
-      'Welcome to unmute. Click the link below to verify your email address:',
+      `Welcome to ${BRAND}. Confirm this email address to activate your account:`,
       link,
       '',
       'This link expires in 24 hours.',
       '',
-      "If you didn't sign up, you can ignore this message.",
+      "If you didn't create a " + BRAND + ' account, you can ignore this message.',
     ].join('\n'),
+    html: emailShell({
+      heading: `Welcome to ${BRAND}`,
+      intro: `${name} Confirm this email address to activate your account.`,
+      ctaLabel: 'Verify email address',
+      link,
+      footnote: 'This link expires in 24 hours.',
+      mutedNote: `If you didn't create a ${BRAND} account, you can safely ignore this message.`,
+    }),
   };
 }
 
@@ -419,20 +514,31 @@ function rescheduleDeclinedEmail({ to, full_name, other_name, original_slot, vie
 }
 
 function passwordResetEmail({ to, full_name, link }) {
+  const name = full_name ? `Hi ${full_name},` : 'Hi there,';
   return {
     to,
     kind: 'password_reset',
-    subject: 'Reset your unmute password',
+    subject: `Reset your ${BRAND} password`,
     text: [
-      `Hi ${full_name || ''},`,
+      name,
       '',
-      'A password reset was requested for your account. Click the link below to choose a new password:',
+      `A password reset was requested for your ${BRAND} account. Use the link below to choose a new password:`,
       link,
       '',
       'This link expires in 1 hour.',
       '',
-      "If you didn't request this, you can ignore the message.",
+      "If you didn't request this, you can ignore this message and your password will stay unchanged.",
     ].join('\n'),
+    html: emailShell({
+      heading: 'Reset your password',
+      intro: `${name} We received a request to reset the password on your ${BRAND} account.`,
+      ctaLabel: 'Choose a new password',
+      link,
+      // The security-relevant detail: say plainly what happens if this wasn't
+      // them. A password reset mail that does not state this reads as alarming.
+      footnote: 'This link expires in 1 hour.',
+      mutedNote: `If you didn't request a password reset, ignore this email. Your password will not change unless you use the link above.`,
+    }),
   };
 }
 
