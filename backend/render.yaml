@@ -64,9 +64,11 @@ services:
       # since 26 Sep 2025. This service MUST be on a paid instance or every
       # send will time out on connect.
       #
-      # SMTP_HOST / SMTP_PORT / EMAIL_FROM are derived automatically from
-      # SMTP_USER (smtp.gmail.com:587, and From = the Gmail address), so set
-      # only these two in the Render dashboard:
+      # Set only these two in the Render dashboard. SMTP_HOST/SMTP_PORT/EMAIL_FROM
+      # are derived automatically. EMAIL_FROM follows SMTP_USER: Gmail only
+      # sends as the authenticated account, so if you want the sender to be
+      # theunmute24@gmail.com then SMTP_USER must be that address together with
+      # ITS app password, not a different account's credentials.
       - key: SMTP_USER
         sync: false                 # the Gmail address, e.g. you@gmail.com
       - key: SMTP_PASS

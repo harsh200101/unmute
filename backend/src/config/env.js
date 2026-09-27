@@ -23,6 +23,17 @@ if (raw.SMTP_USER) {
   if (!raw.SMTP_HOST) raw.SMTP_HOST = 'smtp.gmail.com';
   if (!raw.SMTP_PORT) raw.SMTP_PORT = '587';
   if (!raw.EMAIL_FROM) raw.EMAIL_FROM = raw.SMTP_USER;
+
+  // Gmail only permits the From header to be the authenticated account (or an
+  // alias it knows), and silently rewrites anything else. A stale EMAIL_FROM
+  // left over from a previous provider therefore cannot be honoured, and
+  // crashing the whole deploy over a display-string field is the wrong trade:
+  // adopt the authenticated address so mail still sends from a real account.
+  // `mismatchedFrom` is reported at boot rather than silently swallowed.
+  if (raw.EMAIL_FROM && raw.EMAIL_FROM.toLowerCase() !== raw.SMTP_USER.toLowerCase()) {
+    raw.__EMAIL_FROM_MISMATCH__ = raw.EMAIL_FROM;
+    raw.EMAIL_FROM = raw.SMTP_USER;
+  }
 }
 
 const schema = z.object({
@@ -55,7 +66,23 @@ const schema = z.object({
   // Resend's free tier can only send from onboarding@resend.dev, which
   // delivers to the account owner's inbox and nobody else — so it could not
   // send from a real Gmail address.
-  EMAIL_PROVIDER: z.enum(['smtp', 'stub']).default('smtp'),
+  // Accept legacy values from stale dashboards instead of crash-looping the
+  // deploy. Both removed providers are mapped to smtp, which is what the
+  // operator actually wants; `__LEGACY_PROVIDER__` makes env.js warn at boot
+  // so the dashboard still gets fixed. Mapping beats a hard enum failure here
+  // because the alternative is a deploy that cannot start at all.
+  EMAIL_PROVIDER: z
+    .string()
+    .optional()
+    .transform((v) => {
+      const val = (v || 'smtp').toLowerCase();
+      if (val === 'sendgrid' || val === 'resend' || val === 'ses' || val === 'mailgun') {
+        raw.__LEGACY_PROVIDER__ = v;
+        return 'smtp';
+      }
+      return val;
+    })
+    .pipe(z.enum(['smtp', 'stub'])),
   SMTP_HOST: z.string().optional().default(''),
   SMTP_PORT: z.coerce.number().int().optional(),
   SMTP_USER: z.string().optional().default(''),
@@ -102,17 +129,6 @@ const schema = z.object({
         'EMAIL_FROM',
         `EMAIL_FROM must be a sender email address (got "${val.EMAIL_FROM}")`
       );
-      // Gmail rewrites the From header to the authenticated account unless the
-      // address matches, so a mismatch is a silent surprise worth refusing.
-      if (val.SMTP_USER && val.EMAIL_FROM.toLowerCase() !== val.SMTP_USER.toLowerCase()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['EMAIL_FROM'],
-          message:
-            `EMAIL_FROM (${val.EMAIL_FROM}) must match SMTP_USER (${val.SMTP_USER}). ` +
-            'Gmail will silently rewrite the From address otherwise, so mail would arrive looking like it came from somewhere else.',
-        });
-      }
     }
   });
 
@@ -127,6 +143,13 @@ if (!parsed.success) {
     '\nFor Gmail, create a 16-character App Password at ' +
     'https://myaccount.google.com/apppasswords (requires 2-Step Verification), ' +
     'then set SMTP_USER and SMTP_PASS in your host\'s environment.'
+  );
+  // The operator's most common mistake is editing a local .env and expecting
+  // the host to use it. Render injects dashboard variables and there is no .env
+  // in the container, so name the actual source of truth.
+  console.error(
+    '\nNote: on Render these must be set in Dashboard -> your service -> Environment. ' +
+    'A local .env file is NOT read by the deployed container.'
   );
   process.exit(1);
 }
@@ -170,12 +193,22 @@ if (module.exports.EMAIL_PROVIDER === 'stub') {
     `from="${module.exports.EMAIL_FROM_NAME} <${module.exports.EMAIL_FROM}>" ` +
     `as=${module.exports.SMTP_USER}`
   );
-  // Gmail silently rewrites the From header to the authenticated account, so
-  // warn loudly rather than let mail arrive looking like it came from elsewhere.
-  if (module.exports.EMAIL_FROM.toLowerCase() !== module.exports.SMTP_USER.toLowerCase()) {
+  // A legacy value was silently remapped to smtp above. Say so, so the stale
+  // dashboard entry gets cleaned up rather than lingering indefinitely.
+  if (raw.__LEGACY_PROVIDER__) {
     console.warn(
-      `[email] WARNING: EMAIL_FROM (${module.exports.EMAIL_FROM}) differs from SMTP_USER ` +
-      `(${module.exports.SMTP_USER}). Gmail will likely rewrite the sender.`
+      `[email] NOTE: EMAIL_PROVIDER was "${raw.__LEGACY_PROVIDER__}", which no longer exists. ` +
+      'It has been mapped to "smtp". Update this variable in your host\'s environment to smtp.'
+    );
+  }
+  // Report the substitution rather than swallowing it: the operator asked for
+  // one sender and is getting another, and needs to know which one is real.
+  if (raw.__EMAIL_FROM_MISMATCH__) {
+    console.warn(
+      `[email] NOTE: EMAIL_FROM was set to ${raw.__EMAIL_FROM_MISMATCH__} but SMTP_USER ` +
+      `is ${module.exports.SMTP_USER}. Gmail only sends as the authenticated account, so the ` +
+      `sender is now ${module.exports.EMAIL_FROM}. To send as ${raw.__EMAIL_FROM_MISMATCH__}, ` +
+      'authenticate as that address instead (set SMTP_USER and SMTP_PASS to its app password).'
     );
   }
   /* eslint-enable no-console */
