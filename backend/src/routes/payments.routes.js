@@ -10,6 +10,7 @@ const router = express.Router();
 router.use(authJwt);
 
 router.post('/topup',          authStrict, requireEmailVerified, c.topup);
+router.post('/razorpay/verify', authStrict, requireEmailVerified, c.verifyRazorpay);
 router.get('/status/:order_id', general,    c.getStatus);
 router.get('/me',              general,    c.listMine);
 

@@ -116,10 +116,25 @@ const schema = z.object({
   // could settle. Set it to the backend's own deployed origin.
   API_PUBLIC_URL: z.string().optional().default(''),
 
+  // Which gateway drives wallet top-ups. This single variable is the one-click
+  // switch between providers; BOTH remain implemented and configured.
+  //   phonepe  — PhonePe PG (the original integration, still fully wired)
+  //   razorpay — Razorpay Standard Checkout
+  // Changing it flips the flow with no code change. Defaults to phonepe so
+  // existing behaviour (and the test suite) is unchanged until it is set.
+  PAYMENT_GATEWAY: z.enum(['phonepe', 'razorpay']).default('phonepe'),
+
   PHONEPE_MERCHANT_ID: z.string().optional().default(''),
   PHONEPE_SALT_KEY: z.string().optional().default(''),
   PHONEPE_SALT_INDEX: z.coerce.number().int().default(1),
   PHONEPE_HOST: z.string().optional().default(''),
+
+  // --- Razorpay ---
+  // KEY_SECRET is server-side only and must NEVER appear in frontend code.
+  // The frontend only ever receives KEY_ID (returned by the create-order
+  // response) so it can open the Checkout modal.
+  RAZORPAY_KEY_ID: z.string().optional().default(''),
+  RAZORPAY_KEY_SECRET: z.string().optional().default(''),
 
   AGORA_APP_ID: z.string().optional().default(''),
   AGORA_APP_CERTIFICATE: z.string().optional().default(''),

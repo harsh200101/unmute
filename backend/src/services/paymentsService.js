@@ -2,12 +2,25 @@
 
 const { query, withTransaction } = require('../config/db');
 const env = require('../config/env');
-const { bad, notFound } = require('../utils/errors');
+const { bad, notFound, forbidden } = require('../utils/errors');
 const phonepe = require('./phonepeService');
+const razorpay = require('./razorpayService');
 const notify = require('./notificationService');
 
 const MIN_TOPUP_PAISE = 5000;      // ₹50
 const MAX_TOPUP_PAISE = 50000000;  // ₹5,00,000 hard cap to prevent fat-fingers
+
+// The one-click gateway switch (config/env.js PAYMENT_GATEWAY). Both providers
+// stay fully wired; this only decides which one initiates a new top-up.
+function selectedGateway() {
+  return env.PAYMENT_GATEWAY === 'razorpay' ? 'razorpay' : 'phonepe';
+}
+
+function gatewayLabel(gateway) {
+  if (gateway === 'razorpay') return 'Razorpay';
+  if (gateway === 'phonepe') return 'PhonePe';
+  return 'Payment gateway';
+}
 
 // --- Top-up initiation -------------------------------------------------------
 
@@ -17,7 +30,14 @@ async function createTopup({ user_id, amount_paise }) {
   if (n < MIN_TOPUP_PAISE) throw bad('amount_too_small', `Minimum top-up is ${MIN_TOPUP_PAISE / 100} INR`);
   if (n > MAX_TOPUP_PAISE) throw bad('amount_too_large', `Maximum top-up is ${MAX_TOPUP_PAISE / 100} INR`);
 
-  const init = await phonepe.initiateTopup({ amount_paise: n, user_id });
+  return selectedGateway() === 'razorpay'
+    ? createRazorpayTopup({ user_id, amount_paise: n })
+    : createPhonepeTopup({ user_id, amount_paise: n });
+}
+
+// PhonePe: redirect the browser to the gateway, settle later via webhook.
+async function createPhonepeTopup({ user_id, amount_paise }) {
+  const init = await phonepe.initiateTopup({ amount_paise, user_id });
 
   // Persist the payment row in 'created' state. Webhook will flip to succeeded.
   const r = await query(
@@ -27,7 +47,7 @@ async function createTopup({ user_id, amount_paise }) {
      RETURNING *`,
     [
       user_id,
-      n,
+      amount_paise,
       init.provider,
       init.gateway_order_id,
       init.raw_request || {},
@@ -36,12 +56,85 @@ async function createTopup({ user_id, amount_paise }) {
   );
   return {
     payment: publicPayment(r.rows[0]),
+    mode: 'redirect',
     redirect_url: init.redirect_url,
     provider: init.provider,
   };
 }
 
-// --- Webhook handler ---------------------------------------------------------
+// Razorpay: create an order server-side and hand the browser everything it
+// needs to open the Checkout modal. KEY_SECRET is never included.
+async function createRazorpayTopup({ user_id, amount_paise }) {
+  const receipt = razorpay.generateReceipt();
+  const order = await razorpay.createOrder({
+    amount_paise,
+    receipt,
+    notes: { user_id: String(user_id) },
+  });
+
+  const r = await query(
+    `INSERT INTO payments
+       (user_id, amount_paise, gateway, gateway_order_id, status, raw_request, raw_response)
+     VALUES ($1, $2, 'razorpay', $3, 'created', $4, $5)
+     RETURNING *`,
+    [
+      user_id,
+      amount_paise,
+      order.id,
+      { amount_paise, receipt, user_id },
+      order,
+    ]
+  );
+
+  return {
+    payment: publicPayment(r.rows[0]),
+    mode: 'checkout',
+    provider: 'razorpay',
+    order_id: order.id,
+    amount: order.amount,
+    currency: order.currency,
+    // KEY_ID only — the browser needs it to open Checkout.js.
+    key_id: env.RAZORPAY_KEY_ID,
+  };
+}
+
+// --- Razorpay: verify signature + settle -------------------------------------
+
+async function verifyRazorpayPayment({
+  user_id,
+  razorpay_order_id,
+  razorpay_payment_id,
+  razorpay_signature,
+}) {
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    throw bad(
+      'missing_fields',
+      'razorpay_order_id, razorpay_payment_id and razorpay_signature are required'
+    );
+  }
+
+  const ok = razorpay.verifyPaymentSignature({
+    order_id: razorpay_order_id,
+    payment_id: razorpay_payment_id,
+    signature: razorpay_signature,
+  });
+  // A forged/tampered payload must never reach the wallet.
+  if (!ok) throw bad('signature_mismatch', 'Payment signature verification failed');
+
+  return settlePaymentSuccess({
+    gateway_order_id: razorpay_order_id,
+    gateway_txn_id: razorpay_payment_id,
+    expected_user_id: user_id,
+    payload: {
+      razorpay_order_id,
+      razorpay_payment_id,
+      signature_verified: true,
+      verified_at: new Date().toISOString(),
+    },
+  });
+}
+
+// --- Webhook handler (PhonePe) -----------------------------------------------
 
 // PhonePe's webhook payload (real or stub) ultimately tells us:
 //   - which merchantTransactionId (= our gateway_order_id) just settled
@@ -59,6 +152,29 @@ async function handleWebhook({ headers, body }) {
 
   if (!gateway_order_id) throw bad('webhook_missing_order_id');
 
+  const succeeded =
+    state === 'PAYMENT_SUCCESS' ||
+    state === 'COMPLETED' ||
+    state === 'SUCCEEDED' ||
+    body?.success === true;
+
+  if (!succeeded) {
+    return markPaymentFailed({
+      gateway_order_id,
+      reason: data.responseCode || data.code || 'unknown',
+      gateway_txn_id,
+      payload: body,
+    });
+  }
+
+  return settlePaymentSuccess({ gateway_order_id, gateway_txn_id, amount_paise, payload: body });
+}
+
+// --- Shared settlement (used by PhonePe webhook + Razorpay verify) -----------
+
+// Flip a payment to 'failed'. Idempotent: an already-terminal row is returned
+// untouched, so a late replay cannot undo a success.
+async function markPaymentFailed({ gateway_order_id, reason, gateway_txn_id = null, payload = null }) {
   return withTransaction(async (client) => {
     const pr = await client.query(
       `SELECT * FROM payments WHERE gateway_order_id = $1 FOR UPDATE`,
@@ -66,6 +182,47 @@ async function handleWebhook({ headers, body }) {
     );
     const payment = pr.rows[0];
     if (!payment) throw notFound('payment_not_found');
+
+    if (payment.status === 'succeeded' || payment.status === 'failed') {
+      return { ok: true, idempotent: true, payment: publicPayment(payment) };
+    }
+
+    const up = await client.query(
+      `UPDATE payments
+          SET status = 'failed',
+              failure_reason = $1,
+              gateway_txn_id = COALESCE(gateway_txn_id, $2),
+              webhook_payload = $3,
+              updated_at = NOW()
+        WHERE id = $4
+        RETURNING *`,
+      [reason, gateway_txn_id, payload, payment.id]
+    );
+    return { ok: true, payment: publicPayment(up.rows[0]) };
+  });
+}
+
+// Mark a payment succeeded and credit the mentee wallet, exactly once.
+async function settlePaymentSuccess({
+  gateway_order_id,
+  gateway_txn_id = null,
+  amount_paise,
+  payload = null,
+  expected_user_id = null,
+}) {
+  return withTransaction(async (client) => {
+    const pr = await client.query(
+      `SELECT * FROM payments WHERE gateway_order_id = $1 FOR UPDATE`,
+      [gateway_order_id]
+    );
+    const payment = pr.rows[0];
+    if (!payment) throw notFound('payment_not_found');
+
+    // The verify endpoint is authenticated; refuse to settle an order that does
+    // not belong to the caller.
+    if (expected_user_id != null && payment.user_id !== expected_user_id) {
+      throw forbidden('payment_not_owned', 'This payment does not belong to you');
+    }
 
     // Idempotency: if already settled, return ok without re-applying.
     if (payment.status === 'succeeded') {
@@ -75,30 +232,10 @@ async function handleWebhook({ headers, body }) {
       return { ok: true, idempotent: true, payment: publicPayment(payment) };
     }
 
-    const succeeded =
-      state === 'PAYMENT_SUCCESS' ||
-      state === 'COMPLETED' ||
-      state === 'SUCCEEDED' ||
-      body?.success === true;
-
-    if (!succeeded) {
-      const up = await client.query(
-        `UPDATE payments
-            SET status = 'failed',
-                failure_reason = $1,
-                gateway_txn_id = COALESCE(gateway_txn_id, $2),
-                webhook_payload = $3,
-                updated_at = NOW()
-          WHERE id = $4
-          RETURNING *`,
-        [data.responseCode || data.code || 'unknown', gateway_txn_id, body, payment.id]
-      );
-      return { ok: true, payment: publicPayment(up.rows[0]) };
-    }
-
     // Validate the amount the gateway reports against what we created the
-    // payment for. PhonePe sends the amount in paise too — if they don't
-    // match, we refuse to credit (would indicate tampering).
+    // payment for. Providers send the amount in paise — if they don't match, we
+    // refuse to credit (would indicate tampering). Razorpay's verify call has no
+    // amount, so it passes undefined and this check is skipped.
     if (typeof amount_paise === 'number' && amount_paise !== payment.amount_paise) {
       throw bad('amount_mismatch', `Webhook amount ${amount_paise} != payment ${payment.amount_paise}`);
     }
@@ -113,7 +250,7 @@ async function handleWebhook({ headers, body }) {
               updated_at = NOW()
         WHERE id = $3
         RETURNING *`,
-      [gateway_txn_id, body, payment.id]
+      [gateway_txn_id, payload, payment.id]
     );
 
     // Find the mentee wallet
@@ -137,7 +274,7 @@ async function handleWebhook({ headers, body }) {
           payment.amount_paise,
           payment.id,
           `topup:${payment.gateway_order_id}`,
-          `PhonePe top-up ${payment.gateway_order_id}`,
+          `${gatewayLabel(payment.gateway)} top-up ${payment.gateway_order_id}`,
         ]
       );
     } catch (err) {
@@ -200,6 +337,8 @@ async function handleWebhook({ headers, body }) {
   });
 }
 
+// --- Status / history --------------------------------------------------------
+
 // PhonePe shows a countdown on its checkout page. If the user lets it run out,
 // closes the tab, or hits back, PhonePe never fires a webhook, so the row sits
 // in 'created' forever and the wallet never learns the checkout was abandoned.
@@ -231,14 +370,14 @@ async function getPaymentByOrderId({ user_id, gateway_order_id }) {
 
   // Report 'expired' to the caller WITHOUT writing it to the row.
   //
-  // This is deliberately not an UPDATE to 'failed'. handleWebhook() treats
-  // 'failed' as terminal and returns early without crediting, so eagerly
+  // This is deliberately not an UPDATE to 'failed'. settlePaymentSuccess()
+  // treats 'failed' as terminal and returns early without crediting, so eagerly
   // failing a stale order would silently swallow a real payment from a user
   // who completed checkout just after the window appeared to close. That is
   // money taken and not credited. The row also stays 'created'/'pending'
   // because the webhook may still arrive at any point and must be allowed to
   // settle it. A cleanup job can expire these later, once it can also check
-  // PhonePe for a terminal state first.
+  // the gateway for a terminal state first.
   if (isStaleCheckout(payment)) {
     return { ...publicPayment(payment), status: 'expired', failure_reason: 'checkout_expired' };
   }
@@ -272,6 +411,7 @@ function publicPayment(p) {
 
 module.exports = {
   createTopup,
+  verifyRazorpayPayment,
   handleWebhook,
   getPaymentByOrderId,
   listMyPayments,

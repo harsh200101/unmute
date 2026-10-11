@@ -13,6 +13,10 @@ import { formatINR, formatDate } from '../lib/format.js';
 
 const PRESETS_PAISE = [50000, 100000, 200000, 500000]; // ₹500, ₹1000, ₹2000, ₹5000
 
+// Cosmetic only. The authoritative gateway switch is the backend's
+// PAYMENT_GATEWAY; the create-order response says which flow to use.
+const GATEWAY_LABEL = import.meta.env.VITE_PAYMENT_GATEWAY === 'phonepe' ? 'PhonePe' : 'Razorpay';
+
 export default function Wallet() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
@@ -151,19 +155,45 @@ export default function Wallet() {
     setTopupBusy(true);
     try {
       const r = await paymentsApi.topup(topupAmount);
-      // If we're in a popup window (opened from the meeting room) we want
-      // the redirect to navigate THIS window so the meeting page stays put.
-      const inPopup = !!window.opener;
-      const redirect = `${r.redirect_url}`;
-      if (inPopup) {
-        window.location.href = redirect;
-      } else {
-        window.location.href = redirect;
+
+      // Razorpay Standard Checkout: settle in a modal on this page.
+      if (r.mode === 'checkout' || r.provider === 'razorpay') {
+        await openRazorpayCheckout(r, {
+          onSuccess: handleTopupSuccess,
+          onFailure: handleTopupFailure,
+        });
+        return; // busy is cleared by whichever callback fired
       }
+
+      // PhonePe: redirect to the gateway's hosted checkout page. If we're in a
+      // popup window (opened from the meeting room) this still navigates THIS
+      // window so the meeting page stays put.
+      window.location.href = `${r.redirect_url}`;
     } catch (e) {
       setTopupErr(e.response?.data?.error || 'Top-up failed');
       setTopupBusy(false);
     }
+  }
+
+  async function handleTopupSuccess(amountPaise) {
+    setTopupBusy(false);
+    setTopupOpen(false);
+    await reload();
+    setPayResult({ kind: 'success', amount_paise: amountPaise });
+  }
+
+  function handleTopupFailure(failure) {
+    setTopupBusy(false);
+    // User closed the modal on purpose; that is not an error.
+    if (failure?.kind === 'dismissed') return;
+    if (failure?.kind === 'failed') {
+      setTopupErr(failure.message || 'Payment failed. You have not been charged.');
+      return;
+    }
+    setTopupErr(
+      failure?.error?.response?.data?.error ||
+      'Payment was not verified. If you were charged it will be applied shortly.'
+    );
   }
 
   if (loading) return <PageSpinner />;
@@ -263,7 +293,9 @@ export default function Wallet() {
 
       <Modal open={topupOpen} onClose={() => setTopupOpen(false)} title="Top up wallet">
         <p className="text-sm text-slate-600">
-          You'll be redirected to PhonePe to complete the payment.
+          {GATEWAY_LABEL === 'Razorpay'
+            ? "You'll complete the payment in a secure Razorpay window."
+            : "You'll be redirected to PhonePe to complete the payment."}
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2">
           {PRESETS_PAISE.map((p) => (
@@ -305,6 +337,64 @@ export default function Wallet() {
   );
 }
 
+// Opens the Razorpay Standard Checkout modal (window.Razorpay, loaded in
+// index.html). Resolves when the modal closes, whether the payment succeeded or
+// not. key_id comes from the backend create-order response; the VITE_ fallback
+// exists only for local tinkering.
+function openRazorpayCheckout(order, { onSuccess, onFailure }) {
+  return new Promise((resolve) => {
+    let done = false;
+    const settle = (fn, arg) => {
+      if (done) return;
+      done = true;
+      try { fn(arg); } finally { resolve(); }
+    };
+
+    if (typeof window.Razorpay !== 'function') {
+      settle(onFailure, { kind: 'verify', error: new Error('Razorpay Checkout failed to load') });
+      return;
+    }
+    const key = order.key_id || import.meta.env.VITE_RAZORPAY_KEY_ID;
+    if (!key) {
+      settle(onFailure, { kind: 'verify', error: new Error('Razorpay key is not configured') });
+      return;
+    }
+
+    const rzp = new window.Razorpay({
+      key,
+      amount: order.amount,
+      currency: order.currency || 'INR',
+      name: 'unmute',
+      description: 'Wallet top-up',
+      order_id: order.order_id,
+      theme: { color: '#0f172a' },
+      handler: async (response) => {
+        try {
+          await paymentsApi.razorpayVerify({
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+          });
+          settle(onSuccess, order.amount);
+        } catch (error) {
+          settle(onFailure, { kind: 'verify', error });
+        }
+      },
+      modal: {
+        // Fired when the user closes the modal without paying.
+        ondismiss: () => settle(onFailure, { kind: 'dismissed' }),
+      },
+    });
+
+    // Fired when the payment fails at the gateway.
+    rzp.on('payment.failed', (response) => {
+      settle(onFailure, { kind: 'failed', message: response?.error?.description });
+    });
+
+    rzp.open();
+  });
+}
+
 function PaymentResultBanner({ result, onDismiss, onRetry }) {
   // Every branch must tell the user what happened AND what to do next. The
   // failure this replaces showed nothing at all.
@@ -333,7 +423,7 @@ function PaymentResultBanner({ result, onDismiss, onRetry }) {
       tone: 'border-amber-300',
       icon: 'text-amber-600',
       title: "We couldn't confirm your payment",
-      body: "We stopped waiting for PhonePe to respond. If you completed the payment it will still be applied — check your balance again shortly. If not, you can try again.",
+      body: "We stopped waiting for the payment gateway to respond. If you completed the payment it will still be applied — check your balance again shortly. If not, you can try again.",
     },
     unknown_order: {
       tone: 'border-amber-300',
@@ -351,7 +441,7 @@ function PaymentResultBanner({ result, onDismiss, onRetry }) {
       tone: 'border-amber-300',
       icon: 'text-amber-600',
       title: 'That payment link is incomplete',
-      body: 'The return link from PhonePe is missing or malformed, so we cannot look up this payment. If you completed a top-up it will still be applied - check your balance, otherwise start a new one.',
+      body: 'The return link from the payment gateway is missing or malformed, so we cannot look up this payment. If you completed a top-up it will still be applied - check your balance, otherwise start a new one.',
     },
     signed_out: {
       tone: 'border-amber-300',

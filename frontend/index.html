@@ -22,6 +22,12 @@
         } catch (e) {}
       })();
     </script>
+    <!--
+      Razorpay Standard Checkout. Loads `window.Razorpay`, which the wallet uses
+      to open the payment modal when PAYMENT_GATEWAY=razorpay. Harmless when the
+      PhonePe gateway is selected (the script just sits unused).
+    -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   </head>
   <body>
     <div id="root"></div>

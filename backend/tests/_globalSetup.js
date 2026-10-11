@@ -29,6 +29,10 @@ delete process.env.SMTP_PORT;
 delete process.env.SMTP_USER;
 delete process.env.SMTP_PASS;
 delete process.env.EMAIL_FROM;
+// Pin the payment gateway so the suite exercises the PhonePe flow regardless of
+// what a developer put in backend/.env. Razorpay is covered by unit tests that
+// mock the env module.
+process.env.PAYMENT_GATEWAY = 'phonepe';
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
@@ -37,6 +41,9 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 // never attempt a live send.
 process.env.NODE_ENV = 'test';
 process.env.EMAIL_PROVIDER = 'stub';
+// dotenv won't override the already-set PAYMENT_GATEWAY above, but re-assert in
+// case an earlier import loaded a different value.
+process.env.PAYMENT_GATEWAY = 'phonepe';
 
 function deriveTestUrl() {
   if (process.env.TEST_DATABASE_URL) return process.env.TEST_DATABASE_URL;

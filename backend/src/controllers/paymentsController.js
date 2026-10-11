@@ -12,6 +12,18 @@ async function topup(req, res, next) {
   } catch (e) { next(e); }
 }
 
+async function verifyRazorpay(req, res, next) {
+  try {
+    const result = await svc.verifyRazorpayPayment({
+      user_id: req.user.id,
+      razorpay_order_id: req.body?.razorpay_order_id,
+      razorpay_payment_id: req.body?.razorpay_payment_id,
+      razorpay_signature: req.body?.razorpay_signature,
+    });
+    res.json(result);
+  } catch (e) { next(e); }
+}
+
 async function getStatus(req, res, next) {
   try {
     const payment = await svc.getPaymentByOrderId({
@@ -33,4 +45,4 @@ async function listMine(req, res, next) {
   } catch (e) { next(e); }
 }
 
-module.exports = { topup, getStatus, listMine };
+module.exports = { topup, verifyRazorpay, getStatus, listMine };

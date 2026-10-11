@@ -75,6 +75,10 @@ export const wallet = {
 
 export const payments = {
   topup:    (amount_paise) => api.post('/payments/topup', { amount_paise }).then((r) => r.data),
+  // Razorpay Standard Checkout hands the browser (order_id, payment_id,
+  // signature) on success; the backend re-derives the HMAC and settles the
+  // payment. Signature mismatch is rejected server-side.
+  razorpayVerify: (body) => api.post('/payments/razorpay/verify', body).then((r) => r.data),
   // The order id reaches us from a query string the user may have hand-edited,
   // pasted or had mangled by a chat client. Interpolating it raw would let a
   // '#', '?', '&' or space truncate or reshape the path, which the edge rejects
