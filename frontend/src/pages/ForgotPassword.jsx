@@ -28,13 +28,13 @@ export default function ForgotPassword() {
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
-        <h1 className="text-2xl font-bold text-slate-900 text-center">Forgot your password?</h1>
-        <p className="text-center text-slate-600 mt-1">We'll email you a reset link.</p>
+        <h1 className="text-2xl font-bold text-foreground text-center">Forgot your password?</h1>
+        <p className="text-center text-muted-foreground mt-1">We'll email you a reset link.</p>
 
         <Card className="mt-6">
           <CardBody>
             {done ? (
-              <p className="text-slate-700">
+              <p className="text-foreground/80">
                 If <strong>{email}</strong> is registered, a reset link has been sent. Check your inbox.
               </p>
             ) : (

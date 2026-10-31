@@ -150,8 +150,8 @@ export default function Book() {
                   onClick={() => setPicked(s)}
                   className={`px-3 py-2 rounded-lg border text-sm ${
                     picked === s
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-300 bg-white hover:border-slate-400'
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border bg-card text-foreground hover:border-primary/60'
                   }`}
                 >
                   {formatTime(s)}

@@ -2,6 +2,8 @@
 
 const { query, withTransaction } = require('../config/db');
 const { bad, conflict, notFound, forbidden } = require('../utils/errors');
+const email = require('./emailService');
+const notifications = require('./notificationService');
 
 // --- Mentor language guardrails -------------------------------------------
 //
@@ -65,6 +67,65 @@ function ensureCleanMentorLanguage({ headline, bio }) {
 
 // --- Apply (mentee → mentor) ------------------------------------------------
 
+// Tell every active admin (plus anything in ADMIN_NOTIFY_EMAILS) that a new
+// mentor application arrived. Fire-and-forget: a mail failure must never fail
+// the application itself, so every step is caught and logged.
+async function notifyAdminsOfApplication({ user_id, profile }) {
+  try {
+    const u = (await query(`SELECT full_name, email FROM users WHERE id = $1`, [user_id])).rows[0];
+    const tier = (await query(
+      `SELECT display_name, per_minute_paise FROM pricing_tiers WHERE id = $1`,
+      [profile.pricing_tier_id]
+    )).rows[0];
+    const tagIds = Array.isArray(profile.tag_ids) ? profile.tag_ids.map(Number).filter(Boolean) : [];
+    const tags = tagIds.length
+      ? (await query(`SELECT display_name FROM tags WHERE id = ANY($1::bigint[])`, [tagIds])).rows.map((r) => r.display_name)
+      : [];
+    const admins = (await query(
+      `SELECT id, email FROM users
+        WHERE role = 'admin' AND is_active = TRUE AND email NOT LIKE '%@unmute.internal'`
+    )).rows;
+    const extra = (process.env.ADMIN_NOTIFY_EMAILS || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const recipients = [...new Set([...admins.map((a) => a.email), ...extra].map((e) => e.toLowerCase()))];
+
+    const base = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+    const link = `${base}/admin?tab=apps`;
+    const rate_label = tier ? `${tier.display_name} (Rs ${tier.per_minute_paise / 100}/min)` : '-';
+
+    for (const to of recipients) {
+      try {
+        await email.sendEmail(email.mentorApplicationAdminEmail({
+          to,
+          applicant_name: u?.full_name,
+          applicant_email: u?.email,
+          headline: profile.headline,
+          bio: profile.bio,
+          years_experience: profile.years_experience,
+          languages: profile.languages,
+          rate_label,
+          tags,
+          link,
+        }));
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('[mentor-apply] admin email failed for', to, e.message);
+      }
+    }
+    for (const a of admins) {
+      await notifications.notify({
+        user_id: a.id,
+        kind: 'mentor_application',
+        title: `New mentor application: ${u?.full_name || u?.email}`,
+        body: profile.headline || null,
+        link_url: '/admin?tab=apps',
+      });
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[mentor-apply] admin notify failed:', e.message);
+  }
+}
+
 async function apply({ user_id, profile }) {
   if (!profile) throw bad('missing_profile');
   const required = ['pricing_tier_id', 'headline', 'bio'];
@@ -73,7 +134,7 @@ async function apply({ user_id, profile }) {
   }
   ensureCleanMentorLanguage({ headline: profile.headline, bio: profile.bio });
 
-  return withTransaction(async (client) => {
+  const assembled = await withTransaction(async (client) => {
     // Verify pricing tier exists + active
     const tier = await client.query(
       `SELECT id FROM pricing_tiers WHERE id = $1 AND is_active = TRUE`,
@@ -142,6 +203,10 @@ async function apply({ user_id, profile }) {
 
     return assemble(client, mentor);
   });
+
+  // Committed: now alert admins (not awaited, never blocks the response).
+  notifyAdminsOfApplication({ user_id, profile }).catch(() => {});
+  return assembled;
 }
 
 // --- Get my mentor profile --------------------------------------------------

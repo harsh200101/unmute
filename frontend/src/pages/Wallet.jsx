@@ -292,7 +292,7 @@ export default function Wallet() {
       </Card>
 
       <Modal open={topupOpen} onClose={() => setTopupOpen(false)} title="Top up wallet">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted-foreground">
           {GATEWAY_LABEL === 'Razorpay'
             ? "You'll complete the payment in a secure Razorpay window."
             : "You'll be redirected to PhonePe to complete the payment."}
@@ -304,8 +304,8 @@ export default function Wallet() {
               onClick={() => setTopupAmount(p)}
               className={`px-3 py-3 rounded-lg border text-sm font-semibold ${
                 topupAmount === p
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-300 bg-white hover:border-slate-400'
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-card text-foreground hover:border-primary/60'
               }`}
             >
               ₹{p / 100}
@@ -320,7 +320,9 @@ export default function Wallet() {
               min={50}
               max={500000}
               step={50}
-              value={topupAmount / 100}
+              value={topupAmount ? topupAmount / 100 : ''}
+              placeholder="Enter amount"
+              inputMode="numeric"
               onChange={(e) => setTopupAmount(Math.round(Number(e.target.value) * 100) || 0)}
             />
           </Field>

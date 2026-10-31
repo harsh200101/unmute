@@ -327,7 +327,7 @@ function MentorApps() {
       >
         <Field label="Reviewer notes (optional)" htmlFor="notes">
           <textarea id="notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
+            className="w-full rounded-lg border border-border bg-card text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
             placeholder={decision?.action === 'approve' ? 'Welcome message…' : 'Reason for rejection…'} />
         </Field>
         <div className="mt-4 flex justify-end gap-2">
@@ -401,7 +401,7 @@ function KYC() {
       >
         <Field label="Reviewer notes (optional)" htmlFor="kyc_notes">
           <textarea id="kyc_notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40" />
+            className="w-full rounded-lg border border-border bg-card text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40" />
         </Field>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => { setDecision(null); setNotes(''); }}>Cancel</Button>
@@ -445,7 +445,7 @@ function Withdrawals() {
         {['pending', 'processing', 'succeeded', 'failed', 'reversed'].map((s) => (
           <button key={s} onClick={() => setStatusFilter(s)}
             className={`px-3 py-1.5 text-sm rounded-full border ${
-              statusFilter === s ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-300'
+              statusFilter === s ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-foreground border-border'
             }`}>
             {s}
           </button>
@@ -632,7 +632,7 @@ function Users() {
       <div className="flex gap-2 mb-4">
         <Input placeholder="Search name or email…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select value={role} onChange={(e) => setRole(e.target.value)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+          className="rounded-lg border border-border bg-card text-foreground px-3 py-2 text-sm">
           <option value="">Any role</option>
           <option value="mentee">Mentee</option>
           <option value="mentor">Mentor</option>

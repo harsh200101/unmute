@@ -108,8 +108,8 @@ export default function MentorAvailability() {
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       <header className="mb-6 flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Availability</h1>
-          <p className="text-slate-600 mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Availability</h1>
+          <p className="text-muted-foreground mt-1">
             Set the recurring weekly slots you offer. Each slot is exactly 60 minutes.
           </p>
         </div>
@@ -118,27 +118,27 @@ export default function MentorAvailability() {
 
       <Card>
         <CardHeader>
-          <h2 className="font-semibold text-slate-900">Weekly template</h2>
-          <p className="text-xs text-slate-500 mt-1">Times are in your local timezone (set on your mentor profile).</p>
+          <h2 className="font-semibold text-foreground">Weekly template</h2>
+          <p className="text-xs text-muted-foreground mt-1">Times are in your local timezone (set on your mentor profile).</p>
         </CardHeader>
         <CardBody className="space-y-3">
           {DOW.map((label, day) => (
             <div key={day} className="flex items-start gap-4 py-2 border-b border-slate-100 last:border-0">
-              <div className="w-24 shrink-0 text-sm font-medium text-slate-700 pt-2">{label}</div>
+              <div className="w-24 shrink-0 text-sm font-medium text-foreground/80 pt-2">{label}</div>
               <div className="flex-1">
                 {byDay[day].length === 0 ? (
-                  <p className="text-sm text-slate-400 py-2">No slots</p>
+                  <p className="text-sm text-muted-foreground py-2">No slots</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {byDay[day].map((s) => (
-                      <div key={s.idx} className="flex items-center gap-1 bg-slate-100 rounded-lg px-2 py-1.5">
+                      <div key={s.idx} className="flex items-center gap-1 bg-muted rounded-lg px-2 py-1.5">
                         <input
                           type="time"
                           value={s.start_time_local}
                           onChange={(e) => updateSlot(s.idx, e.target.value)}
                           className="bg-transparent text-sm focus:outline-none"
                         />
-                        <button onClick={() => removeSlot(s.idx)} className="text-slate-500 hover:text-rose-600" aria-label="Remove">
+                        <button onClick={() => removeSlot(s.idx)} className="text-muted-foreground hover:text-rose-600" aria-label="Remove">
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -156,8 +156,8 @@ export default function MentorAvailability() {
 
       <Card className="mt-6">
         <CardHeader>
-          <h2 className="font-semibold text-slate-900">One-off overrides</h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <h2 className="font-semibold text-foreground">One-off overrides</h2>
+          <p className="text-xs text-muted-foreground mt-1">
             Block a specific slot (vacation, sick day) or add a one-off slot outside your template.
           </p>
         </CardHeader>
@@ -170,7 +170,7 @@ export default function MentorAvailability() {
             <Field label="Action" htmlFor="ov_action">
               <select id="ov_action" value={newOverride.action}
                 onChange={(e) => setNewOverride({ ...newOverride, action: e.target.value })}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                className="rounded-lg border border-border bg-card text-foreground px-3 py-2 text-sm">
                 <option value="block">Block</option>
                 <option value="add">Add</option>
               </select>
@@ -183,9 +183,9 @@ export default function MentorAvailability() {
             <Button onClick={addOverride}>Add</Button>
           </div>
 
-          <div className="mt-5 divide-y divide-slate-100">
+          <div className="mt-5 divide-y divide-border">
             {overrides.length === 0 ? (
-              <p className="text-sm text-slate-400 py-3">No overrides set.</p>
+              <p className="text-sm text-muted-foreground py-3">No overrides set.</p>
             ) : overrides.map((o) => (
               <div key={o.id} className="flex items-center justify-between py-2">
                 <div>
@@ -194,11 +194,11 @@ export default function MentorAvailability() {
                   }`}>
                     {o.action.toUpperCase()}
                   </span>
-                  <span className="ml-3 text-sm text-slate-700">{formatDate(o.slot_at)}</span>
-                  {o.reason && <span className="ml-2 text-xs text-slate-500">— {o.reason}</span>}
+                  <span className="ml-3 text-sm text-foreground/80">{formatDate(o.slot_at)}</span>
+                  {o.reason && <span className="ml-2 text-xs text-muted-foreground">— {o.reason}</span>}
                 </div>
                 <button onClick={() => deleteOverride(o.id)}
-                  className="text-slate-500 hover:text-rose-600" aria-label="Remove">
+                  className="text-muted-foreground hover:text-rose-600" aria-label="Remove">
                   <Trash2 size={16} />
                 </button>
               </div>

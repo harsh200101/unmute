@@ -127,7 +127,7 @@ export default function UserProfile() {
               setShared={(v) => setShared('gender', v)}
             >
               <select id="gender" value={profile.gender || ''} onChange={(e) => patch('gender', e.target.value || null)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                className="w-full rounded-lg border border-border bg-card text-foreground px-3 py-2 text-sm">
                 <option value="">—</option>
                 <option value="female">Female</option>
                 <option value="male">Male</option>
@@ -145,7 +145,7 @@ export default function UserProfile() {
               setShared={(v) => setShared('marital_status', v)}
             >
               <select id="ms" value={profile.marital_status || ''} onChange={(e) => patch('marital_status', e.target.value || null)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                className="w-full rounded-lg border border-border bg-card text-foreground px-3 py-2 text-sm">
                 <option value="">—</option>
                 <option value="single">Single</option>
                 <option value="in_relationship">In a relationship</option>

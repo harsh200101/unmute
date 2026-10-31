@@ -542,8 +542,47 @@ function passwordResetEmail({ to, full_name, link }) {
   };
 }
 
+function mentorApplicationAdminEmail({
+  to, applicant_name, applicant_email, headline, bio, years_experience,
+  languages, rate_label, tags, link,
+}) {
+  const who = applicant_name || applicant_email;
+  const bioShort = String(bio || '').length > 400 ? String(bio).slice(0, 400) + '...' : String(bio || '');
+  const details = [
+    `Applicant: ${who} <${applicant_email}>`,
+    `Headline: ${headline || '-'}`,
+    `Experience: ${years_experience || 0} yrs`,
+    `Languages: ${(languages || []).join(', ') || '-'}`,
+    `Rate: ${rate_label || '-'}`,
+    `Topics: ${(tags || []).join(', ') || '-'}`,
+    '',
+    `Bio: ${bioShort}`,
+  ];
+  return {
+    to,
+    kind: 'mentor_application_admin',
+    subject: `New mentor application: ${who}`,
+    text: [
+      'A new mentor application is waiting for your review.',
+      '',
+      ...details,
+      '',
+      `Review it here: ${link}`,
+    ].join('\n'),
+    html: emailShell({
+      heading: 'New mentor application',
+      intro: `${who} (${applicant_email}) applied to become a mentor. ${headline ? 'Headline: ' + headline + '. ' : ''}Experience: ${years_experience || 0} yrs. Rate: ${rate_label || '-'}. Topics: ${(tags || []).join(', ') || '-'}.`,
+      ctaLabel: 'Review application',
+      link,
+      footnote: bioShort ? `Bio: ${bioShort}` : 'Open the Admin portal to approve or reject.',
+      mutedNote: 'You are receiving this because you are an Unmute admin.',
+    }),
+  };
+}
+
 module.exports = {
   sendEmail,
+  mentorApplicationAdminEmail,
   verificationEmail,
   passwordResetEmail,
   bookingConfirmedEmail,

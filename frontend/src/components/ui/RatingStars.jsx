@@ -19,7 +19,7 @@ export default function RatingStars({ value = 0, max = 5, size = 'sm', showNumbe
         })}
       </div>
       {showNumber && (
-        <span className="text-xs text-slate-600">
+        <span className="text-xs text-muted-foreground">
           {v.toFixed(1)}{count != null && ` (${count})`}
         </span>
       )}

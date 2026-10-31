@@ -308,7 +308,7 @@ export default function BookingDetail() {
                   key={s}
                   onClick={() => setPickedSlot(s)}
                   className={`text-left px-3 py-2 rounded-lg border text-sm ${
-                    pickedSlot === s ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white hover:border-slate-400'
+                    pickedSlot === s ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-foreground hover:border-primary/60'
                   }`}
                 >
                   {formatDate(s)}
@@ -437,7 +437,7 @@ function ReviewSection({ booking, youAreMentor, other, myReview, theirReview, lo
                         : 'How did this session go? What was helpful?'
                     }
                     maxLength={1000}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
+                    className="w-full rounded-lg border border-border bg-card text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
                   />
                 </Field>
                 {!youAreMentor && (
@@ -681,7 +681,7 @@ function NoteField({ label, value, onChange, placeholder }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
+        className="w-full rounded-lg border border-border bg-card text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
       />
     </div>
   );

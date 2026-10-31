@@ -16,7 +16,7 @@ const STATUS_LABEL = {
   processing: { label: 'Processing', tone: 'bg-blue-50 text-blue-800' },
   succeeded: { label: 'Paid out', tone: 'bg-emerald-50 text-emerald-800' },
   failed: { label: 'Failed', tone: 'bg-rose-50 text-rose-800' },
-  reversed: { label: 'Reversed', tone: 'bg-slate-100 text-slate-800' },
+  reversed: { label: 'Reversed', tone: 'bg-muted text-foreground' },
 };
 
 export default function MentorEarnings() {
@@ -75,8 +75,8 @@ export default function MentorEarnings() {
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       <header className="flex items-center justify-between flex-wrap gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Earnings</h1>
-          <p className="text-slate-600 mt-1">Withdraw your earnings to your bank account.</p>
+          <h1 className="text-2xl font-bold text-foreground">Earnings</h1>
+          <p className="text-muted-foreground mt-1">Withdraw your earnings to your bank account.</p>
         </div>
         <Button onClick={() => setReqOpen(true)} disabled={!canWithdraw || balance < MIN_PAYOUT_PAISE}>
           <ArrowUpRight size={16} /> Request withdrawal
@@ -89,8 +89,8 @@ export default function MentorEarnings() {
           <CardBody className="flex items-start gap-3">
             <AlertCircle className={kycStatus === 'rejected' ? 'text-rose-600' : 'text-amber-600'} size={20} />
             <div className="flex-1">
-              <p className="font-semibold text-slate-900">KYC required to withdraw</p>
-              <p className="text-sm text-slate-600 mt-1">
+              <p className="font-semibold text-foreground">KYC required to withdraw</p>
+              <p className="text-sm text-muted-foreground mt-1">
                 {kycStatus === 'pending' && 'Your KYC submission is pending admin review.'}
                 {kycStatus === 'rejected' && 'Your previous KYC was rejected. Resubmit to continue.'}
                 {!kycStatus && 'Submit your PAN + bank details so we can pay you out.'}
@@ -109,7 +109,7 @@ export default function MentorEarnings() {
         <Card className="mb-4 border-emerald-300">
           <CardBody className="flex items-center gap-3">
             <ShieldCheck className="text-emerald-600" size={18} />
-            <span className="text-sm text-slate-700">KYC approved — withdrawals enabled.</span>
+            <span className="text-sm text-foreground/80">KYC approved — withdrawals enabled.</span>
           </CardBody>
         </Card>
       )}
@@ -125,35 +125,35 @@ export default function MentorEarnings() {
             Minimum withdrawal: ₹{MIN_PAYOUT_PAISE / 100}
           </p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase tracking-wider text-slate-500">Total paid out</p>
-          <p className="text-3xl font-bold text-slate-900 mt-1">{formatINR(totalEarned)}</p>
-          <p className="text-xs text-slate-500 mt-2">Across {withdrawals.filter((w) => w.status === 'succeeded').length} withdrawals</p>
+        <div className="rounded-2xl border border-border bg-card text-card-foreground p-5">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">Total paid out</p>
+          <p className="text-3xl font-bold text-foreground mt-1">{formatINR(totalEarned)}</p>
+          <p className="text-xs text-muted-foreground mt-2">Across {withdrawals.filter((w) => w.status === 'succeeded').length} withdrawals</p>
         </div>
       </div>
 
       {/* History */}
       <Card className="mt-6">
         <CardHeader>
-          <h2 className="font-semibold text-slate-900">Withdrawal history</h2>
+          <h2 className="font-semibold text-foreground">Withdrawal history</h2>
         </CardHeader>
         <CardBody className="!p-0">
           {withdrawals.length === 0 ? (
-            <p className="text-sm text-slate-500 px-6 py-6 text-center">No withdrawals yet.</p>
+            <p className="text-sm text-muted-foreground px-6 py-6 text-center">No withdrawals yet.</p>
           ) : (
-            <ul className="divide-y divide-slate-100">
+            <ul className="divide-y divide-border">
               {withdrawals.map((w) => {
                 const s = STATUS_LABEL[w.status] || STATUS_LABEL.pending;
                 return (
                   <li key={w.uuid} className="px-6 py-3 flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900">{formatINR(w.amount_paise)}</p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-sm font-semibold text-foreground">{formatINR(w.amount_paise)}</p>
+                      <p className="text-xs text-muted-foreground">
                         Requested {formatDate(w.requested_at)}
                         {w.processed_at && <> · Processed {formatDate(w.processed_at)}</>}
                       </p>
                       {w.gateway_txn_id && (
-                        <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                        <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
                           {w.gateway_txn_id}
                         </p>
                       )}
@@ -173,7 +173,7 @@ export default function MentorEarnings() {
       </Card>
 
       <Modal open={reqOpen} onClose={() => setReqOpen(false)} title="Request withdrawal">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted-foreground">
           We'll transfer this amount to your verified bank account. Withdrawals are processed in weekly batches.
         </p>
         <div className="mt-4">
@@ -183,7 +183,7 @@ export default function MentorEarnings() {
               value={reqAmount / 100 || ''}
               onChange={(e) => setReqAmount(Math.round(Number(e.target.value) * 100) || 0)} />
           </Field>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Available: <strong>{formatINR(balance)}</strong> · Min: ₹{MIN_PAYOUT_PAISE / 100}
           </p>
         </div>
