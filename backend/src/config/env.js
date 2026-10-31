@@ -48,6 +48,40 @@ if (raw.SMTP_USER) {
   }
 }
 
+// --- PhonePe normalisation ---------------------------------------------------
+//
+// Older deployments used PHONEPE_BASE_URL for the API origin while the code
+// reads PHONEPE_HOST. Accept the legacy name so a stale .env does not silently
+// fall back to the stub provider (which is exactly what hid missing creds).
+if (!raw.PHONEPE_HOST && raw.PHONEPE_BASE_URL) raw.PHONEPE_HOST = raw.PHONEPE_BASE_URL;
+
+// Render injects RENDER_EXTERNAL_URL with the service's own public origin.
+// Adopting it means the PhonePe webhook callback is correct even when
+// API_PUBLIC_URL was forgotten in the dashboard.
+if (!raw.API_PUBLIC_URL && raw.RENDER_EXTERNAL_URL) {
+  raw.API_PUBLIC_URL = raw.RENDER_EXTERNAL_URL;
+  raw.__API_PUBLIC_URL_DERIVED__ = true;
+}
+
+// PhonePe V2 uses different hosts per environment. Default them from
+// PHONEPE_ENV (or NODE_ENV) so operators only set credentials, not URLs.
+const phonepeEnv =
+  (raw.PHONEPE_ENV || '').toLowerCase() ||
+  (raw.NODE_ENV === 'production' ? 'production' : 'sandbox');
+if (!raw.PHONEPE_ENV) raw.PHONEPE_ENV = phonepeEnv;
+if (!raw.PHONEPE_AUTH_HOST) {
+  raw.PHONEPE_AUTH_HOST =
+    phonepeEnv === 'production'
+      ? 'https://api.phonepe.com/apis/identity-manager'
+      : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+}
+if (!raw.PHONEPE_API_HOST) {
+  raw.PHONEPE_API_HOST =
+    phonepeEnv === 'production'
+      ? 'https://api.phonepe.com/apis/pg'
+      : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+}
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(5001),
@@ -123,6 +157,37 @@ const schema = z.object({
   // Changing it flips the flow with no code change. Defaults to phonepe so
   // existing behaviour (and the test suite) is unchanged until it is set.
   PAYMENT_GATEWAY: z.enum(['phonepe', 'razorpay']).default('phonepe'),
+
+  // --- PhonePe ---
+  // V2 (current) uses OAuth client credentials + checkout APIs. V1 (legacy)
+  // uses merchant id + salt key. V2 wins when both are present.
+  PHONEPE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
+  PHONEPE_CLIENT_ID: z.string().optional().default(''),
+  PHONEPE_CLIENT_SECRET: z.string().optional().default(''),
+  PHONEPE_CLIENT_VERSION: z.string().optional().default(''),
+  PHONEPE_AUTH_HOST: z.string().optional().default(''),
+  PHONEPE_API_HOST: z.string().optional().default(''),
+
+  // Webhook authentication. PhonePe offers SHA256(username:password) via the
+  // Authorization header, or HMAC-SHA256 of the raw payload. Pick the one
+  // configured in the PhonePe dashboard. Unset webhook credentials fail closed.
+  PHONEPE_WEBHOOK_AUTH: z.enum(['sha', 'hmac']).default('sha'),
+  PHONEPE_WEBHOOK_USERNAME: z.string().optional().default(''),
+  PHONEPE_WEBHOOK_PASSWORD: z.string().optional().default(''),
+  PHONEPE_WEBHOOK_SECRET: z.string().optional().default(''),
+
+  // Local dev escape hatch. Production / staging must NEVER stub a payment:
+  // a fake success is money the user believes they topped up. Only local dev
+  // can opt in, and the test suite always stubs for determinism.
+  PHONEPE_ALLOW_STUB: z
+    .enum(['true', 'false', '1', '0'])
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+
+  // How long PhonePe keeps the checkout page open, in seconds. Mirrors the
+  // `expireAfter` field on the V2 create-payment call.
+  PHONEPE_EXPIRE_AFTER_SECONDS: z.coerce.number().int().min(300).max(3600).default(1200),
 
   PHONEPE_MERCHANT_ID: z.string().optional().default(''),
   PHONEPE_SALT_KEY: z.string().optional().default(''),
@@ -272,4 +337,61 @@ if (module.exports.EMAIL_PROVIDER === 'stub') {
     );
   }
   /* eslint-enable no-console */
+}
+
+// --- PhonePe self-check -----------------------------------------------------
+//
+// A production deploy must not run the stub provider: it shows a fake checkout
+// success and credits no money. Say so at boot (and again if a top-up is
+// attempted) instead of failing silently.
+const _phonepeV2 = Boolean(
+  module.exports.PHONEPE_CLIENT_ID &&
+  module.exports.PHONEPE_CLIENT_SECRET &&
+  module.exports.PHONEPE_CLIENT_VERSION
+);
+const _phonepeV1 = Boolean(
+  module.exports.PHONEPE_MERCHANT_ID &&
+  module.exports.PHONEPE_SALT_KEY &&
+  module.exports.PHONEPE_HOST
+);
+if (module.exports.PAYMENT_GATEWAY === 'phonepe') {
+  if (module.exports.NODE_ENV === 'production' && !_phonepeV2 && !_phonepeV1) {
+    /* eslint-disable no-console */
+    console.warn(
+      [
+        '',
+        'PHONEPE IS NOT CONFIGURED - TOP-UPS WILL FAIL',
+        '  Set PHONEPE_CLIENT_ID, PHONEPE_CLIENT_SECRET and',
+        '  PHONEPE_CLIENT_VERSION (V2), or the legacy PHONEPE_MERCHANT_ID,',
+        '  PHONEPE_SALT_KEY and PHONEPE_HOST (V1), in the host environment.',
+        '  Also set API_PUBLIC_URL to this backend\'s public origin so',
+        '  PhonePe can deliver the webhook.',
+        '',
+      ].join('\n')
+    );
+    /* eslint-enable no-console */
+  } else if (_phonepeV2 || _phonepeV1) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[payments] PhonePe ${_phonepeV2 ? 'V2' : 'V1'} enabled (${module.exports.PHONEPE_ENV}), ` +
+      `webhook auth=${module.exports.PHONEPE_WEBHOOK_AUTH}`
+    );
+  }
+  if (module.exports.NODE_ENV === 'production' && !module.exports.API_PUBLIC_URL) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[payments] API_PUBLIC_URL is empty. PhonePe cannot deliver webhooks without it.'
+    );
+  }
+  if (module.exports.PHONEPE_ALLOW_STUB && module.exports.NODE_ENV !== 'development') {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[payments] WARNING: PHONEPE_ALLOW_STUB=true in NODE_ENV=${module.exports.NODE_ENV}. ` +
+      'Top-ups will use the fake stub provider.'
+    );
+  }
+}
+if (raw.__API_PUBLIC_URL_DERIVED__) {
+  // eslint-disable-next-line no-console
+  console.log(`[payments] API_PUBLIC_URL derived from RENDER_EXTERNAL_URL: ${module.exports.API_PUBLIC_URL}`);
 }

@@ -137,37 +137,165 @@ async function verifyRazorpayPayment({
 // --- Webhook handler (PhonePe) -----------------------------------------------
 
 // PhonePe's webhook payload (real or stub) ultimately tells us:
-//   - which merchantTransactionId (= our gateway_order_id) just settled
+//   - which merchantOrderId / merchantTransactionId (= our gateway_order_id)
+//     just settled
 //   - the PhonePe txn id (transactionId)
-//   - the final state (PAYMENT_SUCCESS, PAYMENT_ERROR, etc.)
-async function handleWebhook({ headers, body }) {
-  const v = phonepe.verifyWebhook({ headers, body });
-  // The interesting shape sits at v.payload.data — accept either shape because
-  // the stub may pass an already-flat object.
-  const data = v.payload?.data || v.payload || {};
-  const gateway_order_id = data.merchantTransactionId || body?.merchantTransactionId;
-  const gateway_txn_id = data.transactionId || body?.transactionId || null;
-  const state = data.state || body?.state || (data.code === 'PAYMENT_SUCCESS' ? 'COMPLETED' : null);
-  const amount_paise = data.amount || body?.amount;
+//   - the final state (COMPLETED / PAYMENT_SUCCESS / FAILED, etc.)
+//
+// V1 wraps everything in { response: base64(data) }; V2 posts plain JSON with
+// the useful fields under `payload`, plus an `event` name. Accept both.
+async function handleWebhook({ headers, body, rawBody }) {
+  const v = phonepe.verifyWebhook({ headers, body, rawBody });
+  const envelope = v.payload || {};
+  const event = envelope.event || envelope.type || null;
+  const data = envelope.payload || envelope.data || envelope;
+
+  const details = Array.isArray(data.paymentDetails) ? data.paymentDetails : [];
+  const rootState = String(data.state || '').toUpperCase();
+  const chosen =
+    details.find((d) => String(d.state || '').toUpperCase() === rootState) ||
+    (details.length ? details[details.length - 1] : {});
+
+  const gateway_order_id =
+    data.merchantOrderId ||
+    data.merchantTransactionId ||
+    envelope.merchantOrderId ||
+    body?.merchantTransactionId;
+  const gateway_txn_id =
+    chosen.transactionId || data.transactionId || body?.transactionId || null;
+  const state =
+    data.state ||
+    chosen.state ||
+    body?.state ||
+    (data.code === 'PAYMENT_SUCCESS' ? 'COMPLETED' : null);
+  const amount = data.amount ?? chosen.amount ?? body?.amount;
+  const amount_paise =
+    amount != null && Number.isFinite(Number(amount)) ? Number(amount) : undefined;
+
+  // Refund lifecycle events do not move the wallet; a top-up refund would be
+  // handled by a dedicated flow. Ignoring beats marking a settled payment as
+  // failed (which would imply the top-up never happened). Some refund payloads
+  // omit `event` entirely, so also detect the refundId.
+  const isRefund =
+    (event && /refund/i.test(String(event))) ||
+    Boolean(data.refundId || envelope.refundId);
+  if (isRefund) {
+    return { ok: true, ignored: true, event: event || 'refund' };
+  }
 
   if (!gateway_order_id) throw bad('webhook_missing_order_id');
 
+  const normalizedState = String(state || '').toUpperCase();
   const succeeded =
-    state === 'PAYMENT_SUCCESS' ||
-    state === 'COMPLETED' ||
-    state === 'SUCCEEDED' ||
+    normalizedState === 'PAYMENT_SUCCESS' ||
+    normalizedState === 'COMPLETED' ||
+    normalizedState === 'SUCCEEDED' ||
+    event === 'checkout.order.completed' ||
     body?.success === true;
 
   if (!succeeded) {
     return markPaymentFailed({
       gateway_order_id,
-      reason: data.responseCode || data.code || 'unknown',
+      reason:
+        chosen.errorCode || data.errorCode || data.responseCode || data.code || event || 'unknown',
       gateway_txn_id,
-      payload: body,
+      payload: v.payload,
     });
   }
 
-  return settlePaymentSuccess({ gateway_order_id, gateway_txn_id, amount_paise, payload: body });
+  return settlePaymentSuccess({
+    gateway_order_id,
+    gateway_txn_id,
+    amount_paise,
+    payload: v.payload,
+  });
+}
+
+// --- Active reconciliation ---------------------------------------------------
+//
+// Webhooks are best-effort: PhonePe retries, but a deploy can be down, a
+// firewall can drop the callback, or the dashboard URL can be wrong. Polling
+// the order status closes that gap and is what PhonePe's own go-live checklist
+// asks for. It is idempotent because settlement uses the payments row lock and
+// a UNIQUE wallet idempotency key.
+
+async function syncPhonepePayment({ gateway_order_id }) {
+  if (!phonepe.isConfigured()) return { ok: false, skipped: 'not_configured' };
+
+  const r = await query(`SELECT * FROM payments WHERE gateway_order_id = $1`, [gateway_order_id]);
+  const payment = r.rows[0];
+  if (!payment) throw notFound('payment_not_found');
+  if (payment.gateway !== 'phonepe') return { ok: false, skipped: 'not_phonepe' };
+  if (payment.status === 'succeeded' || payment.status === 'failed') {
+    return { ok: true, idempotent: true, payment: publicPayment(payment) };
+  }
+
+  const st = await phonepe.fetchOrderStatus({ gateway_order_id });
+  const state = String(st.state || '').toUpperCase();
+
+  if (state === 'COMPLETED' || state === 'SUCCESS' || state === 'PAYMENT_SUCCESS') {
+    return settlePaymentSuccess({
+      gateway_order_id,
+      gateway_txn_id: st.gateway_txn_id,
+      amount_paise: st.amount_paise == null ? undefined : st.amount_paise,
+      payload: st.raw,
+    });
+  }
+
+  if (['FAILED', 'ERROR', 'CANCELLED', 'EXPIRED'].includes(state)) {
+    return markPaymentFailed({
+      gateway_order_id,
+      reason: st.failure_reason || state.toLowerCase(),
+      gateway_txn_id: st.gateway_txn_id,
+      payload: st.raw,
+    });
+  }
+
+  // Still PENDING: record that we reached the gateway so the UI can tell
+  // "awaiting confirmation" apart from "never opened checkout".
+  if (payment.status === 'created') {
+    const up = await query(
+      `UPDATE payments
+          SET status = 'pending',
+              raw_response = COALESCE(raw_response, '{}'::jsonb) || $2::jsonb,
+              updated_at = NOW()
+        WHERE id = $1 AND status = 'created'
+        RETURNING *`,
+      [payment.id, st.raw || {}]
+    );
+    if (up.rows[0]) return { ok: true, pending: true, payment: publicPayment(up.rows[0]) };
+  }
+
+  return { ok: true, pending: true, payment: publicPayment(payment) };
+}
+
+async function reconcilePendingPhonepePayments({ limit = 100, minAgeSeconds = 20 } = {}) {
+  if (!phonepe.isConfigured()) return { checked: 0, skipped: 'not_configured' };
+
+  const r = await query(
+    `SELECT gateway_order_id FROM payments
+      WHERE gateway = 'phonepe'
+        AND status IN ('created','pending')
+        AND created_at < NOW() - ($1 || ' seconds')::interval
+      ORDER BY created_at ASC
+      LIMIT $2`,
+    [String(minAgeSeconds), Math.min(Math.max(Number(limit) || 100, 1), 500)]
+  );
+
+  const summary = { checked: r.rows.length, settled: 0, failed: 0, pending: 0, errors: 0 };
+  for (const row of r.rows) {
+    try {
+      const out = await syncPhonepePayment({ gateway_order_id: row.gateway_order_id });
+      if (out?.payment?.status === 'succeeded') summary.settled += 1;
+      else if (out?.payment?.status === 'failed') summary.failed += 1;
+      else summary.pending += 1;
+    } catch (err) {
+      summary.errors += 1;
+      // eslint-disable-next-line no-console
+      console.warn(`[payments] reconcile failed for ${row.gateway_order_id}: ${err.message}`);
+    }
+  }
+  return summary;
 }
 
 // --- Shared settlement (used by PhonePe webhook + Razorpay verify) -----------
@@ -368,6 +496,31 @@ async function getPaymentByOrderId({ user_id, gateway_order_id }) {
   const payment = r.rows[0];
   if (!payment) throw notFound('payment_not_found');
 
+  // Ask PhonePe directly while the payment is still open. This covers a missed
+  // webhook: the browser returns to /wallet and polls, and the real state is
+  // fetched instead of waiting for a callback that may never arrive.
+  let effective = payment;
+  if (
+    payment.gateway === 'phonepe' &&
+    (payment.status === 'created' || payment.status === 'pending') &&
+    phonepe.isConfigured()
+  ) {
+    try {
+      const synced = await syncPhonepePayment({ gateway_order_id });
+      if (synced?.payment) {
+        if (synced.payment.status === 'succeeded' || synced.payment.status === 'failed') {
+          return synced.payment;
+        }
+        effective = { ...payment, status: synced.payment.status };
+      }
+    } catch (err) {
+      // A gateway hiccup must not break the status endpoint; fall back to the
+      // last stored state and let reconciliation retry.
+      // eslint-disable-next-line no-console
+      console.warn(`[payments] status sync failed for ${gateway_order_id}: ${err.message}`);
+    }
+  }
+
   // Report 'expired' to the caller WITHOUT writing it to the row.
   //
   // This is deliberately not an UPDATE to 'failed'. settlePaymentSuccess()
@@ -378,10 +531,10 @@ async function getPaymentByOrderId({ user_id, gateway_order_id }) {
   // because the webhook may still arrive at any point and must be allowed to
   // settle it. A cleanup job can expire these later, once it can also check
   // the gateway for a terminal state first.
-  if (isStaleCheckout(payment)) {
-    return { ...publicPayment(payment), status: 'expired', failure_reason: 'checkout_expired' };
+  if (isStaleCheckout(effective)) {
+    return { ...publicPayment(effective), status: 'expired', failure_reason: 'checkout_expired' };
   }
-  return publicPayment(payment);
+  return publicPayment(effective);
 }
 
 async function listMyPayments({ user_id, limit = 50, offset = 0 }) {
@@ -413,6 +566,8 @@ module.exports = {
   createTopup,
   verifyRazorpayPayment,
   handleWebhook,
+  syncPhonepePayment,
+  reconcilePendingPhonepePayments,
   getPaymentByOrderId,
   listMyPayments,
   MIN_TOPUP_PAISE,

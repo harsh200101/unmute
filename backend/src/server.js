@@ -13,6 +13,7 @@ const cookieParser = require('cookie-parser');
 
 const env = require('./config/env');
 const { pool } = require('./config/db');
+const phonepe = require('./services/phonepeService');
 const authRoutes = require('./routes/auth.routes');
 const meRoutes = require('./routes/me.routes');
 const mentorRoutes = require('./routes/mentors.routes');
@@ -42,7 +43,40 @@ if (env.NODE_ENV === 'production') {
 app.use(helmet());
 app.use(compression());
 app.use(cookieParser());
-app.use(express.json({ limit: '1mb' }));
+// PhonePe V2 may post its webhook as `application/json` OR as `text/plain`
+// ("plain text payload" in their docs). Capture the exact bytes before any
+// parser so HMAC verification signs what PhonePe signed, then normalise JSON
+// so the rest of the app sees an object.
+app.use(
+  '/api/webhooks/phonepe',
+  express.text({ type: () => true, limit: '1mb' }),
+  (req, _res, next) => {
+    const raw = typeof req.body === 'string' ? req.body : '';
+    req.rawBody = Buffer.from(raw, 'utf8');
+    if (raw) {
+      try {
+        req.body = JSON.parse(raw);
+      } catch (_) {
+        // Leave it as text; verifyWebhook will reject it as invalid_payload.
+        req.body = raw;
+      }
+    } else {
+      req.body = {};
+    }
+    next();
+  }
+);
+
+// Keep the exact request bytes for any other webhook signature checks.
+// Re-serialising a parsed body changes whitespace/key order and breaks HMAC.
+app.use(
+  express.json({
+    limit: '1mb',
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
@@ -70,6 +104,15 @@ app.get('/healthz', (_req, res) => {
       // Distinguishes "credentials present" from "credentials missing" without
       // revealing them. Only meaningful for the smtp provider.
       authenticated: env.EMAIL_PROVIDER === 'smtp' ? Boolean(env.SMTP_USER && env.SMTP_PASS) : null,
+    },
+    // Answers "is the live gateway actually live?" without exposing secrets.
+    payments: {
+      gateway: env.PAYMENT_GATEWAY,
+      phonepe_configured: phonepe.isConfigured(),
+      phonepe_api_version: phonepe.apiVersion(),
+      phonepe_env: env.PHONEPE_ENV,
+      webhook_auth: env.PHONEPE_WEBHOOK_AUTH,
+      api_public_url_set: Boolean(env.API_PUBLIC_URL),
     },
   });
 });
@@ -134,6 +177,9 @@ if (require.main === module) {
     // Start the background billing scheduler (no-op in test env)
     // eslint-disable-next-line global-require
     require('./jobs/scheduler').start();
+    // Settle PhonePe payments whose webhook never arrived.
+    // eslint-disable-next-line global-require
+    require('./jobs/paymentReconciler').start();
   });
 }
 

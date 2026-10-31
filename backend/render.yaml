@@ -4,12 +4,12 @@ services:
     runtime: node
     plan: starter
     region: singapore
-    rootDir: backend-v2
+    rootDir: backend
     buildCommand: npm install
     startCommand: npm run migrate && npm start
     healthCheckPath: /readyz
     autoDeploy: true
-    branch: v2
+    branch: master
     envVars:
       - key: NODE_ENV
         value: production
@@ -36,15 +36,47 @@ services:
       - key: FRONTEND_URL
         sync: false                 # set manually in dashboard
 
-      # PhonePe — set production values in dashboard (sandbox in dev)
-      - key: PHONEPE_MERCHANT_ID
+      # PhonePe V2 — set the three client credentials in the dashboard.
+      # API keys live at business.phonepe.com -> Developer Settings -> API Keys
+      # with Test Mode OFF for production.
+      - key: PHONEPE_ENV
+        value: production
+      - key: PHONEPE_CLIENT_ID
         sync: false
-      - key: PHONEPE_SALT_KEY
+      - key: PHONEPE_CLIENT_SECRET
         sync: false
-      - key: PHONEPE_SALT_INDEX
-        value: "1"
-      - key: PHONEPE_HOST
-        value: https://api.phonepe.com/apis/hermes
+      - key: PHONEPE_CLIENT_VERSION
+        sync: false
+
+      # Must match the webhook authentication method configured in the PhonePe
+      # dashboard (Developer Settings -> Webhook). sha = username/password,
+      # hmac = checksum secret.
+      - key: PHONEPE_WEBHOOK_AUTH
+        sync: false                 # sha or hmac — must match the dashboard
+      - key: PHONEPE_WEBHOOK_USERNAME
+        sync: false
+      - key: PHONEPE_WEBHOOK_PASSWORD
+        sync: false
+      - key: PHONEPE_WEBHOOK_SECRET
+        sync: false
+
+      # Production must never fall back to the fake stub provider.
+      - key: PHONEPE_ALLOW_STUB
+        value: "false"
+
+      # PhonePe expireAfter for the checkout page, in seconds.
+      - key: PHONEPE_EXPIRE_AFTER_SECONDS
+        value: "1200"
+
+      # Legacy V1 only. Leave unset when using V2 (V2 takes precedence).
+      # - key: PHONEPE_MERCHANT_ID
+      #   sync: false
+      # - key: PHONEPE_SALT_KEY
+      #   sync: false
+      # - key: PHONEPE_SALT_INDEX
+      #   value: "1"
+      # - key: PHONEPE_HOST
+      #   value: https://api.phonepe.com/apis/hermes
 
       # This backend's own public origin. PhonePe POSTs the payment result to
       # ${API_PUBLIC_URL}/api/webhooks/phonepe, and that webhook is the ONLY

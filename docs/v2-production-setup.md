@@ -8,8 +8,8 @@ This is the checklist to take v2 from "all green locally" to "live in production
 
 | Concern | State |
 |---|---|
-| PhonePe sandbox | ✅ Wired (defaults in `.env.example`) |
-| PhonePe **production** | ⏳ Need merchant credentials |
+| PhonePe V2 (OAuth + checkout) | ✅ Implemented (sandbox + production hosts) |
+| PhonePe **production** | ⏳ Need client credentials + webhook details |
 | Agora | ⏳ Need App ID + Certificate |
 | Google OAuth | ⏳ Optional — leave empty to disable |
 | Email provider | ⏳ Currently in `stub` (logs to console) |
@@ -21,18 +21,54 @@ This is the checklist to take v2 from "all green locally" to "live in production
 
 ## 1. PhonePe
 
-**Local dev:** already set in `backend-v2/.env.example` — uses PhonePe's public UAT sandbox (`PGTESTPAYUAT86`). Top-ups work end-to-end via `/dev/phonepe-stub`.
+The backend now uses **PhonePe V2** (`/checkout/v2/pay` with OAuth), which is
+what the current PhonePe docs and UAT checklist target. V1 (merchant id + salt
+key) still works if your account has not migrated, but V2 takes precedence.
 
-**Production:** From your PhonePe merchant dashboard, copy the 3 values into your prod env:
+**Get credentials:** business.phonepe.com → toggle **Test Mode OFF** for
+production → Developer Settings → API Keys.
+
+**Backend env:**
 
 ```
-PHONEPE_MERCHANT_ID=<your_merchant_id>
-PHONEPE_SALT_KEY=<your_salt_key>
-PHONEPE_SALT_INDEX=<usually 1>
-PHONEPE_HOST=https://api.phonepe.com/apis/hermes
+PHONEPE_ENV=production
+PHONEPE_CLIENT_ID=<client id>
+PHONEPE_CLIENT_SECRET=<client secret>
+PHONEPE_CLIENT_VERSION=<client version>
 ```
 
-The v1 deploy uses the same merchant ID style on Render — pull from there if you've already onboarded.
+Hosts are derived from `PHONEPE_ENV`:
+- sandbox auth/payments: `https://api-preprod.phonepe.com/apis/pg-sandbox`
+- production auth: `https://api.phonepe.com/apis/identity-manager`
+- production payments/status: `https://api.phonepe.com/apis/pg`
+
+**Webhook:** Developer Settings → Webhook → Create Webhook.
+
+- URL: `https://<backend-host>/api/webhooks/phonepe`
+- Events: `checkout.order.completed`, `checkout.order.failed`
+  (refunds are ignored by the top-up flow)
+- Auth: choose **SHA** (set the same username/password here) or **HMAC**
+  (copy the generated secret).
+
+```
+PHONEPE_WEBHOOK_AUTH=sha          # or hmac
+PHONEPE_WEBHOOK_USERNAME=<webhook username>
+PHONEPE_WEBHOOK_PASSWORD=<webhook password>
+# PHONEPE_WEBHOOK_SECRET=<checksum secret>   # hmac only
+```
+
+Also set `API_PUBLIC_URL=https://<backend-host>` and
+`FRONTEND_URL=https://<frontend-host>`. On Render, `API_PUBLIC_URL` falls back
+to `RENDER_EXTERNAL_URL` when unset.
+
+**Reliability:** every 60s the backend polls PhonePe order status for open
+payments, and the status endpoint does the same on each poll. A missed webhook
+therefore still settles the top-up. Blank `PHONEPE_ALLOW_STUB` (default
+`false`) in production: top-ups fail loudly instead of faking success. Set it
+to `true` only for local dev.
+
+**Local dev:** leave the client credentials empty and set
+`PHONEPE_ALLOW_STUB=true` to use `/dev/phonepe-stub`.
 
 ---
 
@@ -209,7 +245,9 @@ Copy this into a GitHub issue or wherever you track launch work.
   - [ ] `DATABASE_URL` (auto from Render)
   - [ ] `JWT_SECRET` (generate fresh)
   - [ ] `FRONTEND_URL` = your production frontend URL
-  - [ ] `PHONEPE_MERCHANT_ID` / `PHONEPE_SALT_KEY` / `PHONEPE_HOST` (production values)
+  - [ ] `PHONEPE_CLIENT_ID` / `PHONEPE_CLIENT_SECRET` / `PHONEPE_CLIENT_VERSION`
+  - [ ] `PHONEPE_ENV=production`, `PHONEPE_WEBHOOK_AUTH` + matching credentials
+  - [ ] `API_PUBLIC_URL` = backend origin; webhook URL registered in PhonePe
   - [ ] `AGORA_APP_ID` / `AGORA_APP_CERTIFICATE`
   - [ ] `SMTP_USER` + `SMTP_PASS` (Google App Password — **no spaces**)
   - [ ] `EMAIL_PROVIDER=smtp`
