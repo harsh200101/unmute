@@ -11,6 +11,7 @@ async function credentials(req, res, next) {
     const result = await svc.issueCredentials({
       booking_uuid: req.params.booking_uuid,
       user_id: req.user.id,
+      user_role: req.user.role,
     });
     res.json(result);
   } catch (e) { next(e); }
@@ -21,6 +22,7 @@ async function joined(req, res, next) {
     const meeting = await svc.recordPresence({
       booking_uuid: req.params.booking_uuid,
       user_id: req.user.id,
+      user_role: req.user.role,
       kind: 'joined',
     });
     res.json({ meeting });
@@ -32,6 +34,7 @@ async function left(req, res, next) {
     const meeting = await svc.recordPresence({
       booking_uuid: req.params.booking_uuid,
       user_id: req.user.id,
+      user_role: req.user.role,
       kind: 'left',
     });
     res.json({ meeting });
@@ -43,6 +46,7 @@ async function end(req, res, next) {
     const meeting = await svc.endMeeting({
       booking_uuid: req.params.booking_uuid,
       user_id: req.user.id,
+      user_role: req.user.role,
       reason: req.body?.reason,
     });
     res.json({ meeting });
@@ -54,6 +58,7 @@ async function get(req, res, next) {
     const meeting = await svc.getMeeting({
       booking_uuid: req.params.booking_uuid,
       user_id: req.user.id,
+      user_role: req.user.role,
     });
     res.json({ meeting });
   } catch (e) { next(e); }
@@ -66,7 +71,7 @@ async function billingHud(req, res, next) {
       [req.params.booking_uuid]
     )).rows[0];
     if (!m) throw notFound('meeting_not_found');
-    const snap = await billing.billingSnapshot({ meeting_id: m.id, user_id: req.user.id });
+    const snap = await billing.billingSnapshot({ meeting_id: m.id, user_id: req.user.id, user_role: req.user.role });
     res.json(snap);
   } catch (e) { next(e); }
 }
@@ -76,6 +81,7 @@ async function listMessages(req, res, next) {
     const result = await messages.list({
       booking_uuid: req.params.booking_uuid,
       user_id: req.user.id,
+      user_role: req.user.role,
       since_id: req.query.since_id,
       limit: req.query.limit,
     });
@@ -88,6 +94,7 @@ async function sendMessage(req, res, next) {
     const result = await messages.send({
       booking_uuid: req.params.booking_uuid,
       user_id: req.user.id,
+      user_role: req.user.role,
       body: req.body?.body,
     });
     res.status(201).json(result);

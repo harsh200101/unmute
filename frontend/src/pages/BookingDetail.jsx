@@ -99,7 +99,8 @@ export default function BookingDetail() {
   const startMs = new Date(booking.slot_start_at).getTime();
   const endMs = new Date(booking.slot_end_at).getTime();
   const now = Date.now();
-  const inJoinWindow = now >= startMs - JOIN_WINDOW_BEFORE_MS && now < endMs;
+  const isAdmin = user?.role === 'admin';
+  const inJoinWindow = isAdmin || (now >= startMs - JOIN_WINDOW_BEFORE_MS && now < endMs);
   const msToStart = startMs - now;
   const lateCancel = msToStart < FOUR_HOURS_MS;
   // Cancelling a stale "scheduled" booking (slot_end_at already in the past) is
@@ -162,14 +163,14 @@ export default function BookingDetail() {
       <header className="flex items-start gap-4">
         <Avatar src={other.avatar_url} name={other.full_name} size={56} />
         <div className="flex-1">
-          <p className="text-sm text-slate-500">Session {youAreMentor ? 'with mentee' : 'with mentor'}</p>
-          <h1 className="text-2xl font-bold text-slate-900">{other.full_name}</h1>
-          <p className="text-sm text-slate-600 mt-0.5">
+          <p className="text-sm text-muted-foreground">Session {youAreMentor ? 'with mentee' : 'with mentor'}</p>
+          <h1 className="text-2xl font-bold text-foreground">{other.full_name}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
             {formatDate(booking.slot_start_at)} — {formatTime(booking.slot_end_at)}
             <span className="text-slate-400"> · {relativeTime(booking.slot_start_at)}</span>
           </p>
           {!youAreMentor && (
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Rate snapshot: {formatPerMinute(booking.per_minute_paise_snapshot)}
             </p>
           )}
@@ -183,8 +184,8 @@ export default function BookingDetail() {
         </span>
       </header>
 
-      {/* Join CTA when in window — only live bookings, never cancelled / completed / no-show */}
-      {inJoinWindow && (booking.status === 'scheduled' || booking.status === 'in_call') && (
+      {/* Join CTA when in window or admin testing — live bookings, or admin anytime */}
+      {inJoinWindow && (isAdmin || booking.status === 'scheduled' || booking.status === 'in_call') && (
         <Card className="border-emerald-300">
           <CardBody className="flex items-center justify-between flex-wrap gap-3">
             <div>
@@ -220,7 +221,7 @@ export default function BookingDetail() {
       {isReschedulingProposer && (
         <Card className="border-slate-300">
           <CardBody>
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-foreground/80">
               You proposed a new time → {formatDate(booking.reschedule_to_at)}. Waiting for {other.full_name} to accept or decline.
             </p>
           </CardBody>
@@ -229,11 +230,11 @@ export default function BookingDetail() {
 
       {booking.mentee_title && (
         <Card>
-          <CardHeader><h2 className="font-semibold text-slate-900">Topic</h2></CardHeader>
+          <CardHeader><h2 className="font-semibold text-foreground">Topic</h2></CardHeader>
           <CardBody>
-            <p className="text-sm text-slate-900 font-medium">{booking.mentee_title}</p>
+            <p className="text-sm text-foreground font-medium">{booking.mentee_title}</p>
             {booking.mentee_topic && (
-              <p className="text-sm text-slate-700 mt-2 whitespace-pre-wrap">{booking.mentee_topic}</p>
+              <p className="text-sm text-foreground/80 mt-2 whitespace-pre-wrap">{booking.mentee_topic}</p>
             )}
           </CardBody>
         </Card>
@@ -274,7 +275,7 @@ export default function BookingDetail() {
       )}
 
       <Modal open={cancelOpen} onClose={() => setCancelOpen(false)} title="Cancel booking">
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-foreground/80">
           {lateCancel
             ? <>This is within 4 hours of the slot — a <strong>₹50</strong> late-cancel fee will apply (paid to the other party).</>
             : <>Free cancellation (more than 4 hours out).</>}
@@ -292,14 +293,14 @@ export default function BookingDetail() {
       </Modal>
 
       <Modal open={rescheduleOpen} onClose={() => setRescheduleOpen(false)} title="Propose a new time" maxWidth="max-w-lg">
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-foreground/80">
           Pick from {other.full_name}'s available slots (must be at least 4h from now). The other party has to accept.
         </p>
         <div className="mt-3 max-h-72 overflow-auto">
           {loadingSlots ? (
-            <p className="text-sm text-slate-500">Loading…</p>
+            <p className="text-sm text-muted-foreground">Loading…</p>
           ) : slots.length === 0 ? (
-            <p className="text-sm text-slate-500">No other slots available in the next 14 days.</p>
+            <p className="text-sm text-muted-foreground">No other slots available in the next 14 days.</p>
           ) : (
             <div className="grid grid-cols-2 gap-2">
               {slots.map((s) => (
@@ -361,8 +362,8 @@ function ReviewSection({ booking, youAreMentor, other, myReview, theirReview, lo
   return (
     <Card>
       <CardHeader>
-        <h2 className="font-semibold text-slate-900">Reviews</h2>
-        <p className="text-xs text-slate-500 mt-0.5">
+        <h2 className="font-semibold text-foreground">Reviews</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
           {youAreMentor
             ? 'Leave a private note for your mentee, and see what they wrote about the session.'
             : 'Help others — share how this session went.'}
@@ -370,22 +371,22 @@ function ReviewSection({ booking, youAreMentor, other, myReview, theirReview, lo
       </CardHeader>
       <CardBody className="space-y-5">
         {loading ? (
-          <p className="text-sm text-slate-500">Loading reviews…</p>
+          <p className="text-sm text-muted-foreground">Loading reviews…</p>
         ) : (
           <>
             {/* What the other party wrote about me */}
             {theirReview ? (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs text-slate-500 mb-1">
+                <p className="text-xs text-muted-foreground mb-1">
                   {theirReview.is_anonymous ? 'Anonymous' : other.full_name} wrote about you
                 </p>
                 <StarRow value={theirReview.rating} />
                 {theirReview.body && (
-                  <p className="text-sm text-slate-800 mt-2 whitespace-pre-wrap">{theirReview.body}</p>
+                  <p className="text-sm text-foreground/90 mt-2 whitespace-pre-wrap">{theirReview.body}</p>
                 )}
               </div>
             ) : (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-muted-foreground">
                 {other.full_name} hasn't left a review yet.
               </p>
             )}
@@ -402,7 +403,7 @@ function ReviewSection({ booking, youAreMentor, other, myReview, theirReview, lo
             ) : (
               <form onSubmit={submit} className="space-y-3">
                 <div>
-                  <p className="text-sm font-medium text-slate-700 mb-1">
+                  <p className="text-sm font-medium text-foreground/80 mb-1">
                     Your rating for {other.full_name}
                   </p>
                   <div className="flex items-center gap-1" onMouseLeave={() => setHover(0)}>
@@ -440,7 +441,7 @@ function ReviewSection({ booking, youAreMentor, other, myReview, theirReview, lo
                   />
                 </Field>
                 {!youAreMentor && (
-                  <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                  <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                     <input
                       type="checkbox"
                       checked={anonymous}
@@ -486,22 +487,22 @@ function MenteeProfileCard({ mentee }) {
   return (
     <Card>
       <CardHeader>
-        <h2 className="font-semibold text-slate-900">About your mentee</h2>
-        <p className="text-xs text-slate-500 mt-0.5">
+        <h2 className="font-semibold text-foreground">About your mentee</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
           Self-reported by {mentee.full_name.split(' ')[0]}. Visible only to you.
         </p>
       </CardHeader>
       <CardBody>
         {items.length === 0 ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             {mentee.full_name.split(' ')[0]} hasn't filled in any personal details yet.
           </p>
         ) : (
           <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             {items.map((it) => (
               <div key={it.label}>
-                <dt className="text-xs text-slate-500">{it.label}</dt>
-                <dd className="font-medium text-slate-900 mt-0.5">{it.value}</dd>
+                <dt className="text-xs text-muted-foreground">{it.label}</dt>
+                <dd className="font-medium text-foreground mt-0.5">{it.value}</dd>
               </div>
             ))}
           </dl>
@@ -528,21 +529,21 @@ function MenteeHistoryCard({ bookingUuid, menteeName }) {
 
   if (loading) {
     return (
-      <Card><CardBody className="text-sm text-slate-500">Loading {menteeName.split(' ')[0]}'s session history…</CardBody></Card>
+      <Card><CardBody className="text-sm text-muted-foreground">Loading {menteeName.split(' ')[0]}'s session history…</CardBody></Card>
     );
   }
 
   return (
     <Card>
       <CardHeader>
-        <h2 className="font-semibold text-slate-900">Session history</h2>
-        <p className="text-xs text-slate-500 mt-0.5">
+        <h2 className="font-semibold text-foreground">Session history</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
           Past completed sessions {menteeName.split(' ')[0]} has had with any mentor on unmute.
         </p>
       </CardHeader>
       <CardBody>
         {items.length === 0 ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             No prior sessions yet. This is {menteeName.split(' ')[0]}'s first booking with us.
           </p>
         ) : (
@@ -557,14 +558,14 @@ function MenteeHistoryCard({ bookingUuid, menteeName }) {
                     className="w-full text-left px-3 py-2 flex items-center justify-between gap-3 hover:bg-slate-50"
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">
+                      <p className="text-sm font-medium text-foreground truncate">
                         with {it.mentor.is_you ? 'you' : it.mentor.full_name}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-muted-foreground">
                         {formatDate(it.slot_start_at)} · {relativeTime(it.slot_start_at)}
                       </p>
                     </div>
-                    <span className="text-xs text-slate-500">{isOpen ? 'Hide' : 'Show notes'}</span>
+                    <span className="text-xs text-muted-foreground">{isOpen ? 'Hide' : 'Show notes'}</span>
                   </button>
                   {isOpen && (
                     <div className="border-t border-slate-200 px-3 py-3 space-y-2 text-sm">
@@ -588,8 +589,8 @@ function NotesBlock({ label, value }) {
   if (!value) return null;
   return (
     <div>
-      <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">{label}</p>
-      <p className="text-slate-900 whitespace-pre-wrap">{value}</p>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{label}</p>
+      <p className="text-foreground whitespace-pre-wrap">{value}</p>
     </div>
   );
 }
@@ -639,14 +640,14 @@ function SessionNotesEditor({ bookingUuid }) {
   }
 
   if (loading) {
-    return <Card><CardBody className="text-sm text-slate-500">Loading session notes…</CardBody></Card>;
+    return <Card><CardBody className="text-sm text-muted-foreground">Loading session notes…</CardBody></Card>;
   }
 
   return (
     <Card>
       <CardHeader>
-        <h2 className="font-semibold text-slate-900">Your session notes</h2>
-        <p className="text-xs text-slate-500 mt-0.5">
+        <h2 className="font-semibold text-foreground">Your session notes</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
           Private to you and shared with future mentors this person sees on unmute.
           The mentee can also read them in their own history.
         </p>
@@ -674,7 +675,7 @@ function SessionNotesEditor({ bookingUuid }) {
 function NoteField({ label, value, onChange, placeholder }) {
   return (
     <div>
-      <label className="block text-xs uppercase tracking-wide text-slate-500 mb-1">{label}</label>
+      <label className="block text-xs uppercase tracking-wide text-muted-foreground mb-1">{label}</label>
       <textarea
         rows={3}
         value={value}

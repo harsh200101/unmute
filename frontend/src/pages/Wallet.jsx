@@ -204,8 +204,8 @@ export default function Wallet() {
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       <header className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Wallet</h1>
-          <p className="text-slate-600 mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Wallet</h1>
+          <p className="text-muted-foreground mt-1">
             Top up to book sessions. We charge per minute while you're on the call.
           </p>
         </div>
@@ -262,26 +262,26 @@ export default function Wallet() {
 
       <Card className="mt-6">
         <CardHeader>
-          <h2 className="font-semibold text-slate-900">Recent transactions</h2>
+          <h2 className="font-semibold text-foreground">Recent transactions</h2>
         </CardHeader>
         <CardBody className="!p-0">
           {transactions.length === 0 ? (
-            <p className="text-sm text-slate-500 px-6 py-6 text-center">No transactions yet.</p>
+            <p className="text-sm text-muted-foreground px-6 py-6 text-center">No transactions yet.</p>
           ) : (
-            <ul className="divide-y divide-slate-100">
+            <ul className="divide-y divide-border">
               {transactions.map((t) => (
                 <li key={t.uuid} className="px-6 py-3 flex items-center gap-3">
                   <span className={t.direction === 'credit' ? 'text-emerald-600' : 'text-rose-600'}>
                     {t.direction === 'credit' ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-slate-900 truncate">
+                    <p className="text-sm text-foreground truncate">
                       {prettyReason(t.reason)}
-                      {t.description && <span className="text-slate-500"> · {t.description}</span>}
+                      {t.description && <span className="text-muted-foreground"> · {t.description}</span>}
                     </p>
-                    <p className="text-xs text-slate-500">{formatDate(t.created_at)} · {t.wallet_kind}</p>
+                    <p className="text-xs text-muted-foreground">{formatDate(t.created_at)} · {t.wallet_kind}</p>
                   </div>
-                  <div className={`text-sm font-semibold ${t.direction === 'credit' ? 'text-emerald-700' : 'text-slate-900'}`}>
+                  <div className={`text-sm font-semibold ${t.direction === 'credit' ? 'text-emerald-500' : 'text-foreground'}`}>
                     {t.direction === 'credit' ? '+' : '−'}{formatINR(t.amount_paise)}
                   </div>
                 </li>
@@ -462,8 +462,8 @@ function PaymentResultBanner({ result, onDismiss, onRetry }) {
         <div className="flex items-start gap-3">
           <AlertCircle className={`${copy.icon} mt-0.5 shrink-0`} size={18} />
           <div className="min-w-0 flex-1">
-            <p className="font-medium text-slate-900">{copy.title}</p>
-            <p className="text-sm text-slate-700 mt-1">{copy.body}</p>
+            <p className="font-medium text-foreground">{copy.title}</p>
+            <p className="text-sm text-muted-foreground mt-1">{copy.body}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {canRetry && (
                 <Button size="sm" onClick={onRetry}>

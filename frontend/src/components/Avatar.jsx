@@ -20,7 +20,7 @@ export default function Avatar({ src, name = '?', size = 40, className }) {
   }
   return (
     <div
-      className={clsx('rounded-full bg-slate-200 text-slate-700 inline-flex items-center justify-center font-medium border border-slate-200', className)}
+      className={clsx('rounded-full bg-slate-200 text-foreground/80 inline-flex items-center justify-center font-medium border border-slate-200', className)}
       style={{ width: size, height: size, fontSize: Math.max(11, size * 0.4) }}
       aria-label={name}
     >

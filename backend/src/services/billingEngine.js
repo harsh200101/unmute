@@ -283,14 +283,14 @@ async function finalizeMeeting({ meeting_id, end_reason, by_user_id }) {
 
 // --- Real-time snapshot for the frontend HUD --------------------------------
 
-async function billingSnapshot({ meeting_id, user_id }) {
+async function billingSnapshot({ meeting_id, user_id, user_role }) {
   // Returns: { wall_clock_seconds, billed_seconds, billed_paise, per_minute_paise,
   //            billing_state, mentee_balance_paise, est_seconds_remaining }
   const m = (await query(`SELECT * FROM meetings WHERE id = $1`, [meeting_id])).rows[0];
   if (!m) throw notFound('meeting_not_found');
   const b = (await query(`SELECT * FROM bookings WHERE id = $1`, [m.booking_id])).rows[0];
 
-  if (b.mentor_user_id !== user_id && b.mentee_user_id !== user_id) {
+  if (user_role !== 'admin' && b.mentor_user_id !== user_id && b.mentee_user_id !== user_id) {
     throw forbidden('not_a_party');
   }
 
@@ -458,7 +458,7 @@ async function tickBilling({ now = new Date() } = {}) {
   for (const row of depleteCandidates.rows) {
     const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(row.billing_active_since).getTime()) / 1000));
     const projected = row.billed_paise + calcPaise({ seconds: elapsed, per_minute_paise: row.per_minute_paise_snapshot });
-    if (projected >= (row.bal || 0)) {
+    if (row.per_minute_paise_snapshot > 0 && projected >= (row.bal || 0)) {
       try {
         await withTransaction(async (client) => {
           // Roll the active interval into billed_*, then settle the unsettled
@@ -577,7 +577,7 @@ async function enforceBalanceLimits() {
   for (const row of r.rows) {
     const elapsed = Math.floor((Date.now() - new Date(row.billing_active_since).getTime()) / 1000);
     const projected = row.billed_paise + calcPaise({ seconds: elapsed, per_minute_paise: row.per_minute_paise_snapshot });
-    if (projected >= (row.bal || 0)) {
+    if (row.per_minute_paise_snapshot > 0 && projected >= (row.bal || 0)) {
       try {
         await finalizeMeeting({ meeting_id: row.id, end_reason: 'balance_depleted' });
         finalized.push(row.id);

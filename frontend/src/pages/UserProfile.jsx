@@ -70,8 +70,8 @@ export default function UserProfile() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-      <h1 className="text-2xl font-bold text-slate-900">Profile</h1>
-      <p className="text-slate-600 mt-1">Your account details. Email and role are managed by admin.</p>
+      <h1 className="text-2xl font-bold text-foreground">Profile</h1>
+      <p className="text-muted-foreground mt-1">Your account details. Email and role are managed by admin.</p>
 
       {/* Verification state lives at the top of the profile: it gates bookings
           and mentor applications, so it should be the first thing a mentee sees
@@ -81,7 +81,7 @@ export default function UserProfile() {
       <form onSubmit={onSave} className="mt-6 space-y-4">
         <Card>
           <CardHeader>
-            <h2 className="font-semibold text-slate-900">Account</h2>
+            <h2 className="font-semibold text-foreground">Account</h2>
           </CardHeader>
           <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Full name" htmlFor="name">
@@ -101,8 +101,8 @@ export default function UserProfile() {
 
         <Card>
           <CardHeader>
-            <h2 className="font-semibold text-slate-900">Personal</h2>
-            <p className="text-xs text-slate-500 mt-1">
+            <h2 className="font-semibold text-foreground">Personal</h2>
+            <p className="text-xs text-muted-foreground mt-1">
               All optional. Use the <strong>Share with mentor</strong> toggle on each field to control
               what your mentor sees before a session. Untoggled fields stay private to you.
             </p>
@@ -209,7 +209,7 @@ function ChangePassword() {
   return (
     <Card className="mt-6">
       <CardHeader>
-        <h2 className="font-semibold text-slate-900">Change password</h2>
+        <h2 className="font-semibold text-foreground">Change password</h2>
       </CardHeader>
       <CardBody>
         <form onSubmit={onSubmit} className="space-y-3 max-w-md">
@@ -236,7 +236,7 @@ function SharedField({ label, shareLabel, isShared, setShared, children }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <label className="block text-sm font-medium text-slate-700">{label}</label>
+        <label className="block text-sm font-medium text-foreground">{label}</label>
         <button
           type="button"
           onClick={() => setShared(!isShared)}
@@ -245,7 +245,7 @@ function SharedField({ label, shareLabel, isShared, setShared, children }) {
           className={`inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2 py-0.5 border transition-colors ${
             isShared
               ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-              : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+              : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
           }`}
         >
           {isShared ? <Eye size={12} /> : <EyeOff size={12} />}

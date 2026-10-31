@@ -2,7 +2,7 @@ import clsx from 'clsx';
 
 export default function TagPill({ children, kind = 'neutral', size = 'sm', className }) {
   const palette = {
-    neutral: 'bg-slate-100 text-slate-700 border-slate-200',
+    neutral: 'bg-slate-100 text-foreground/80 border-slate-200',
     expertise: 'bg-emerald-50 text-emerald-700 border-emerald-200',  // topics they help with
     audience: 'bg-violet-50 text-violet-700 border-violet-200',      // who they serve
     industry: 'bg-sky-50 text-sky-700 border-sky-200',               // legacy, unused

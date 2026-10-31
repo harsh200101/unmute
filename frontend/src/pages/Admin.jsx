@@ -31,8 +31,8 @@ export default function Admin() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Admin</h1>
-        <p className="text-slate-600 mt-1">Mentor & money operations.</p>
+        <h1 className="text-2xl font-bold text-foreground">Admin</h1>
+        <p className="text-muted-foreground mt-1">Mentor & money operations.</p>
       </header>
 
       <div className="flex gap-1 border-b border-slate-200 overflow-x-auto">
@@ -42,8 +42,8 @@ export default function Admin() {
             onClick={() => setTab(t.id)}
             className={`px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 ${
               active === t.id
-                ? 'border-slate-900 text-slate-900'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
+                ? 'border-slate-900 text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
             {t.label}
@@ -155,13 +155,13 @@ function Overview({ setTab }) {
       {/* Recent activity feed */}
       <Card>
         <div className="px-5 sm:px-6 pt-5 pb-3 flex items-center justify-between">
-          <h2 className="font-semibold text-slate-900">Recent activity</h2>
-          <span className="text-xs text-slate-500">Last 25 events across the platform</span>
+          <h2 className="font-semibold text-foreground">Recent activity</h2>
+          <span className="text-xs text-muted-foreground">Last 25 events across the platform</span>
         </div>
         {activity.length === 0 ? (
-          <CardBody className="text-sm text-slate-500 text-center py-8">Nothing yet.</CardBody>
+          <CardBody className="text-sm text-muted-foreground text-center py-8">Nothing yet.</CardBody>
         ) : (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-border">
             {activity.map((it, idx) => <ActivityRow key={`${it.kind}-${it.ref_id}-${idx}`} it={it} />)}
           </ul>
         )}
@@ -173,7 +173,7 @@ function Overview({ setTab }) {
 function Section({ title, children }) {
   return (
     <Card>
-      <CardHeader><h3 className="font-semibold text-slate-900">{title}</h3></CardHeader>
+      <CardHeader><h3 className="font-semibold text-foreground">{title}</h3></CardHeader>
       <CardBody className="space-y-1.5">{children}</CardBody>
     </Card>
   );
@@ -181,7 +181,7 @@ function Section({ title, children }) {
 
 function Row({ label, value, tone = 'slate' }) {
   const tones = {
-    slate:   'text-slate-900',
+    slate:   'text-foreground',
     emerald: 'text-emerald-700',
     sky:     'text-sky-700',
     amber:   'text-amber-700',
@@ -189,7 +189,7 @@ function Row({ label, value, tone = 'slate' }) {
   };
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-slate-600">{label}</span>
+      <span className="text-muted-foreground">{label}</span>
       <span className={`font-semibold tabular-nums ${tones[tone] || tones.slate}`}>{value}</span>
     </div>
   );
@@ -197,7 +197,7 @@ function Row({ label, value, tone = 'slate' }) {
 
 function ActionTile({ label, value, sub, tone = 'slate', onClick }) {
   const tones = {
-    slate:   'bg-slate-50 border-slate-200 text-slate-700',
+    slate:   'bg-slate-50 border-slate-200 text-foreground/80',
     emerald: 'bg-emerald-50 border-emerald-200 text-emerald-800',
     amber:   'bg-amber-50 border-amber-200 text-amber-900',
   };
@@ -225,12 +225,12 @@ function ActivityRow({ it }) {
   return (
     <li className="flex items-center gap-3 px-5 sm:px-6 py-3">
       <span className={`h-2 w-2 rounded-full ${t.dot} shrink-0`} />
-      <span className="text-[11px] uppercase tracking-wide font-semibold text-slate-500 w-20 sm:w-24 shrink-0">
+      <span className="text-[11px] uppercase tracking-wide font-semibold text-muted-foreground w-20 sm:w-24 shrink-0">
         {t.label}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm text-slate-900 truncate">{it.title}</p>
-        <p className="text-xs text-slate-500 truncate">{it.subtitle}</p>
+        <p className="text-sm text-foreground truncate">{it.title}</p>
+        <p className="text-xs text-muted-foreground truncate">{it.subtitle}</p>
       </div>
       <span className="text-xs text-slate-400 shrink-0">{relativeTime(it.at)}</span>
     </li>
@@ -294,11 +294,11 @@ function MentorApps() {
           <CardBody>
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
-                <p className="font-semibold text-slate-900">{it.full_name}</p>
-                <p className="text-xs text-slate-500">{it.email} · Applied {relativeTime(it.created_at)}</p>
-                <p className="text-sm text-slate-700 mt-2">{it.headline}</p>
-                <p className="text-sm text-slate-600 mt-2 whitespace-pre-wrap line-clamp-4">{it.bio}</p>
-                <div className="mt-2 text-xs text-slate-500">
+                <p className="font-semibold text-foreground">{it.full_name}</p>
+                <p className="text-xs text-muted-foreground">{it.email} · Applied {relativeTime(it.created_at)}</p>
+                <p className="text-sm text-foreground/80 mt-2">{it.headline}</p>
+                <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap line-clamp-4">{it.bio}</p>
+                <div className="mt-2 text-xs text-muted-foreground">
                   Tier: <strong>{it.tier_display}</strong> ({formatINR(it.per_minute_paise)}/min) ·
                   Languages: {(it.languages || []).join(', ')} ·
                   {it.years_experience}+ yrs
@@ -370,18 +370,18 @@ function KYC() {
           <CardBody>
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
-                <p className="font-semibold text-slate-900">{k.full_name}</p>
-                <p className="text-xs text-slate-500">{k.email} · Submitted {relativeTime(k.submitted_at)}</p>
+                <p className="font-semibold text-foreground">{k.full_name}</p>
+                <p className="text-xs text-muted-foreground">{k.email} · Submitted {relativeTime(k.submitted_at)}</p>
                 <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                  <dt className="text-slate-500">PAN</dt>
+                  <dt className="text-muted-foreground">PAN</dt>
                   <dd className="font-mono">{k.pan_number_masked}</dd>
-                  <dt className="text-slate-500">Bank a/c</dt>
+                  <dt className="text-muted-foreground">Bank a/c</dt>
                   <dd className="font-mono">{k.bank_account_number_masked}</dd>
-                  <dt className="text-slate-500">IFSC</dt>
+                  <dt className="text-muted-foreground">IFSC</dt>
                   <dd className="font-mono">{k.bank_ifsc}</dd>
-                  <dt className="text-slate-500">PAN name</dt>
+                  <dt className="text-muted-foreground">PAN name</dt>
                   <dd>{k.full_name_as_per_pan}</dd>
-                  <dt className="text-slate-500">A/c holder</dt>
+                  <dt className="text-muted-foreground">A/c holder</dt>
                   <dd>{k.bank_account_holder}</dd>
                 </dl>
               </div>
@@ -460,10 +460,10 @@ function Withdrawals() {
             <Card key={w.uuid}>
               <CardBody className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                  <p className="font-semibold text-slate-900">
+                  <p className="font-semibold text-foreground">
                     {formatINR(w.amount_paise)} · {w.full_name}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-muted-foreground">
                     {w.email} · Requested {relativeTime(w.requested_at)}
                     {w.gateway_txn_id && <> · Txn: <code>{w.gateway_txn_id}</code></>}
                   </p>
@@ -501,7 +501,7 @@ function Withdrawals() {
             <Input id="reason" value={reason} onChange={(e) => setReason(e.target.value)} required />
           </Field>
         )}
-        <p className="text-xs text-slate-500 mt-2">
+        <p className="text-xs text-muted-foreground mt-2">
           {actioning?.kind === 'fail' && 'Marking as failed will reverse the escrowed amount back to the mentor\'s wallet.'}
         </p>
         <div className="mt-4 flex justify-end gap-2">
@@ -520,6 +520,7 @@ function Withdrawals() {
 }
 
 function ActiveMeetings() {
+  const navigate = useNavigate();
   const { items, loading, reload } = useDecisionList(() => adminApi.listActiveMeetings());
   const [reason, setReason] = useState('');
   const [target, setTarget] = useState(null);
@@ -546,21 +547,26 @@ function ActiveMeetings() {
           <Card key={m.id}>
             <CardBody className="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <p className="font-semibold text-slate-900">
+                <p className="font-semibold text-foreground">
                   {m.mentor_name} ↔ {m.mentee_name}
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   State: <strong>{m.billing_state}</strong> · Slot {formatDate(m.slot_start_at)} ({relativeTime(m.slot_start_at)}) · Billed: {formatINR(m.billed_paise)}
                 </p>
               </div>
-              <Button variant="danger" size="sm" onClick={() => setTarget(m)}>Force-end</Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" onClick={() => navigate(`/meetings/${m.booking_uuid}`)}>
+                  <Video size={14} className="mr-1 inline text-brand-600" /> Join Call
+                </Button>
+                <Button variant="danger" size="sm" onClick={() => setTarget(m)}>Force-end</Button>
+              </div>
             </CardBody>
           </Card>
         ))}
       </div>
 
       <Modal open={!!target} onClose={() => setTarget(null)} title="Force-end meeting">
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-foreground/80">
           This finalizes the meeting using whatever is in <code>billed_paise</code>. Mentor still gets paid for time actually billed.
         </p>
         <div className="mt-3">
@@ -578,10 +584,26 @@ function ActiveMeetings() {
 }
 
 function Users() {
+  const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [role, setRole] = useState('');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [startingMeetId, setStartingMeetId] = useState(null);
+
+  async function startMeet(u) {
+    if (!confirm(`Start an instant test video meeting with ${u.full_name || u.email}?`)) return;
+    setStartingMeetId(u.id);
+    try {
+      const res = await adminApi.startInstantMeeting(u.id);
+      toast.success('Test meeting ready! Opening meeting room...');
+      navigate(`/meetings/${res.booking_uuid}`);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to start meeting');
+    } finally {
+      setStartingMeetId(null);
+    }
+  }
 
   async function reload() {
     setLoading(true);
@@ -623,7 +645,7 @@ function Users() {
         <Card>
           <CardBody className="!p-0">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <thead className="bg-slate-50 text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="text-left px-4 py-2">Name</th>
                   <th className="text-left px-4 py-2">Email</th>
@@ -633,20 +655,31 @@ function Users() {
                   <th className="text-right px-4 py-2">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {items.map((u) => (
                   <tr key={u.id}>
                     <td className="px-4 py-2">{u.full_name}</td>
-                    <td className="px-4 py-2 text-slate-600">{u.email}</td>
+                    <td className="px-4 py-2 text-muted-foreground">{u.email}</td>
                     <td className="px-4 py-2 capitalize">{u.role}</td>
                     <td className="px-4 py-2">{u.is_active ? '✓' : '—'}</td>
-                    <td className="px-4 py-2 text-xs text-slate-500">
+                    <td className="px-4 py-2 text-xs text-muted-foreground">
                       no-shows: {u.no_show_count} · late: {u.late_cancel_count}
                     </td>
                     <td className="px-4 py-2 text-right">
-                      <Button size="sm" variant={u.is_active ? 'danger' : 'primary'} onClick={() => toggleActive(u)}>
-                        {u.is_active ? 'Disable' : 'Enable'}
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={startingMeetId === u.id}
+                          onClick={() => startMeet(u)}
+                          title="Start instant test video meeting anytime without time constraints"
+                        >
+                          <Video size={14} className="mr-1 inline text-brand-600" /> Test Meet
+                        </Button>
+                        <Button size="sm" variant={u.is_active ? 'danger' : 'primary'} onClick={() => toggleActive(u)}>
+                          {u.is_active ? 'Disable' : 'Enable'}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -667,7 +700,7 @@ function AuditLog() {
     <Card>
       <CardBody className="!p-0">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+          <thead className="bg-slate-50 text-xs uppercase text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-2">When</th>
               <th className="text-left px-4 py-2">Admin</th>
@@ -676,14 +709,14 @@ function AuditLog() {
               <th className="text-left px-4 py-2">Notes</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border">
             {items.map((e) => (
               <tr key={e.id}>
-                <td className="px-4 py-2 text-xs text-slate-500">{relativeTime(e.created_at)}</td>
+                <td className="px-4 py-2 text-xs text-muted-foreground">{relativeTime(e.created_at)}</td>
                 <td className="px-4 py-2">{e.admin_name}</td>
                 <td className="px-4 py-2 font-mono text-xs">{e.action}</td>
-                <td className="px-4 py-2 text-xs text-slate-500">{e.target_table}#{e.target_id}</td>
-                <td className="px-4 py-2 text-xs text-slate-600 max-w-md truncate">{e.notes || '—'}</td>
+                <td className="px-4 py-2 text-xs text-muted-foreground">{e.target_table}#{e.target_id}</td>
+                <td className="px-4 py-2 text-xs text-muted-foreground max-w-md truncate">{e.notes || '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -696,7 +729,7 @@ function AuditLog() {
 function EmptyState({ label }) {
   return (
     <Card>
-      <CardBody className="text-center py-10 text-slate-500">{label}</CardBody>
+      <CardBody className="text-center py-10 text-muted-foreground">{label}</CardBody>
     </Card>
   );
 }

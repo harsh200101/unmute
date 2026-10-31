@@ -282,7 +282,8 @@ function NextSessionCard({ booking, user }) {
   const other = isMentor ? booking.mentee : booking.mentor;
   const startMs = new Date(booking.slot_start_at).getTime();
   const minutesUntil = Math.round((startMs - Date.now()) / 60000);
-  const canJoin = minutesUntil <= 5 && Date.now() < new Date(booking.slot_end_at).getTime();
+  const isAdmin = user?.role === 'admin';
+  const canJoin = isAdmin || (minutesUntil <= 5 && Date.now() < new Date(booking.slot_end_at).getTime());
 
   let countdownLabel;
   if (canJoin)              countdownLabel = 'Open to join now';

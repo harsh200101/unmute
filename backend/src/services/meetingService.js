@@ -13,7 +13,7 @@ const JOIN_WINDOW_BEFORE_MS = 5 * 60 * 1000; // 5 minutes before slot_start
 
 // --- Helpers ---------------------------------------------------------------
 
-async function loadBookingForUser(client, { booking_uuid, user_id }) {
+async function loadBookingForUser(client, { booking_uuid, user_id, user_role }) {
   const exec = client ? client.query.bind(client) : query;
   const r = await exec(
     `SELECT b.*,
@@ -27,8 +27,11 @@ async function loadBookingForUser(client, { booking_uuid, user_id }) {
   );
   const b = r.rows[0];
   if (!b) throw notFound('booking_not_found');
-  const role = b.mentor_user_id === user_id ? 'mentor'
-             : b.mentee_user_id === user_id ? 'mentee' : null;
+  let role = b.mentor_user_id === user_id ? 'mentor'
+           : b.mentee_user_id === user_id ? 'mentee' : null;
+  if (!role && user_role === 'admin') {
+    role = 'mentor';
+  }
   if (!role) throw forbidden('not_a_party');
   return { booking: b, role };
 }
@@ -56,20 +59,23 @@ function withinJoinWindow(booking) {
 
 // --- Issue credentials -----------------------------------------------------
 
-async function issueCredentials({ booking_uuid, user_id }) {
+async function issueCredentials({ booking_uuid, user_id, user_role }) {
   return withTransaction(async (client) => {
-    const { booking, role } = await loadBookingForUser(client, { booking_uuid, user_id });
+    const { booking, role } = await loadBookingForUser(client, { booking_uuid, user_id, user_role });
 
+    const isAdmin = user_role === 'admin';
     // Booking must still be active (scheduled, in_call, or completed for replay-info)
-    if (booking.status !== 'scheduled' && booking.status !== 'in_call') {
-      throw bad('meeting_not_active', `Booking status is ${booking.status}`);
-    }
-    if (!withinJoinWindow(booking)) {
-      throw bad('outside_join_window', 'Join button is enabled 5 minutes before slot start through slot end');
+    if (!isAdmin) {
+      if (booking.status !== 'scheduled' && booking.status !== 'in_call') {
+        throw bad('meeting_not_active', `Booking status is ${booking.status}`);
+      }
+      if (!withinJoinWindow(booking)) {
+        throw bad('outside_join_window', 'Join button is enabled 5 minutes before slot start through slot end');
+      }
     }
 
     const meeting = await getOrCreateMeeting(client, booking);
-    const ttl = Math.max(60, Math.floor((new Date(booking.slot_end_at).getTime() - Date.now()) / 1000) + 60);
+    const ttl = isAdmin ? 86400 : Math.max(60, Math.floor((new Date(booking.slot_end_at).getTime() - Date.now()) / 1000) + 60);
     const creds = agora.buildToken({ booking_uuid: booking.uuid, user_id, ttl_seconds: ttl });
 
     // Look up both display names so the room UI can label the local tile
@@ -108,12 +114,13 @@ async function issueCredentials({ booking_uuid, user_id }) {
 
 // --- Presence events -------------------------------------------------------
 
-async function recordPresence({ booking_uuid, user_id, kind }) {
+async function recordPresence({ booking_uuid, user_id, user_role, kind }) {
   if (!['joined', 'left'].includes(kind)) throw bad('invalid_event_kind');
 
   return withTransaction(async (client) => {
-    const { booking, role } = await loadBookingForUser(client, { booking_uuid, user_id });
-    if (booking.status !== 'scheduled' && booking.status !== 'in_call') {
+    const { booking, role } = await loadBookingForUser(client, { booking_uuid, user_id, user_role });
+    const isAdmin = user_role === 'admin';
+    if (!isAdmin && booking.status !== 'scheduled' && booking.status !== 'in_call') {
       throw bad('meeting_not_active');
     }
     const meeting = await getOrCreateMeeting(client, booking);
@@ -194,7 +201,7 @@ async function recordPresence({ booking_uuid, user_id, kind }) {
 
 // --- End meeting (manual) --------------------------------------------------
 
-async function endMeeting({ booking_uuid, user_id, reason }) {
+async function endMeeting({ booking_uuid, user_id, user_role, reason }) {
   // Delegate to the billing engine — it handles roll-in, minimum, split,
   // ledger writes, and booking status updates atomically.
   const { booking, role } = await (async () => {
@@ -205,8 +212,11 @@ async function endMeeting({ booking_uuid, user_id, reason }) {
     );
     if (!r.rows[0]) throw notFound('booking_not_found');
     const b = r.rows[0];
-    const r2 = b.mentor_user_id === user_id ? 'mentor'
+    let r2 = b.mentor_user_id === user_id ? 'mentor'
             : b.mentee_user_id === user_id ? 'mentee' : null;
+    if (!r2 && user_role === 'admin') {
+      r2 = 'admin';
+    }
     if (!r2) throw forbidden('not_a_party');
     return { booking: b, role: r2 };
   })();
@@ -233,9 +243,9 @@ async function endMeeting({ booking_uuid, user_id, reason }) {
 
 // --- Read ------------------------------------------------------------------
 
-async function getMeeting({ booking_uuid, user_id }) {
+async function getMeeting({ booking_uuid, user_id, user_role }) {
   return withTransaction(async (client) => {
-    const { booking } = await loadBookingForUser(client, { booking_uuid, user_id });
+    const { booking } = await loadBookingForUser(client, { booking_uuid, user_id, user_role });
     const m = (await client.query(`SELECT * FROM meetings WHERE booking_id = $1`, [booking.id])).rows[0];
     if (!m) return null;
     return publicMeeting(m);

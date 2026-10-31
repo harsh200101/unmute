@@ -100,13 +100,13 @@ export default function Book() {
       <div className="flex items-start gap-4 mb-6">
         <Avatar src={mentor.user.avatar_url} name={mentor.user.full_name} size={56} />
         <div>
-          <p className="text-sm text-slate-500">Book a session with</p>
-          <h1 className="text-2xl font-bold text-slate-900">{mentor.user.full_name}</h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">Book a session with</p>
+          <h1 className="text-2xl font-bold text-foreground">{mentor.user.full_name}</h1>
+          <p className="text-sm text-muted-foreground">
             {formatPerMinute(mentor.pricing_tier?.per_minute_paise)} · 15-min minimum charge once both joined
           </p>
           {Array.isArray(mentor.languages) && mentor.languages.length > 0 && (
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Speaks {mentor.languages.map((l) => l.toUpperCase()).join(', ')}
             </p>
           )}
@@ -133,15 +133,15 @@ export default function Book() {
 
       <Card className="mt-4">
         <CardHeader>
-          <h2 className="font-semibold text-slate-900 flex items-center gap-2">
+          <h2 className="font-semibold text-foreground flex items-center gap-2">
             <Clock size={16} /> Slots on {dateLabel(selectedDay)}
           </h2>
         </CardHeader>
         <CardBody>
           {loadingSlots ? (
-            <p className="text-sm text-slate-500">Loading…</p>
+            <p className="text-sm text-muted-foreground">Loading…</p>
           ) : slotsForSelected.length === 0 ? (
-            <p className="text-sm text-slate-500">No slots available this day. Try another date.</p>
+            <p className="text-sm text-muted-foreground">No slots available this day. Try another date.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {slotsForSelected.map((s) => (
@@ -165,8 +165,8 @@ export default function Book() {
       {picked && (
         <Card className="mt-4">
           <CardHeader>
-            <h2 className="font-semibold text-slate-900">Confirm booking</h2>
-            <p className="text-xs text-slate-500 mt-1">{formatDate(picked)}</p>
+            <h2 className="font-semibold text-foreground">Confirm booking</h2>
+            <p className="text-xs text-muted-foreground mt-1">{formatDate(picked)}</p>
           </CardHeader>
           <CardBody className="space-y-4">
             <Field label="Session title (optional)" htmlFor="title">
@@ -176,10 +176,10 @@ export default function Book() {
             <Field label="What do you want to discuss? (optional)" htmlFor="topic">
               <textarea id="topic" rows={4} value={mentee_topic} onChange={(e) => setTopic(e.target.value)}
                 placeholder="Background, the specific outcome you want…"
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
+                className="w-full rounded-lg border border-input bg-card text-card-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </Field>
-            <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3">
+            <div className="text-xs text-muted-foreground bg-muted rounded-lg p-3">
               <strong>How billing works:</strong> Booking is free. We only charge while you and your mentor
               are both on the call — by the minute. 15-min minimum once both join. Sessions cap at 60 minutes.
             </div>

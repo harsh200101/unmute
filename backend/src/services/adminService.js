@@ -4,6 +4,7 @@ const { query, withTransaction } = require('../config/db');
 const { bad, notFound } = require('../utils/errors');
 const notify = require('./notificationService');
 const billing = require('./billingEngine');
+const agora = require('./agoraService');
 
 // --- Users ------------------------------------------------------------------
 
@@ -531,10 +532,73 @@ async function listEmailLog({ status, kind, to_email, limit = 100, offset = 0 } 
   return { items: r.rows, limit: limitN, offset: offsetN };
 }
 
+async function startInstantMeeting({ admin_user_id, target_user_id }) {
+  if (!target_user_id) throw bad('target_user_required', 'target_user_id is required');
+  const target = (await query(`SELECT id, uuid, email, full_name, role FROM users WHERE id = $1`, [target_user_id])).rows[0];
+  if (!target) throw notFound('target_user_not_found');
+
+  const admin = (await query(`SELECT id, uuid, email, full_name, role FROM users WHERE id = $1`, [admin_user_id])).rows[0];
+  if (!admin) throw notFound('admin_not_found');
+
+  const isTargetMentor = target.role === 'mentor';
+  const mentor_user_id = isTargetMentor ? target.id : admin.id;
+  const mentee_user_id = isTargetMentor ? admin.id : target.id;
+
+  const now = new Date();
+  const start_at = new Date(now.getTime() - 5 * 60 * 1000); // 5 mins ago
+  const end_at = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours open window
+
+  return withTransaction(async (client) => {
+    const bRes = await client.query(
+      `INSERT INTO bookings
+         (mentor_user_id, mentee_user_id, slot_start_at, slot_end_at,
+          per_minute_paise_snapshot, mentee_title, mentee_topic, status)
+       VALUES ($1, $2, $3, $4, 0, 'Admin Instant Test Meeting', 'Testing video meeting connection without time boundaries', 'scheduled')
+       RETURNING *`,
+      [mentor_user_id, mentee_user_id, start_at.toISOString(), end_at.toISOString()]
+    );
+    const booking = bRes.rows[0];
+
+    const channel = agora.channelName(booking.uuid);
+    const mRes = await client.query(
+      `INSERT INTO meetings (booking_id, agora_channel_name, billing_state)
+       VALUES ($1, $2, 'idle')
+       RETURNING *`,
+      [booking.id, channel]
+    );
+    const meeting = mRes.rows[0];
+
+    try {
+      await notify.notify({
+        user_id: target.id,
+        kind: 'booking_confirmed',
+        title: `Instant Video Call with ${admin.full_name || 'Admin'}`,
+        body: 'An admin has started a video meeting test session with you. Click to join now.',
+        link_url: `/meetings/${booking.uuid}`,
+        client,
+      });
+    } catch (_) {}
+
+    await client.query(
+      `INSERT INTO admin_audit_log
+         (admin_user_id, action, target_table, target_id, before_state, after_state, notes)
+       VALUES ($1, 'start_instant_meeting', 'meetings', $2, NULL, $3, $4)`,
+      [admin_user_id, meeting.id, { booking_uuid: booking.uuid, target_user_id: target.id }, 'Instant test meeting initiated by admin']
+    );
+
+    return {
+      booking_uuid: booking.uuid,
+      meeting_uuid: meeting.uuid,
+      target_user: { id: target.id, email: target.email, full_name: target.full_name, role: target.role },
+      meeting_url: `/meetings/${booking.uuid}`
+    };
+  });
+}
+
 module.exports = {
   listUsers, patchUser,
   listMentorApplications, approveMentor, rejectMentor,
-  listActiveMeetings, forceEndMeeting,
+  listActiveMeetings, forceEndMeeting, startInstantMeeting,
   refundBooking, listAuditLog, listEmailLog,
   getStats, getRecentActivity,
 };

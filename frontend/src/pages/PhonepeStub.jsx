@@ -37,13 +37,13 @@ export default function PhonepeStub() {
     <div className="min-h-[70vh] flex items-center justify-center px-4 py-10">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <h1 className="text-base font-semibold text-slate-900">PhonePe stub (dev mode)</h1>
-          <p className="text-xs text-slate-500 mt-1">
+          <h1 className="text-base font-semibold text-foreground">PhonePe stub (dev mode)</h1>
+          <p className="text-xs text-muted-foreground mt-1">
             Real PhonePe creds aren't configured — this page simulates the gateway.
           </p>
         </CardHeader>
         <CardBody>
-          <div className="text-sm text-slate-700">
+          <div className="text-sm text-foreground/80">
             <div>Order: <code className="text-xs">{order}</code></div>
             <div className="mt-1">Amount: <strong>₹{(amount / 100).toFixed(2)}</strong></div>
           </div>
@@ -51,7 +51,7 @@ export default function PhonepeStub() {
             <Button onClick={() => done(true)} loading={busy}>Simulate successful payment</Button>
             <Button variant="secondary" onClick={() => done(false)} loading={busy}>Simulate failed payment</Button>
           </div>
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-xs text-muted-foreground">
             In production this page is replaced by PhonePe's own checkout UI.
           </p>
         </CardBody>

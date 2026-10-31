@@ -54,17 +54,17 @@ export default function VerifyEmail() {
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
-        <h1 className="text-2xl font-bold text-slate-900 text-center">Verify your email</h1>
+        <h1 className="text-2xl font-bold text-foreground text-center">Verify your email</h1>
 
         <Card className="mt-6">
           <CardBody className="space-y-4">
-            {status === 'verifying' && <p className="text-slate-600">Verifying your link…</p>}
+            {status === 'verifying' && <p className="text-muted-foreground">Verifying your link…</p>}
             {status === 'verified' && <p className="text-emerald-700">✓ Verified. Redirecting to sign in…</p>}
             {status === 'failed' && (
               <p className="text-rose-700">{error || 'This link is no longer valid.'}</p>
             )}
             {status === 'idle' && (
-              <p className="text-slate-600">
+              <p className="text-muted-foreground">
                 We sent a verification link to your email. Click it to activate your account.
               </p>
             )}
@@ -81,7 +81,7 @@ export default function VerifyEmail() {
           </CardBody>
         </Card>
 
-        <p className="mt-4 text-center text-sm text-slate-600">
+        <p className="mt-4 text-center text-sm text-muted-foreground">
           <Link to="/login" className="underline">Back to sign in</Link>
         </p>
       </div>

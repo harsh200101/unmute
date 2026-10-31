@@ -13,7 +13,7 @@ const MAX_BODY_LEN = 2000;
 const LIST_LIMIT_DEFAULT = 50;
 const LIST_LIMIT_MAX = 200;
 
-async function loadMeetingForUser(client, { booking_uuid, user_id }) {
+async function loadMeetingForUser(client, { booking_uuid, user_id, user_role }) {
   const r = await client.query(
     `SELECT m.id AS meeting_id, m.uuid AS meeting_uuid,
             b.id AS booking_id, b.mentor_user_id, b.mentee_user_id, b.status
@@ -24,18 +24,18 @@ async function loadMeetingForUser(client, { booking_uuid, user_id }) {
   );
   const row = r.rows[0];
   if (!row) throw notFound('meeting_not_found');
-  if (row.mentor_user_id !== user_id && row.mentee_user_id !== user_id) {
+  if (user_role !== 'admin' && row.mentor_user_id !== user_id && row.mentee_user_id !== user_id) {
     throw forbidden('not_a_party');
   }
   return row;
 }
 
-async function list({ booking_uuid, user_id, since_id = 0, limit = LIST_LIMIT_DEFAULT }) {
+async function list({ booking_uuid, user_id, user_role, since_id = 0, limit = LIST_LIMIT_DEFAULT }) {
   const lim = Math.min(Math.max(Number(limit) || LIST_LIMIT_DEFAULT, 1), LIST_LIMIT_MAX);
   const sinceN = Math.max(Number(since_id) || 0, 0);
 
   return withTransaction(async (client) => {
-    const m = await loadMeetingForUser(client, { booking_uuid, user_id });
+    const m = await loadMeetingForUser(client, { booking_uuid, user_id, user_role });
 
     // ORDER BY id ASC so the poller can simply append to its local list and
     // remember the last id. We still cap at `limit` rows; if the user was
@@ -61,13 +61,13 @@ async function list({ booking_uuid, user_id, since_id = 0, limit = LIST_LIMIT_DE
   });
 }
 
-async function send({ booking_uuid, user_id, body }) {
+async function send({ booking_uuid, user_id, user_role, body }) {
   const text = (body || '').trim();
   if (!text) throw bad('empty_message', 'Message body is required');
   if (text.length > MAX_BODY_LEN) throw bad('message_too_long', `Message exceeds ${MAX_BODY_LEN} characters`);
 
   return withTransaction(async (client) => {
-    const m = await loadMeetingForUser(client, { booking_uuid, user_id });
+    const m = await loadMeetingForUser(client, { booking_uuid, user_id, user_role });
 
     // Only allow chatting in an active meeting (scheduled / in_call). After
     // the call has been finalized (status=completed/cancelled_*) the chat

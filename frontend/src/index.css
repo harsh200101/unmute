@@ -14,7 +14,7 @@
 /* -------------------------------------------------------------------------- */
 :root {
   --card: #ffffff;
-  --ring: #6366f1;
+  --ring: #4f46e5;
   --input: #d1d5db;
   --muted: #f3f4f6;
   --accent: #e0e7ff;
@@ -26,7 +26,7 @@
   --chart-4: #3730a3;
   --chart-5: #312e81;
   --popover: #ffffff;
-  --primary: #6366f1;
+  --primary: #4f46e5;
   --sidebar: #f3f4f6;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -34,10 +34,10 @@
   --background: #f8fafc;
   --font-serif: Merriweather, serif;
   --foreground: #1e293b;
-  --destructive: #ef4444;
+  --destructive: #dc2626;
   --shadow-blur: 8px;
   --shadow-color: hsl(0 0% 0%);
-  --sidebar-ring: #6366f1;
+  --sidebar-ring: #4f46e5;
   --shadow-spread: -1px;
   --shadow-opacity: 0.1;
   --sidebar-accent: #e0e7ff;
@@ -45,8 +45,8 @@
   --card-foreground: #1e293b;
   --shadow-offset-x: 0px;
   --shadow-offset-y: 4px;
-  --sidebar-primary: #6366f1;
-  --muted-foreground: #6b7280;
+  --sidebar-primary: #4f46e5;
+  --muted-foreground: #4b5563;
   --accent-foreground: #374151;
   --popover-foreground: #1e293b;
   --primary-foreground: #ffffff;
@@ -75,7 +75,7 @@ html.dark {
   --secondary: #2d3748;
   --background: #0f172a;
   --foreground: #e2e8f0;
-  --destructive: #ef4444;
+  --destructive: #dc2626;
   --sidebar-ring: #818cf8;
   --sidebar-accent: #374151;
   --sidebar-border: #4b5563;

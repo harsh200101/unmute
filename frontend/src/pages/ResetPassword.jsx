@@ -35,7 +35,7 @@ export default function ResetPassword() {
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
-        <h1 className="text-2xl font-bold text-slate-900 text-center">Set a new password</h1>
+        <h1 className="text-2xl font-bold text-foreground text-center">Set a new password</h1>
         <Card className="mt-6">
           <CardBody>
             {!token ? (

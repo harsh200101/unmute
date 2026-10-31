@@ -26,6 +26,7 @@ import MentorKYC from './pages/MentorKYC.jsx';
 import MentorEarnings from './pages/MentorEarnings.jsx';
 import MentorReviews from './pages/MentorReviews.jsx';
 import UserProfile from './pages/UserProfile.jsx';
+import Notifications from './pages/Notifications.jsx';
 import Admin from './pages/Admin.jsx';
 // Lazy-load: pulls Agora SDK (~1.5 MB) only when entering a meeting
 const MeetingRoom = lazy(() => import('./pages/MeetingRoom.jsx'));
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="/mentor/reviews" element={<ProtectedRoute role="mentor"><MentorReviews /></ProtectedRoute>} />
 
         <Route path="/me/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+        <Route path="/me/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
 
         <Route path="/admin" element={<ProtectedRoute role="admin"><Admin /></ProtectedRoute>} />
 

@@ -61,7 +61,7 @@ export default function Footer() {
             {/* Prominent crisis CTA — keeps the safety surface easy to find. */}
             <Link
               to="/crisis"
-              className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors"
+              className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-red-100/90 text-red-700 border border-red-300 dark:bg-destructive/20 dark:text-red-400 dark:border-destructive/40 px-3 py-1.5 text-xs font-semibold hover:bg-red-200/80 transition-colors"
             >
               <LifeBuoy size={14} />
               In crisis? Tap here
@@ -140,7 +140,7 @@ export default function Footer() {
 
         {/* Disclaimer + copyright */}
         <div className="mt-12 border-t border-border pt-6 space-y-4">
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
+          <p className="text-xs text-foreground/80 leading-relaxed">
             unmute is a peer-mentoring &amp; guidance platform. It is{' '}
             <strong>not</strong> a substitute for licensed medical, psychological, or psychiatric
             care. If you are in crisis or need urgent help, please{' '}

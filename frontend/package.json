@@ -9,7 +9,12 @@
     "preview": "vite preview",
     "lint": "eslint src",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:ui:axe": "node scripts/ui-audit/run-axe-audit.mjs",
+    "test:ui:viewport": "node scripts/ui-audit/run-viewport-audit.mjs",
+    "test:ui:vision": "node scripts/ui-audit/run-vision-audit.mjs",
+    "test:ui:crawl": "node scripts/ui-audit/run-interactive-crawler.mjs",
+    "test:ui:all": "node scripts/ui-audit/run-all-audits.mjs"
   },
   "dependencies": {
     "agora-rtc-sdk-ng": "^4.24.3",

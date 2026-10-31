@@ -92,8 +92,8 @@ export default function MentorKYC() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-      <h1 className="text-2xl font-bold text-slate-900">Mentor KYC</h1>
-      <p className="text-slate-600 mt-1">
+      <h1 className="text-2xl font-bold text-foreground">Mentor KYC</h1>
+      <p className="text-muted-foreground mt-1">
         Aadhaar is all we need to verify your identity. Bank details can be added later —
         they’re only required before your first withdrawal.
       </p>
@@ -105,10 +105,10 @@ export default function MentorKYC() {
       {(!existing || existing.status === 'rejected') && (
         <Card className="mt-6">
           <CardHeader>
-            <h2 className="font-semibold text-slate-900">
+            <h2 className="font-semibold text-foreground">
               {existing?.status === 'rejected' ? 'Resubmit your details' : 'Submit your KYC'}
             </h2>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Your Aadhaar (and any other ID you add) stays encrypted and is only visible to admin during review.
             </p>
           </CardHeader>
@@ -122,10 +122,10 @@ export default function MentorKYC() {
 
               <details className="rounded-lg border border-slate-200 px-3 py-2"
                        open={showBank} onToggle={(e) => setShowBank(e.target.open)}>
-                <summary className="cursor-pointer text-sm font-medium text-slate-700">
+                <summary className="cursor-pointer text-sm font-medium text-foreground/80">
                   Add PAN &amp; bank details now (optional)
                 </summary>
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-muted-foreground">
                   Skip this for now if you just want approval. You can come back and add bank details
                   before your first withdrawal.
                 </p>

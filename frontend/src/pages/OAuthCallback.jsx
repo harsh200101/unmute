@@ -62,8 +62,8 @@ export default function OAuthCallback() {
     return (
       <div className="min-h-[70vh] flex items-center justify-center px-4 text-center">
         <div className="max-w-md">
-          <h1 className="text-xl font-semibold text-slate-900">Sign-in failed</h1>
-          <p className="mt-2 text-slate-600">
+          <h1 className="text-xl font-semibold text-foreground">Sign-in failed</h1>
+          <p className="mt-2 text-muted-foreground">
             {ERROR_MESSAGES[error] || 'Something went wrong. Please try again.'}
           </p>
           <Link to="/login" className="inline-block mt-5">

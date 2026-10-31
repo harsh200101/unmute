@@ -27,47 +27,47 @@ export default function MentorReviews() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-      <h1 className="text-2xl font-bold text-slate-900">My reviews</h1>
-      <p className="text-slate-600 mt-1">What mentees said about you.</p>
+      <h1 className="text-2xl font-bold text-foreground">My reviews</h1>
+      <p className="text-muted-foreground mt-1">What mentees said about you.</p>
 
       {items.length === 0 ? (
-        <Card className="mt-6"><CardBody className="text-center py-10 text-slate-500">No reviews yet.</CardBody></Card>
+        <Card className="mt-6"><CardBody className="text-center py-10 text-muted-foreground">No reviews yet.</CardBody></Card>
       ) : (
         <>
           <Card className="mt-6">
             <CardBody className="flex items-center gap-3">
               <RatingStars value={avg} size="lg" showNumber={false} />
-              <p className="text-2xl font-bold text-slate-900">{avg.toFixed(1)}</p>
-              <p className="text-sm text-slate-500">across {items.length} review{items.length !== 1 ? 's' : ''}</p>
+              <p className="text-2xl font-bold text-foreground">{avg.toFixed(1)}</p>
+              <p className="text-sm text-muted-foreground">across {items.length} review{items.length !== 1 ? 's' : ''}</p>
             </CardBody>
           </Card>
 
           <Card className="mt-4">
             <CardHeader>
-              <h2 className="font-semibold text-slate-900">All reviews</h2>
+              <h2 className="font-semibold text-foreground">All reviews</h2>
             </CardHeader>
             <CardBody className="!p-0">
-              <ul className="divide-y divide-slate-100">
+              <ul className="divide-y divide-border">
                 {items.map((r) => (
                   <li key={r.uuid} className={`px-6 py-4 ${r.is_hidden ? 'opacity-60' : ''}`}>
                     <div className="flex items-start gap-3">
                       <Avatar src={r.reviewer.avatar_url} name={r.reviewer.full_name} size={36} />
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
-                          <p className="text-sm font-medium text-slate-900">
+                          <p className="text-sm font-medium text-foreground">
                             {r.reviewer.full_name}
                             {r.direction === 'mentor_to_mentee' && (
-                              <span className="ml-2 text-xs text-slate-500">(private — you reviewed them)</span>
+                              <span className="ml-2 text-xs text-muted-foreground">(private — you reviewed them)</span>
                             )}
                             {r.is_hidden && (
                               <span className="ml-2 text-xs text-rose-600">hidden by admin</span>
                             )}
                           </p>
-                          <span className="text-xs text-slate-500">{formatDate(r.created_at)}</span>
+                          <span className="text-xs text-muted-foreground">{formatDate(r.created_at)}</span>
                         </div>
                         <RatingStars value={r.rating} showNumber={false} />
                         {r.body && (
-                          <p className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">{r.body}</p>
+                          <p className="mt-1 text-sm text-foreground/80 whitespace-pre-wrap">{r.body}</p>
                         )}
                       </div>
                     </div>

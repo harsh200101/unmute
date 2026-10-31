@@ -50,9 +50,9 @@ export default function MentorCard({ item }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h3 className="font-semibold text-foreground truncate text-base sm:text-lg">
+                <h2 className="font-semibold text-foreground truncate text-base sm:text-lg">
                   {item.full_name}
-                </h3>
+                </h2>
                 <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
                   {item.headline}
                 </p>

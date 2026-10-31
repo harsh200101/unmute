@@ -8,7 +8,7 @@
 export default function Logo({
   size = 32,
   className = '',
-  alt = 'unmute',
+  alt = '',
   // Optional: when true, wraps the image in a small rounded surface so the
   // pastel colours stay legible on dark mode. Off by default.
   framed = false,
@@ -17,6 +17,7 @@ export default function Logo({
     <img
       src="/images/logo.png"
       alt={alt}
+      aria-hidden={!alt ? 'true' : undefined}
       width={size}
       height={size}
       className={framed ? 'block' : `inline-block ${className}`}

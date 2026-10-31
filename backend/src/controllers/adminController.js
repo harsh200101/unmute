@@ -132,9 +132,20 @@ async function getRecentActivity(req, res, next) {
   } catch (e) { next(e); }
 }
 
+async function startInstantMeeting(req, res, next) {
+  try {
+    const result = await svc.startInstantMeeting({
+      admin_user_id: req.user.id,
+      target_user_id: Number(req.body?.target_user_id),
+    });
+    res.status(201).json(result);
+  } catch (e) { next(e); }
+}
+
 module.exports = {
   listUsers, patchUser,
   listMentorApplications, approveMentor, rejectMentor,
-  listActiveMeetings, forceEndMeeting, refundBooking, listAuditLog, listEmailLog,
+  listActiveMeetings, forceEndMeeting, startInstantMeeting,
+  refundBooking, listAuditLog, listEmailLog,
   getStats, getRecentActivity,
 };

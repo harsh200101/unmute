@@ -9,11 +9,13 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const applySession = useCallback(({ access_token, user: u }) => {
+    try { localStorage.setItem('unmute_session', '1'); } catch (_) {}
     setAccessToken(access_token);
     setUser(u || null);
   }, []);
 
   const clearSession = useCallback(() => {
+    try { localStorage.removeItem('unmute_session'); } catch (_) {}
     setAccessToken(null);
     setUser(null);
   }, []);
@@ -22,6 +24,12 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let hasSession = false;
+      try { hasSession = !!localStorage.getItem('unmute_session'); } catch (_) {}
+      if (!hasSession) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
       try {
         const r = await authApi.refresh();
         setAccessToken(r.access_token);
