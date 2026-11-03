@@ -60,7 +60,7 @@ async function getPlatformWalletId(client) {
   return _platformWalletIdCache;
 }
 
-function publicBooking(b) {
+function publicBooking(b, viewerRole) {
   // Mentee demographic fields are included on the booking response, but each
   // field is gated by the mentee's `preferences.share_with_mentor.<field>`
   // flag. Default = SHOW (so existing data isn't suddenly hidden). The
@@ -68,15 +68,22 @@ function publicBooking(b) {
   //
   // Privacy model: the /api/bookings/:uuid route is auth'd and only returns
   // to the two parties of the booking. The mentee always sees their own data.
+  const isMentor =
+    viewerRole === 'mentor' ||
+    (typeof viewerRole === 'number' && viewerRole === b.mentor_user_id);
+  const isIncognitoToViewer = Boolean(b.is_incognito) && isMentor;
+
   const share = b.mentee_preferences?.share_with_mentor || {};
-  const visible = (field) => share[field] !== false; // undefined → show
+  const visible = (field) => !isIncognitoToViewer && share[field] !== false; // undefined → show
+
   return {
     uuid: b.uuid,
+    is_incognito: Boolean(b.is_incognito),
     mentor: { id: b.mentor_user_id, full_name: b.mentor_name, email: b.mentor_email, profile_uuid: b.mentor_profile_uuid, timezone: b.mentor_timezone },
     mentee: {
       id: b.mentee_user_id,
-      full_name: b.mentee_name,
-      email: b.mentee_email,
+      full_name: isIncognitoToViewer ? 'Anonymous Mentee' : b.mentee_name,
+      email: isIncognitoToViewer ? null : b.mentee_email,
       date_of_birth:  visible('age')            ? (b.mentee_dob            || null) : null,
       gender:         visible('gender')         ? (b.mentee_gender         || null) : null,
       marital_status: visible('marital_status') ? (b.mentee_marital_status || null) : null,
@@ -87,6 +94,8 @@ function publicBooking(b) {
     per_minute_paise_snapshot: b.per_minute_paise_snapshot,
     mentee_title: b.mentee_title,
     mentee_topic: b.mentee_topic,
+    intent_type: b.intent_type || 'perspective',
+    is_instant: Boolean(b.is_instant),
     status: b.status,
     cancelled_at: b.cancelled_at,
     cancel_reason: b.cancel_reason,
@@ -107,12 +116,18 @@ async function isSlotAvailable({ mentor_user_id, mentor_uuid, slot_start_at }) {
 
 // --- Create ----------------------------------------------------------------
 
-async function createBooking({ mentee_user_id, mentor_uuid, slot_start_at, mentee_title, mentee_topic }) {
+async function createBooking({ mentee_user_id, mentor_uuid, slot_start_at, mentee_title, mentee_topic, intent_type, is_incognito }) {
   if (!mentor_uuid || !slot_start_at) {
     throw bad('missing_fields', 'mentor_uuid and slot_start_at are required');
   }
   const start = new Date(slot_start_at);
   if (Number.isNaN(start.getTime())) throw bad('invalid_slot_at');
+
+  const validIntents = ['just_listen', 'perspective', 'action_plan'];
+  const resolvedIntent = intent_type ? intent_type : 'perspective';
+  if (!validIntents.includes(resolvedIntent)) {
+    throw bad('invalid_intent_type', `intent_type must be one of: ${validIntents.join(', ')}`);
+  }
 
   // Resolve mentor + price tier
   const m = await query(
@@ -142,8 +157,8 @@ async function createBooking({ mentee_user_id, mentor_uuid, slot_start_at, mente
     const r = await query(
       `INSERT INTO bookings
          (mentor_user_id, mentee_user_id, slot_start_at, slot_end_at,
-          per_minute_paise_snapshot, mentee_title, mentee_topic, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled')
+          per_minute_paise_snapshot, mentee_title, mentee_topic, intent_type, is_incognito, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'scheduled')
        RETURNING *`,
       [
         m.rows[0].user_id,
@@ -153,6 +168,8 @@ async function createBooking({ mentee_user_id, mentor_uuid, slot_start_at, mente
         m.rows[0].per_minute_paise,
         mentee_title || null,
         mentee_topic || null,
+        resolvedIntent,
+        Boolean(is_incognito),
       ]
     );
     booking = r.rows[0];
@@ -170,7 +187,7 @@ async function createBooking({ mentee_user_id, mentor_uuid, slot_start_at, mente
     await sendBookingConfirmationEmails(full);
     await notifyParties(full, {
       kind: 'booking_confirmed',
-      title_for_mentor: `Booking from ${full.mentee_name}`,
+      title_for_mentor: full.is_incognito ? 'Booking from Anonymous Mentee' : `Booking from ${full.mentee_name}`,
       title_for_mentee: `Booking confirmed with ${full.mentor_name}`,
       body: new Date(full.slot_start_at).toISOString(),
       link_url: `/bookings/${full.uuid}`,
@@ -181,8 +198,84 @@ async function createBooking({ mentee_user_id, mentor_uuid, slot_start_at, mente
   }
 
   const full = await loadBookingByUuid(null, booking.uuid);
-  return publicBooking(full);
+  return publicBooking(full, 'mentee');
 }
+
+async function createInstantBooking({ mentee_user_id, mentor_uuid, mentee_title, mentee_topic, intent_type, is_incognito = false }) {
+  if (!mentor_uuid) {
+    throw bad('missing_mentor_uuid', 'mentor_uuid is required');
+  }
+  const m = await query(
+    `SELECT mp.user_id, mp.uuid AS profile_uuid, mp.verification_status,
+            mp.pricing_tier_id, mp.is_available_now, mp.available_now_until,
+            pt.per_minute_paise
+       FROM mentor_profiles mp
+       JOIN pricing_tiers pt ON pt.id = mp.pricing_tier_id
+      WHERE mp.uuid = $1`,
+    [mentor_uuid]
+  );
+  if (!m.rows[0]) throw notFound('mentor_not_found');
+  if (m.rows[0].verification_status !== 'approved') throw notFound('mentor_not_found');
+  if (m.rows[0].user_id === mentee_user_id) throw bad('cannot_book_self');
+
+  const isOnline = Boolean(m.rows[0].is_available_now && (!m.rows[0].available_now_until || new Date(m.rows[0].available_now_until) > new Date()));
+  if (!isOnline) {
+    throw conflict('mentor_not_available_now', 'This mentor is currently not available for instant calls');
+  }
+
+  const start = new Date();
+  const end = new Date(start.getTime() + 60 * 60_000);
+
+  const r = await query(
+    `INSERT INTO bookings
+       (mentor_user_id, mentee_user_id, slot_start_at, slot_end_at,
+        per_minute_paise_snapshot, mentee_title, mentee_topic, is_instant, is_incognito, intent_type, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9, 'scheduled')
+     RETURNING *`,
+    [
+      m.rows[0].user_id,
+      mentee_user_id,
+      start.toISOString(),
+      end.toISOString(),
+      m.rows[0].per_minute_paise,
+      mentee_title || 'Instant Session',
+      mentee_topic || null,
+      Boolean(is_incognito),
+      intent_type || 'perspective',
+    ]
+  );
+  const booking = r.rows[0];
+
+  try {
+    const full = await loadBookingByUuid(null, booking.uuid);
+    await notify.notify({
+      user_id: full.mentor_user_id,
+      kind: 'instant_call_incoming',
+      title: `⚡ Instant Call Request: ${full.is_incognito ? 'Anonymous Mentee' : full.mentee_name}`,
+      body: 'A mentee has initiated an instant talk session. Join the meeting room now!',
+      link_url: `/meetings/${full.uuid}`,
+      reference_table: 'bookings',
+      reference_id: full.id,
+      send_email: true,
+    });
+    await notify.notify({
+      user_id: full.mentee_user_id,
+      kind: 'instant_call_started',
+      title: `⚡ Instant Call with ${full.mentor_name}`,
+      body: 'Your instant session is ready. Joining meeting room...',
+      link_url: `/meetings/${full.uuid}`,
+      reference_table: 'bookings',
+      reference_id: full.id,
+      send_email: false,
+    });
+  } catch (e) {
+    console.error('[booking] instant notify failed:', e.message);
+  }
+
+  const full = await loadBookingByUuid(null, booking.uuid);
+  return publicBooking(full, 'mentee');
+}
+
 
 async function notifyParties(b, { kind, title_for_mentor, title_for_mentee, body, link_url }) {
   await notify.notify({
@@ -196,7 +289,9 @@ async function notifyParties(b, { kind, title_for_mentor, title_for_mentee, body
 }
 
 async function sendBookingConfirmationEmails(b) {
-  const ics = buildICS({
+  const menteeNameForMentor = b.is_incognito ? 'Anonymous Mentee' : b.mentee_name;
+
+  const menteeIcs = buildICS({
     uid: `booking-${b.uuid}@unmute`,
     start_at: b.slot_start_at,
     end_at: b.slot_end_at,
@@ -205,6 +300,17 @@ async function sendBookingConfirmationEmails(b) {
     organizer_email: b.mentor_email,
     attendee_emails: [b.mentee_email],
   });
+
+  const mentorIcs = buildICS({
+    uid: `booking-${b.uuid}@unmute`,
+    start_at: b.slot_start_at,
+    end_at: b.slot_end_at,
+    summary: `unmute session with ${menteeNameForMentor}`,
+    description: b.mentee_title || 'Mentoring session',
+    organizer_email: b.mentor_email,
+    attendee_emails: b.is_incognito ? [] : [b.mentee_email],
+  });
+
   await email.sendEmail(email.bookingConfirmedEmail({
     to: b.mentee_email,
     full_name: b.mentee_name,
@@ -212,17 +318,17 @@ async function sendBookingConfirmationEmails(b) {
     slot_start_at: b.slot_start_at,
     slot_end_at: b.slot_end_at,
     mentee_title: b.mentee_title,
-    ics_string: ics,
+    ics_string: menteeIcs,
     viewer_tz: b.mentor_timezone,
   }));
   await email.sendEmail(email.bookingConfirmedEmail({
     to: b.mentor_email,
     full_name: b.mentor_name,
-    other_name: b.mentee_name,
+    other_name: menteeNameForMentor,
     slot_start_at: b.slot_start_at,
     slot_end_at: b.slot_end_at,
     mentee_title: b.mentee_title,
-    ics_string: ics,
+    ics_string: mentorIcs,
     viewer_tz: b.mentor_timezone,
   }));
 }
@@ -268,14 +374,14 @@ async function listForUser({ user_id, role, status, from, to, limit = 50, offset
      ORDER BY b.slot_start_at DESC
      LIMIT ${limitN} OFFSET ${offsetN}`;
   const r = await query(sql, params);
-  return { items: r.rows.map(publicBooking), limit: limitN, offset: offsetN };
+  return { items: r.rows.map((row) => publicBooking(row, row.mentor_user_id === user_id ? 'mentor' : 'mentee')), limit: limitN, offset: offsetN };
 }
 
 async function getByUuidForUser({ user_id, uuid }) {
   const b = await loadBookingByUuid(null, uuid);
   if (!b) throw notFound('booking_not_found');
   ensureParty(b, user_id);
-  return publicBooking(b);
+  return publicBooking(b, b.mentor_user_id === user_id ? 'mentor' : 'mentee');
 }
 
 // --- Cancel ----------------------------------------------------------------
@@ -346,7 +452,7 @@ async function cancelBooking({ user_id, uuid, reason }) {
     }
 
     const refreshed = await loadBookingByUuid(client, uuid);
-    return { booking: publicBooking(refreshed), late: isLate, penalty_paise: isLate ? LATE_CANCEL_PENALTY_PAISE : 0 };
+    return { booking: publicBooking(refreshed, refreshed.mentor_user_id === user_id ? 'mentor' : 'mentee'), late: isLate, penalty_paise: isLate ? LATE_CANCEL_PENALTY_PAISE : 0 };
   });
 }
 
@@ -489,7 +595,7 @@ async function proposeReschedule({ user_id, uuid, new_slot_start_at }) {
     } catch (e) { /* swallow */ }
 
     const refreshed = await loadBookingByUuid(client, uuid);
-    return publicBooking(refreshed);
+    return publicBooking(refreshed, refreshed.mentor_user_id === user_id ? 'mentor' : 'mentee');
   });
 }
 
@@ -565,7 +671,7 @@ async function acceptReschedule({ user_id, uuid }) {
     } catch (e) { /* swallow */ }
 
     const refreshed = await loadBookingByUuid(client, uuid);
-    return publicBooking(refreshed);
+    return publicBooking(refreshed, refreshed.mentor_user_id === user_id ? 'mentor' : 'mentee');
   });
 }
 
@@ -608,6 +714,7 @@ async function declineReschedule({ user_id, uuid }) {
 
 module.exports = {
   createBooking,
+  createInstantBooking,
   listForUser,
   getByUuidForUser,
   cancelBooking,

@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Menu, X, Sun, Moon, Monitor,
   User as UserIcon, LayoutDashboard, Wallet as WalletIcon,
-  Settings as SettingsIcon, Calendar as CalendarIcon, LineChart, LogOut,
+  Settings as SettingsIcon, Calendar as CalendarIcon, LineChart, LogOut, LifeBuoy,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useTheme } from '../theme/ThemeProvider.jsx';
@@ -13,12 +13,14 @@ import NavHeader from './ui/nav-header.jsx';
 import Avatar from './Avatar.jsx';
 import Logo from './Logo.jsx';
 import NotificationBell from './NotificationBell.jsx';
+import CrisisSupportModal from './CrisisSupportModal.jsx';
 
 export default function Header() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [crisisOpen, setCrisisOpen] = useState(false);
 
   // Auto-close the drawer whenever the route changes (e.g. user taps a link).
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
@@ -70,6 +72,15 @@ export default function Header() {
               <Button size="sm" onClick={() => navigate('/register')}>Get started</Button>
             </>
           )}
+          <button
+            type="button"
+            onClick={() => setCrisisOpen(true)}
+            className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors"
+            title="24/7 Crisis Support & Emergency Helplines"
+          >
+            <LifeBuoy size={13} />
+            <span>Crisis Help</span>
+          </button>
           <ThemeToggle />
           {user && (
             <>
@@ -152,6 +163,7 @@ export default function Header() {
           </div>
         </>
       )}
+      <CrisisSupportModal open={crisisOpen} onClose={() => setCrisisOpen(false)} isMentor={isMentor} />
     </header>
   );
 }

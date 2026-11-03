@@ -9,7 +9,8 @@ const { general } = require('../middleware/rateLimit');
 const router = express.Router();
 
 // Public
-router.get('/featured',   general, c.listFeatured);
+router.get('/featured',               general, c.listFeatured);
+router.get('/upcoming-availability',  general, c.listUpcomingAvailability);
 // Authenticated mentor-self routes need to come before :uuid (to avoid
 // route collision with /mentors/me being interpreted as a uuid lookup).
 router.get('/me',         general, authJwt, c.getMine);

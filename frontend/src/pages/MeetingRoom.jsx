@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Mic, MicOff, Video, VideoOff, PhoneOff, AlertTriangle, Clock, IndianRupee,
+  Mic, MicOff, Video, VideoOff, PhoneOff, AlertTriangle, Clock, Shield, LifeBuoy,
   MessageSquare, X, Send,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -11,7 +11,9 @@ import { getAccessToken } from '../api/client.js';
 import Button from '../components/ui/Button.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import { PageSpinner } from '../components/ui/Spinner.jsx';
-import { formatDuration, formatINR } from '../lib/format.js';
+import { formatDuration } from '../lib/format.js';
+import { getIntentConfig } from '../lib/intentTypes.js';
+import CrisisSupportModal from '../components/CrisisSupportModal.jsx';
 
 const BILLING_POLL_MS = 5_000;
 const CHAT_POLL_MS    = 2_000;
@@ -59,6 +61,7 @@ export default function MeetingRoom() {
   const [remoteJoined, setRemoteJoined] = useState(false);
   const [muted, setMuted] = useState(false);
   const [camOff, setCamOff] = useState(false);
+  const [crisisOpen, setCrisisOpen] = useState(false);
 
   // Billing snapshot polling
   const [billing, setBilling] = useState(null);
@@ -139,9 +142,15 @@ export default function MeetingRoom() {
             try { await client.leave(); } catch (_) {}
             return;
           }
+          if (creds.is_incognito && creds.role === 'mentee') {
+            await video.setEnabled(false);
+            setCamOff(true);
+          }
           localTracksRef.current = { audio, video };
           await client.publish([audio, video]);
-          if (localVideoRef.current) video.play(localVideoRef.current);
+          if (localVideoRef.current && !(creds.is_incognito && creds.role === 'mentee')) {
+            video.play(localVideoRef.current);
+          }
         }
 
         // Tell the server we're present
@@ -318,10 +327,38 @@ export default function MeetingRoom() {
       <div className="flex-1 relative flex flex-col min-w-0">
         {/* Floating HUD pills, top-left. Glassmorphism (backdrop-blur)
             looks soft over the dark video background. */}
-        <div className="absolute top-3 left-3 right-3 z-20 pointer-events-none flex flex-wrap items-start gap-2">
-          <HUDPills billing={billing} />
+        <div className="absolute top-3 left-3 right-3 z-20 pointer-events-none flex flex-wrap items-start justify-between gap-2">
+          <div className="flex flex-wrap items-start gap-2">
+            <HUDPills billing={billing} meta={meta} />
+          </div>
+          <button
+            type="button"
+            onClick={() => setCrisisOpen(true)}
+            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 px-3 py-1.5 text-xs font-semibold backdrop-blur-md transition-colors shadow-sm ml-auto"
+            title="24/7 Crisis Support & Emergency Helplines"
+          >
+            <LifeBuoy size={14} className="text-rose-400" />
+            <span>Crisis Support</span>
+          </button>
           {/* Banner stack flows next to the HUD pills, wraps below on mobile. */}
           <div className="flex-1 min-w-[12rem] flex flex-col gap-2 pointer-events-auto">
+            {meta?.role === 'mentor' && meta?.intent_type && (
+              <div className={`pointer-events-auto rounded-xl ring-1 backdrop-blur-md px-3.5 py-2 text-xs shadow-lg flex items-start gap-2.5 ${getIntentConfig(meta.intent_type).colorScheme.badgeBg}`}>
+                {(() => {
+                  const cfg = getIntentConfig(meta.intent_type);
+                  const Icon = cfg.icon;
+                  return (
+                    <>
+                      <Icon size={16} className={`shrink-0 mt-0.5 ${cfg.colorScheme.iconColor}`} />
+                      <div className="flex-1">
+                        <span className="font-semibold tracking-tight">Mentee Goal: {cfg.label}</span>
+                        <span className="opacity-90 block mt-0.5">{cfg.mentorDirective}</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
             {billing?.low_balance_warned_at && billing?.billing_state === 'active' && (
               <Banner tone="warning">
                 <AlertTriangle size={14} className="inline mr-1" />
@@ -395,6 +432,9 @@ export default function MeetingRoom() {
             <CircleBtn onClick={() => setChatOpen((o) => !o)} active={!chatOpen} title="Chat" badge={unread}>
               <MessageSquare size={20} />
             </CircleBtn>
+            <CircleBtn onClick={() => setCrisisOpen(true)} title="Crisis Support & Lifelines">
+              <LifeBuoy size={20} className="text-rose-400" />
+            </CircleBtn>
             <div className="w-px h-8 bg-white/15 mx-1" />
             <CircleBtn onClick={() => setEndingModal(true)} danger title="End session">
               <PhoneOff size={20} />
@@ -418,14 +458,15 @@ export default function MeetingRoom() {
         scrollRef={chatScrollRef}
       />
 
+      <CrisisSupportModal open={crisisOpen} onClose={() => setCrisisOpen(false)} isMentor={meta?.role === 'mentor'} />
+
       <Modal open={endingModal} onClose={() => setEndingModal(false)} title="End the session?">
         <p className="text-sm text-slate-700">
-          You'll be charged for billed time so far (subject to the 15-min minimum if both joined).
+          You'll be charged for session time (subject to the 15-minute minimum once both parties join).
         </p>
         {billing && (
           <p className="mt-2 text-sm text-slate-700">
-            Billed so far: <strong>{formatINR(billing.billed_paise)}</strong>{' '}
-            ({formatDuration(billing.billed_seconds)})
+            Active talk time: <strong>{formatDuration(billing.billed_seconds)}</strong>
           </p>
         )}
         <div className="mt-5 flex justify-end gap-2">
@@ -443,7 +484,7 @@ export default function MeetingRoom() {
 // HUD into discrete chips so the layout reflows nicely on narrow screens
 // (each chip wraps independently). Glassmorphism (bg slate-900/60 +
 // backdrop-blur) blends softly with whatever video the user has behind it.
-function HUDPills({ billing }) {
+function HUDPills({ billing, meta }) {
   const stateTone = {
     idle:               'bg-slate-500',
     active:             'bg-emerald-400',
@@ -465,19 +506,18 @@ function HUDPills({ billing }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {meta?.is_incognito && (
+        <Pill dotClass="bg-purple-400">
+          <Shield size={11} className="inline mr-1 text-purple-300" />
+          Incognito Active
+        </Pill>
+      )}
       <Pill dotClass={stateTone}>
         {billing.billing_state.replaceAll('_', ' ')}
       </Pill>
       <Pill>
         <Clock size={12} className="opacity-75" />
         {formatDuration(billing.wall_clock_seconds)} / {formatDuration(billing.wall_clock_max_seconds)}
-      </Pill>
-      <Pill>
-        <IndianRupee size={12} className="opacity-75" />
-        {formatINR(billing.billed_paise)} <span className="opacity-60">({formatDuration(billing.billed_seconds)})</span>
-      </Pill>
-      <Pill>
-        <span className="opacity-60">@</span> {formatINR(billing.per_minute_paise)}/min
       </Pill>
     </div>
   );

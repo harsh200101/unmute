@@ -44,4 +44,14 @@ async function patchMine(req, res, next) {
   } catch (e) { next(e); }
 }
 
-module.exports = { listPublic, listFeatured, getByUuid, apply, getMine, patchMine };
+
+async function listUpcomingAvailability(req, res, next) {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 10;
+    const horizonDays = req.query.horizonDays ? parseInt(req.query.horizonDays, 10) : 7;
+    const items = await m.listUpcomingAvailability({ limit, horizonDays });
+    res.json({ items });
+  } catch (e) { next(e); }
+}
+
+module.exports = { listPublic, listFeatured, listUpcomingAvailability, getByUuid, apply, getMine, patchMine };

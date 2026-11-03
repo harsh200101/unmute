@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowRight, Calendar, Video, Star } from 'lucide-react';
+import { ArrowRight, Calendar, Video, Star, Shield } from 'lucide-react';
 import { bookings as bookingsApi, availability as avApi, reviews as reviewsApi } from '../api/endpoints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
@@ -12,6 +12,7 @@ import { Field, Input } from '../components/ui/Field.jsx';
 import { PageSpinner } from '../components/ui/Spinner.jsx';
 import { formatDate, formatTime, formatPerMinute, relativeTime } from '../lib/format.js';
 import { getDisplayStatus, isCancellable as canCancelBooking } from '../lib/booking-status.js';
+import { getIntentConfig } from '../lib/intentTypes.js';
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 const JOIN_WINDOW_BEFORE_MS = 5 * 60 * 1000;
@@ -164,7 +165,15 @@ export default function BookingDetail() {
         <Avatar src={other.avatar_url} name={other.full_name} size={56} />
         <div className="flex-1">
           <p className="text-sm text-muted-foreground">Session {youAreMentor ? 'with mentee' : 'with mentor'}</p>
-          <h1 className="text-2xl font-bold text-foreground">{other.full_name}</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-bold text-foreground">{other.full_name}</h1>
+            {booking.is_incognito && (
+              <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 font-medium">
+                <Shield size={12} />
+                Incognito
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mt-0.5">
             {formatDate(booking.slot_start_at)} — {formatTime(booking.slot_end_at)}
             <span className="text-slate-400"> · {relativeTime(booking.slot_start_at)}</span>
@@ -183,6 +192,15 @@ export default function BookingDetail() {
           {displayStatus.label}
         </span>
       </header>
+
+      {youAreMentor && booking.is_incognito && (
+        <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-700 dark:text-purple-300">
+          <Shield size={16} className="shrink-0 text-purple-500" />
+          <span>
+            This mentee booked using <strong>Incognito Mode</strong>. Their personal demographics and email are protected and masked as &ldquo;Anonymous Mentee&rdquo;.
+          </span>
+        </div>
+      )}
 
       {/* Join CTA when in window or admin testing — live bookings, or admin anytime */}
       {inJoinWindow && (isAdmin || booking.status === 'scheduled' || booking.status === 'in_call') && (
@@ -224,6 +242,42 @@ export default function BookingDetail() {
             <p className="text-sm text-foreground/80">
               You proposed a new time → {formatDate(booking.reschedule_to_at)}. Waiting for {other.full_name} to accept or decline.
             </p>
+          </CardBody>
+        </Card>
+      )}
+
+      {booking.intent_type && (
+        <Card className={getIntentConfig(booking.intent_type).colorScheme.border}>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-foreground flex items-center gap-2">
+                Session Intent & Focus
+              </h2>
+              {(() => {
+                const cfg = getIntentConfig(booking.intent_type);
+                const Icon = cfg.icon;
+                return (
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${cfg.colorScheme.badgeBg}`}>
+                    <Icon size={14} />
+                    {cfg.label}
+                  </span>
+                );
+              })()}
+            </div>
+          </CardHeader>
+          <CardBody className="pt-0 space-y-3">
+            <p className="text-sm text-foreground/90">
+              {getIntentConfig(booking.intent_type).tagline}
+            </p>
+            {youAreMentor ? (
+              <div className={`p-3 rounded-lg border text-xs leading-relaxed ${getIntentConfig(booking.intent_type).colorScheme.badgeBg}`}>
+                <strong>Mentor Alignment:</strong> {getIntentConfig(booking.intent_type).mentorDirective}
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg bg-muted text-xs text-muted-foreground leading-relaxed">
+                <strong>Your preference:</strong> Your mentor will focus on this approach during your conversation.
+              </div>
+            )}
           </CardBody>
         </Card>
       )}

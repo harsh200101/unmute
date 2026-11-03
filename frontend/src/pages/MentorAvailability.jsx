@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Zap, Clock, Power, Sparkles, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { availability as avApi } from '../api/endpoints.js';
 import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
@@ -16,6 +16,13 @@ export default function MentorAvailability() {
   const [overrides, setOverrides] = useState([]);
   const [saving, setSaving] = useState(false);
 
+  // Available Now Live state
+  const [isAvailableNow, setIsAvailableNow] = useState(false);
+  const [availableNowUntil, setAvailableNowUntil] = useState(null);
+  const [durationMinutes, setDurationMinutes] = useState(60);
+  const [togglingLive, setTogglingLive] = useState(false);
+  const [timeLeftStr, setTimeLeftStr] = useState('');
+
   const [newOverride, setNewOverride] = useState({ slot_at: '', action: 'block', reason: '' });
 
   async function reload() {
@@ -28,6 +35,8 @@ export default function MentorAvailability() {
         start_time_local: (t.start_time_local || '').slice(0, 5),
       })));
       setOverrides(r.overrides || []);
+      setIsAvailableNow(Boolean(r.is_available_now));
+      setAvailableNowUntil(r.available_now_until || null);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed to load availability');
     } finally {
@@ -36,6 +45,56 @@ export default function MentorAvailability() {
   }
 
   useEffect(() => { reload(); }, []);
+
+  // Live countdown timer ticker
+  useEffect(() => {
+    if (!isAvailableNow || !availableNowUntil) {
+      setTimeLeftStr('');
+      return;
+    }
+    function updateTimer() {
+      const diff = new Date(availableNowUntil).getTime() - Date.now();
+      if (diff <= 0) {
+        setIsAvailableNow(false);
+        setAvailableNowUntil(null);
+        setTimeLeftStr('00:00');
+        return;
+      }
+      const totalSec = Math.floor(diff / 1000);
+      const hrs = Math.floor(totalSec / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = totalSec % 60;
+      if (hrs > 0) {
+        setTimeLeftStr(`${hrs}h ${mins.toString().padStart(2, '0')}m ${secs.toString().padStart(2, '0')}s`);
+      } else {
+        setTimeLeftStr(`${mins}m ${secs.toString().padStart(2, '0')}s`);
+      }
+    }
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [isAvailableNow, availableNowUntil]);
+
+  async function handleToggleLive(enable) {
+    setTogglingLive(true);
+    try {
+      const res = await avApi.toggleAvailableNow({
+        enabled: enable,
+        duration_minutes: durationMinutes,
+      });
+      setIsAvailableNow(Boolean(res.is_available_now));
+      setAvailableNowUntil(res.available_now_until || null);
+      if (enable) {
+        toast.success(`You are now LIVE for ${durationMinutes} minutes! Mentees can connect instantly.`);
+      } else {
+        toast.success('Live availability turned off.');
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to update live status');
+    } finally {
+      setTogglingLive(false);
+    }
+  }
 
   function addSlot(day) {
     setTemplate((cur) => [...cur, { day_of_week: day, start_time_local: '18:00' }]);
@@ -115,6 +174,104 @@ export default function MentorAvailability() {
         </div>
         <Button onClick={saveTemplate} loading={saving}>Save weekly template</Button>
       </header>
+
+      {/* ----------------- GO LIVE: AVAILABLE TO TALK NOW CARD ----------------- */}
+      <div className={`mb-8 rounded-2xl border transition-all duration-300 overflow-hidden ${
+        isAvailableNow
+          ? 'bg-gradient-to-br from-emerald-500/10 via-card to-emerald-500/5 border-emerald-500/40 shadow-soft ring-1 ring-emerald-500/20'
+          : 'bg-card border-border shadow-soft'
+      }`}>
+        <div className="p-5 sm:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className={`p-2.5 rounded-xl shrink-0 ${
+                isAvailableNow
+                  ? 'bg-emerald-500 text-white shadow-soft'
+                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+              }`}>
+                <Zap size={22} className={isAvailableNow ? 'animate-pulse' : ''} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-foreground">
+                    Go Live: Available to Talk Now
+                  </h2>
+                  {isAvailableNow && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500 text-white shadow-xs">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                      </span>
+                      LIVE NOW
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1 max-w-xl">
+                  {isAvailableNow
+                    ? 'You are actively online and marked available. Mentees can connect with you instantly for 1-on-1 sessions.'
+                    : 'Free right now? Turn on instant matching so mentees can connect immediately without booking days in advance.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Action Area */}
+            <div className="flex flex-col sm:items-end gap-3 shrink-0">
+              {isAvailableNow ? (
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground flex items-center justify-end gap-1 font-medium">
+                      <Clock size={12} /> Time remaining
+                    </p>
+                    <p className="text-lg font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                      {timeLeftStr || 'Active'}
+                    </p>
+                  </div>
+                  <Button
+                    variant="danger"
+                    size="md"
+                    onClick={() => handleToggleLive(false)}
+                    loading={togglingLive}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Power size={14} /> End Live
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center bg-muted p-1 rounded-xl border border-border">
+                    {[
+                      { mins: 30, label: '30m' },
+                      { mins: 60, label: '60m' },
+                      { mins: 120, label: '120m' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.mins}
+                        type="button"
+                        onClick={() => setDurationMinutes(opt.mins)}
+                        className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
+                          durationMinutes === opt.mins
+                            ? 'bg-card text-foreground shadow-xs font-semibold'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <Button
+                    size="md"
+                    onClick={() => handleToggleLive(true)}
+                    loading={togglingLive}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5"
+                  >
+                    <Zap size={14} /> Go Live
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <Card>
         <CardHeader>

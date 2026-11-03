@@ -90,10 +90,11 @@ async function issueCredentials({ booking_uuid, user_id, user_role }) {
         WHERE b.id = $1`,
       [booking.id]
     )).rows[0];
-    const self_name        = role === 'mentor' ? names.mentor_name   : names.mentee_name;
+    const isIncognito = Boolean(booking.is_incognito);
+    const self_name        = role === 'mentor' ? names.mentor_name : (isIncognito ? `${names.mentee_name} (Incognito)` : names.mentee_name);
     const self_avatar      = role === 'mentor' ? names.mentor_avatar : names.mentee_avatar;
-    const counterpart_name = role === 'mentor' ? names.mentee_name   : names.mentor_name;
-    const counterpart_avatar = role === 'mentor' ? names.mentee_avatar : names.mentor_avatar;
+    const counterpart_name = role === 'mentor' ? (isIncognito ? 'Anonymous Mentee' : names.mentee_name) : names.mentor_name;
+    const counterpart_avatar = role === 'mentor' ? (isIncognito ? null : names.mentee_avatar) : names.mentor_avatar;
 
     return {
       meeting_uuid: meeting.uuid,
@@ -107,6 +108,10 @@ async function issueCredentials({ booking_uuid, user_id, user_role }) {
       counterpart_name,
       counterpart_avatar,
       counterpart_role: role === 'mentor' ? 'mentee' : 'mentor',
+      is_incognito: isIncognito,
+      intent_type: booking.intent_type || 'perspective',
+      mentee_title: booking.mentee_title || null,
+      mentee_topic: booking.mentee_topic || null,
       ...creds,
     };
   });

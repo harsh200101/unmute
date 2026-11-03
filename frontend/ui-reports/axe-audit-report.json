@@ -1,0 +1,3242 @@
+{
+  "timestamp": "2026-10-31T19:55:37.380Z",
+  "routeSummaries": [
+    {
+      "name": "landing",
+      "path": "/",
+      "url": "https://unmute-frontend.onrender.com/",
+      "violationsCount": 2,
+      "incompleteCount": 3,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ],
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "nodes": [
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".gap-2.items-center.flex:nth-child(3) > .text-primary-foreground.hover\\:bg-primary\\/90.active\\:bg-primary\\/80"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".gap-2.items-center.flex:nth-child(3) > .text-primary-foreground.hover\\:bg-primary\\/90.active\\:bg-primary\\/80"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "12.0pt (16px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".sm\\:gap-3 > .contents[href$=\"register\"][data-discover=\"true\"] > .text-primary-foreground.hover\\:bg-primary\\/90.active\\:bg-primary\\/80"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".sm\\:gap-3 > .contents[href$=\"register\"][data-discover=\"true\"] > .text-primary-foreground.hover\\:bg-primary\\/90.active\\:bg-primary\\/80"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "12.0pt (16px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".max-w-4xl > .mt-7.sm\\:flex-row.gap-3 > .contents[href$=\"register\"][data-discover=\"true\"] > .text-primary-foreground.hover\\:bg-primary\\/90.active\\:bg-primary\\/80"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".max-w-4xl > .mt-7.sm\\:flex-row.gap-3 > .contents[href$=\"register\"][data-discover=\"true\"] > .text-primary-foreground.hover\\:bg-primary\\/90.active\\:bg-primary\\/80"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ef4444",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.03,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+              "target": [
+                ".bg-destructive\\/10"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+              "target": [
+                ".text-\\[11px\\]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "bold",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<strong>not</strong>",
+              "target": [
+                "strong"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+              "target": [
+                ".underline"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "image-redundant-alt",
+          "impact": "minor",
+          "tags": [
+            "cat.text-alternatives",
+            "best-practice"
+          ],
+          "description": "Ensure image alternative is not repeated as text",
+          "help": "Alternative text of images should not be repeated as text",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+          "nodes": [
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".group-hover\\:scale-105"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            },
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wallet",
+      "path": "/wallet",
+      "url": "https://unmute-frontend.onrender.com/wallet",
+      "violationsCount": 2,
+      "incompleteCount": 1,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ],
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "nodes": [
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".text-primary-foreground"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".text-primary-foreground"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ef4444",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.03,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+              "target": [
+                ".bg-destructive\\/10"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+              "target": [
+                ".text-\\[11px\\]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "bold",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<strong>not</strong>",
+              "target": [
+                "strong"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+              "target": [
+                ".underline"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "image-redundant-alt",
+          "impact": "minor",
+          "tags": [
+            "cat.text-alternatives",
+            "best-practice"
+          ],
+          "description": "Ensure image alternative is not repeated as text",
+          "help": "Alternative text of images should not be repeated as text",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+          "nodes": [
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".transition-transform"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            },
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img[width=\"32\"][height=\"32\"]"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "login",
+      "path": "/login",
+      "url": "https://unmute-frontend.onrender.com/login",
+      "violationsCount": 2,
+      "incompleteCount": 1,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ],
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "nodes": [
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".text-primary-foreground"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".text-primary-foreground"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ef4444",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.03,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+              "target": [
+                ".bg-destructive\\/10"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+              "target": [
+                ".text-\\[11px\\]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "bold",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<strong>not</strong>",
+              "target": [
+                "strong"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+              "target": [
+                ".underline"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "image-redundant-alt",
+          "impact": "minor",
+          "tags": [
+            "cat.text-alternatives",
+            "best-practice"
+          ],
+          "description": "Ensure image alternative is not repeated as text",
+          "help": "Alternative text of images should not be repeated as text",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+          "nodes": [
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".transition-transform"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            },
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img[width=\"32\"][height=\"32\"]"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "register",
+      "path": "/register",
+      "url": "https://unmute-frontend.onrender.com/register",
+      "violationsCount": 2,
+      "incompleteCount": 1,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ],
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "nodes": [
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".text-primary-foreground"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".text-primary-foreground"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ef4444",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.03,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+              "target": [
+                ".bg-destructive\\/10"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+              "target": [
+                ".text-\\[11px\\]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "bold",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<strong>not</strong>",
+              "target": [
+                "strong"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+              "target": [
+                ".underline"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "image-redundant-alt",
+          "impact": "minor",
+          "tags": [
+            "cat.text-alternatives",
+            "best-practice"
+          ],
+          "description": "Ensure image alternative is not repeated as text",
+          "help": "Alternative text of images should not be repeated as text",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+          "nodes": [
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".transition-transform"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            },
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img[width=\"32\"][height=\"32\"]"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "mentors",
+      "path": "/mentors",
+      "url": "https://unmute-frontend.onrender.com/mentors",
+      "violationsCount": 3,
+      "incompleteCount": 1,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ],
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "nodes": [
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".text-primary-foreground"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".text-primary-foreground"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6366f1",
+                    "bgColor": "#f8fafc",
+                    "contrastRatio": 4.26,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<body>",
+                      "target": [
+                        "body"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.26 (foreground color: #6366f1, background color: #f8fafc, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<span class=\"inline-flex items-center gap-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 px-3 py-1 text-xs font-medium\">",
+              "target": [
+                ".max-w-2xl > .bg-primary\\/10.border-primary\\/20.py-1"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.26 (foreground color: #6366f1, background color: #f8fafc, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6366f1",
+                    "bgColor": "#ffffff",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<a class=\"group relative block bg-card text-card-foreground border border-border rounded-2xl p-5 sm:p-6 shadow-soft hover:shadow-elev hover:border-primary/40 transition-all duration-300\" href=\"/mentors/8c8863c5-0229-48e0-9cc2-2b9221d2b7ce\" data-discover=\"true\">",
+                      "target": [
+                        ".text-card-foreground.p-5.sm\\:p-6:nth-child(1)"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<span class=\"shrink-0 inline-flex items-baseline gap-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 text-sm font-semibold whitespace-nowrap\">₹20/min</span>",
+              "target": [
+                ".text-card-foreground.p-5.sm\\:p-6:nth-child(1) > .relative > .gap-4.items-start.flex > .min-w-0.flex-1 > .justify-between.gap-3.items-start > .items-baseline.gap-0\\.5.px-2\\.5"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6366f1",
+                    "bgColor": "#ffffff",
+                    "contrastRatio": 4.46,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<a class=\"group relative block bg-card text-card-foreground border border-border rounded-2xl p-5 sm:p-6 shadow-soft hover:shadow-elev hover:border-primary/40 transition-all duration-300\" href=\"/mentors/8c8863c5-0229-48e0-9cc2-2b9221d2b7ce\" data-discover=\"true\">",
+                      "target": [
+                        ".text-card-foreground.p-5.sm\\:p-6:nth-child(1)"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<span class=\"ml-auto inline-flex items-center gap-1 text-primary font-medium translate-x-0 group-hover:translate-x-0.5 transition-transform\">",
+              "target": [
+                ".text-card-foreground.p-5.sm\\:p-6:nth-child(1) > .relative > .pt-4.flex-wrap.gap-x-4 > .ml-auto.translate-x-0.group-hover\\:translate-x-0\\.5"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6366f1",
+                    "bgColor": "#ffffff",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<a class=\"group relative block bg-card text-card-foreground border border-border rounded-2xl p-5 sm:p-6 shadow-soft hover:shadow-elev hover:border-primary/40 transition-all duration-300\" href=\"/mentors/030c3ae3-c91d-4c36-a73e-7ca214da3c4a\" data-discover=\"true\">",
+                      "target": [
+                        ".text-card-foreground.p-5.sm\\:p-6:nth-child(2)"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<span class=\"shrink-0 inline-flex items-baseline gap-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 text-sm font-semibold whitespace-nowrap\">₹10/min</span>",
+              "target": [
+                ".text-card-foreground.p-5.sm\\:p-6:nth-child(2) > .relative > .gap-4.items-start.flex > .min-w-0.flex-1 > .justify-between.gap-3.items-start > .items-baseline.gap-0\\.5.px-2\\.5"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6366f1",
+                    "bgColor": "#ffffff",
+                    "contrastRatio": 4.46,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<a class=\"group relative block bg-card text-card-foreground border border-border rounded-2xl p-5 sm:p-6 shadow-soft hover:shadow-elev hover:border-primary/40 transition-all duration-300\" href=\"/mentors/030c3ae3-c91d-4c36-a73e-7ca214da3c4a\" data-discover=\"true\">",
+                      "target": [
+                        ".text-card-foreground.p-5.sm\\:p-6:nth-child(2)"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<span class=\"ml-auto inline-flex items-center gap-1 text-primary font-medium translate-x-0 group-hover:translate-x-0.5 transition-transform\">",
+              "target": [
+                ".text-card-foreground.p-5.sm\\:p-6:nth-child(2) > .relative > .pt-4.flex-wrap.gap-x-4 > .ml-auto.translate-x-0.group-hover\\:translate-x-0\\.5"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ef4444",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.03,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+              "target": [
+                ".bg-destructive\\/10"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+              "target": [
+                ".text-\\[11px\\]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "bold",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<strong>not</strong>",
+              "target": [
+                "strong"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+              "target": [
+                ".underline"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "tags": [
+            "cat.semantics",
+            "best-practice"
+          ],
+          "description": "Ensure the order of headings is semantically correct",
+          "help": "Heading levels should only increase by one",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/heading-order?application=playwright",
+          "nodes": [
+            {
+              "any": [
+                {
+                  "id": "heading-order",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "moderate",
+                  "message": "Heading order invalid"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "moderate",
+              "html": "<h3 class=\"font-semibold text-foreground truncate text-base sm:text-lg\">Harsh gajbhiye</h3>",
+              "target": [
+                ".text-card-foreground.p-5.sm\\:p-6:nth-child(1) > .relative > .gap-4.items-start.flex > .min-w-0.flex-1 > .justify-between.gap-3.items-start > .min-w-0 > h3"
+              ],
+              "failureSummary": "Fix any of the following:\n  Heading order invalid"
+            }
+          ]
+        },
+        {
+          "id": "image-redundant-alt",
+          "impact": "minor",
+          "tags": [
+            "cat.text-alternatives",
+            "best-practice"
+          ],
+          "description": "Ensure image alternative is not repeated as text",
+          "help": "Alternative text of images should not be repeated as text",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+          "nodes": [
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".group-hover\\:scale-105"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            },
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img[alt=\"unmute\"][width=\"32\"][height=\"32\"]"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "crisis",
+      "path": "/crisis",
+      "url": "https://unmute-frontend.onrender.com/crisis",
+      "violationsCount": 2,
+      "incompleteCount": 1,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ],
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "nodes": [
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".text-primary-foreground"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".text-primary-foreground"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ef4444",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.03,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+              "target": [
+                ".bg-destructive\\/10"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+              "target": [
+                ".text-\\[11px\\]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "bold",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<strong>not</strong>",
+              "target": [
+                ".text-\\[11px\\] > strong"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+              "target": [
+                ".underline[href$=\"crisis\"][data-discover=\"true\"]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "image-redundant-alt",
+          "impact": "minor",
+          "tags": [
+            "cat.text-alternatives",
+            "best-practice"
+          ],
+          "description": "Ensure image alternative is not repeated as text",
+          "help": "Alternative text of images should not be repeated as text",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+          "nodes": [
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".transition-transform"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            },
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "terms",
+      "path": "/terms",
+      "url": "https://unmute-frontend.onrender.com/terms",
+      "violationsCount": 2,
+      "incompleteCount": 0,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ],
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "nodes": [
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".text-primary-foreground"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".text-primary-foreground"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ef4444",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.03,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+              "target": [
+                ".bg-destructive\\/10"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+              "target": [
+                ".text-\\[11px\\]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "bold",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<strong>not</strong>",
+              "target": [
+                ".text-\\[11px\\] > strong"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+              "target": [
+                ".text-\\[11px\\] > .underline[href$=\"crisis\"][data-discover=\"true\"]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "image-redundant-alt",
+          "impact": "minor",
+          "tags": [
+            "cat.text-alternatives",
+            "best-practice"
+          ],
+          "description": "Ensure image alternative is not repeated as text",
+          "help": "Alternative text of images should not be repeated as text",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+          "nodes": [
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".transition-transform"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            },
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "privacy",
+      "path": "/privacy",
+      "url": "https://unmute-frontend.onrender.com/privacy",
+      "violationsCount": 2,
+      "incompleteCount": 1,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ],
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "nodes": [
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".text-primary-foreground"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".text-primary-foreground"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ef4444",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.03,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+              "target": [
+                ".bg-destructive\\/10"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+              "target": [
+                ".text-\\[11px\\]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "bold",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<strong>not</strong>",
+              "target": [
+                ".text-\\[11px\\] > strong"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+              "target": [
+                ".text-\\[11px\\] > .underline[href$=\"crisis\"][data-discover=\"true\"]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "image-redundant-alt",
+          "impact": "minor",
+          "tags": [
+            "cat.text-alternatives",
+            "best-practice"
+          ],
+          "description": "Ensure image alternative is not repeated as text",
+          "help": "Alternative text of images should not be repeated as text",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+          "nodes": [
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".transition-transform"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            },
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "refund-policy",
+      "path": "/refund-policy",
+      "url": "https://unmute-frontend.onrender.com/refund-policy",
+      "violationsCount": 2,
+      "incompleteCount": 1,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ],
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+          "nodes": [
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ffffff",
+                    "bgColor": "#6366f1",
+                    "contrastRatio": 4.46,
+                    "fontSize": "10.5pt (14px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+                      "target": [
+                        ".text-primary-foreground"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+              "target": [
+                ".text-primary-foreground"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#ef4444",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.03,
+                    "fontSize": "9.0pt (12px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+              "target": [
+                ".bg-destructive\\/10"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+              "target": [
+                ".text-\\[11px\\]"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "bold",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<strong>not</strong>",
+              "target": [
+                ".text-\\[11px\\] > strong"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "any": [
+                {
+                  "id": "color-contrast",
+                  "data": {
+                    "fgColor": "#6b7280",
+                    "bgColor": "#e5e7eb",
+                    "contrastRatio": 3.9,
+                    "fontSize": "8.3pt (11px)",
+                    "fontWeight": "normal",
+                    "messageKey": null,
+                    "expectedContrastRatio": "4.5:1"
+                  },
+                  "relatedNodes": [
+                    {
+                      "html": "<footer class=\"relative isolate bg-secondary dark:bg-secondary/20 mt-16 w-full rounded-t-xl\">",
+                      "target": [
+                        "footer"
+                      ]
+                    }
+                  ],
+                  "impact": "serious",
+                  "message": "Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+                }
+              ],
+              "all": [],
+              "none": [],
+              "impact": "serious",
+              "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+              "target": [
+                ".underline"
+              ],
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        },
+        {
+          "id": "image-redundant-alt",
+          "impact": "minor",
+          "tags": [
+            "cat.text-alternatives",
+            "best-practice"
+          ],
+          "description": "Ensure image alternative is not repeated as text",
+          "help": "Alternative text of images should not be repeated as text",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+          "nodes": [
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".transition-transform"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            },
+            {
+              "any": [],
+              "all": [],
+              "none": [
+                {
+                  "id": "duplicate-img-label",
+                  "data": null,
+                  "relatedNodes": [],
+                  "impact": "minor",
+                  "message": "Element contains <img> element with alt text that duplicates existing text"
+                }
+              ],
+              "impact": "minor",
+              "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+              "target": [
+                ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img"
+              ],
+              "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "allViolations": [
+    {
+      "route": "landing",
+      "url": "https://unmute-frontend.onrender.com/",
+      "id": "color-contrast",
+      "impact": "serious",
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".gap-2.items-center.flex:nth-child(3) > .text-primary-foreground.hover\\:bg-primary\\/90.active\\:bg-primary\\/80"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".sm\\:gap-3 > .contents[href$=\"register\"][data-discover=\"true\"] > .text-primary-foreground.hover\\:bg-primary\\/90.active\\:bg-primary\\/80"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".max-w-4xl > .mt-7.sm\\:flex-row.gap-3 > .contents[href$=\"register\"][data-discover=\"true\"] > .text-primary-foreground.hover\\:bg-primary\\/90.active\\:bg-primary\\/80"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+          "target": [
+            ".bg-destructive\\/10"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+          "target": [
+            ".text-\\[11px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<strong>not</strong>",
+          "target": [
+            "strong"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+          "target": [
+            ".underline"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        }
+      ]
+    },
+    {
+      "route": "landing",
+      "url": "https://unmute-frontend.onrender.com/",
+      "id": "image-redundant-alt",
+      "impact": "minor",
+      "description": "Ensure image alternative is not repeated as text",
+      "help": "Alternative text of images should not be repeated as text",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+      "nodes": [
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".group-hover\\:scale-105"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        },
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        }
+      ]
+    },
+    {
+      "route": "wallet",
+      "url": "https://unmute-frontend.onrender.com/wallet",
+      "id": "color-contrast",
+      "impact": "serious",
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".text-primary-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+          "target": [
+            ".bg-destructive\\/10"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+          "target": [
+            ".text-\\[11px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<strong>not</strong>",
+          "target": [
+            "strong"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+          "target": [
+            ".underline"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        }
+      ]
+    },
+    {
+      "route": "wallet",
+      "url": "https://unmute-frontend.onrender.com/wallet",
+      "id": "image-redundant-alt",
+      "impact": "minor",
+      "description": "Ensure image alternative is not repeated as text",
+      "help": "Alternative text of images should not be repeated as text",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+      "nodes": [
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".transition-transform"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        },
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img[width=\"32\"][height=\"32\"]"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        }
+      ]
+    },
+    {
+      "route": "login",
+      "url": "https://unmute-frontend.onrender.com/login",
+      "id": "color-contrast",
+      "impact": "serious",
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".text-primary-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+          "target": [
+            ".bg-destructive\\/10"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+          "target": [
+            ".text-\\[11px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<strong>not</strong>",
+          "target": [
+            "strong"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+          "target": [
+            ".underline"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        }
+      ]
+    },
+    {
+      "route": "login",
+      "url": "https://unmute-frontend.onrender.com/login",
+      "id": "image-redundant-alt",
+      "impact": "minor",
+      "description": "Ensure image alternative is not repeated as text",
+      "help": "Alternative text of images should not be repeated as text",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+      "nodes": [
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".transition-transform"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        },
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img[width=\"32\"][height=\"32\"]"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        }
+      ]
+    },
+    {
+      "route": "register",
+      "url": "https://unmute-frontend.onrender.com/register",
+      "id": "color-contrast",
+      "impact": "serious",
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".text-primary-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+          "target": [
+            ".bg-destructive\\/10"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+          "target": [
+            ".text-\\[11px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<strong>not</strong>",
+          "target": [
+            "strong"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+          "target": [
+            ".underline"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        }
+      ]
+    },
+    {
+      "route": "register",
+      "url": "https://unmute-frontend.onrender.com/register",
+      "id": "image-redundant-alt",
+      "impact": "minor",
+      "description": "Ensure image alternative is not repeated as text",
+      "help": "Alternative text of images should not be repeated as text",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+      "nodes": [
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".transition-transform"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        },
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img[width=\"32\"][height=\"32\"]"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        }
+      ]
+    },
+    {
+      "route": "mentors",
+      "url": "https://unmute-frontend.onrender.com/mentors",
+      "id": "color-contrast",
+      "impact": "serious",
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".text-primary-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<span class=\"inline-flex items-center gap-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 px-3 py-1 text-xs font-medium\">",
+          "target": [
+            ".max-w-2xl > .bg-primary\\/10.border-primary\\/20.py-1"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.26 (foreground color: #6366f1, background color: #f8fafc, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<span class=\"shrink-0 inline-flex items-baseline gap-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 text-sm font-semibold whitespace-nowrap\">₹20/min</span>",
+          "target": [
+            ".text-card-foreground.p-5.sm\\:p-6:nth-child(1) > .relative > .gap-4.items-start.flex > .min-w-0.flex-1 > .justify-between.gap-3.items-start > .items-baseline.gap-0\\.5.px-2\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<span class=\"ml-auto inline-flex items-center gap-1 text-primary font-medium translate-x-0 group-hover:translate-x-0.5 transition-transform\">",
+          "target": [
+            ".text-card-foreground.p-5.sm\\:p-6:nth-child(1) > .relative > .pt-4.flex-wrap.gap-x-4 > .ml-auto.translate-x-0.group-hover\\:translate-x-0\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<span class=\"shrink-0 inline-flex items-baseline gap-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 text-sm font-semibold whitespace-nowrap\">₹10/min</span>",
+          "target": [
+            ".text-card-foreground.p-5.sm\\:p-6:nth-child(2) > .relative > .gap-4.items-start.flex > .min-w-0.flex-1 > .justify-between.gap-3.items-start > .items-baseline.gap-0\\.5.px-2\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<span class=\"ml-auto inline-flex items-center gap-1 text-primary font-medium translate-x-0 group-hover:translate-x-0.5 transition-transform\">",
+          "target": [
+            ".text-card-foreground.p-5.sm\\:p-6:nth-child(2) > .relative > .pt-4.flex-wrap.gap-x-4 > .ml-auto.translate-x-0.group-hover\\:translate-x-0\\.5"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #6366f1, background color: #ffffff, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+          "target": [
+            ".bg-destructive\\/10"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+          "target": [
+            ".text-\\[11px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<strong>not</strong>",
+          "target": [
+            "strong"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+          "target": [
+            ".underline"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        }
+      ]
+    },
+    {
+      "route": "mentors",
+      "url": "https://unmute-frontend.onrender.com/mentors",
+      "id": "heading-order",
+      "impact": "moderate",
+      "description": "Ensure the order of headings is semantically correct",
+      "help": "Heading levels should only increase by one",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/heading-order?application=playwright",
+      "nodes": [
+        {
+          "html": "<h3 class=\"font-semibold text-foreground truncate text-base sm:text-lg\">Harsh gajbhiye</h3>",
+          "target": [
+            ".text-card-foreground.p-5.sm\\:p-6:nth-child(1) > .relative > .gap-4.items-start.flex > .min-w-0.flex-1 > .justify-between.gap-3.items-start > .min-w-0 > h3"
+          ],
+          "failureSummary": "Fix any of the following:\n  Heading order invalid"
+        }
+      ]
+    },
+    {
+      "route": "mentors",
+      "url": "https://unmute-frontend.onrender.com/mentors",
+      "id": "image-redundant-alt",
+      "impact": "minor",
+      "description": "Ensure image alternative is not repeated as text",
+      "help": "Alternative text of images should not be repeated as text",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+      "nodes": [
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".group-hover\\:scale-105"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        },
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img[alt=\"unmute\"][width=\"32\"][height=\"32\"]"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        }
+      ]
+    },
+    {
+      "route": "crisis",
+      "url": "https://unmute-frontend.onrender.com/crisis",
+      "id": "color-contrast",
+      "impact": "serious",
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".text-primary-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+          "target": [
+            ".bg-destructive\\/10"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+          "target": [
+            ".text-\\[11px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<strong>not</strong>",
+          "target": [
+            ".text-\\[11px\\] > strong"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+          "target": [
+            ".underline[href$=\"crisis\"][data-discover=\"true\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        }
+      ]
+    },
+    {
+      "route": "crisis",
+      "url": "https://unmute-frontend.onrender.com/crisis",
+      "id": "image-redundant-alt",
+      "impact": "minor",
+      "description": "Ensure image alternative is not repeated as text",
+      "help": "Alternative text of images should not be repeated as text",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+      "nodes": [
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".transition-transform"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        },
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        }
+      ]
+    },
+    {
+      "route": "terms",
+      "url": "https://unmute-frontend.onrender.com/terms",
+      "id": "color-contrast",
+      "impact": "serious",
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".text-primary-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+          "target": [
+            ".bg-destructive\\/10"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+          "target": [
+            ".text-\\[11px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<strong>not</strong>",
+          "target": [
+            ".text-\\[11px\\] > strong"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+          "target": [
+            ".text-\\[11px\\] > .underline[href$=\"crisis\"][data-discover=\"true\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        }
+      ]
+    },
+    {
+      "route": "terms",
+      "url": "https://unmute-frontend.onrender.com/terms",
+      "id": "image-redundant-alt",
+      "impact": "minor",
+      "description": "Ensure image alternative is not repeated as text",
+      "help": "Alternative text of images should not be repeated as text",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+      "nodes": [
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".transition-transform"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        },
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        }
+      ]
+    },
+    {
+      "route": "privacy",
+      "url": "https://unmute-frontend.onrender.com/privacy",
+      "id": "color-contrast",
+      "impact": "serious",
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".text-primary-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+          "target": [
+            ".bg-destructive\\/10"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+          "target": [
+            ".text-\\[11px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<strong>not</strong>",
+          "target": [
+            ".text-\\[11px\\] > strong"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+          "target": [
+            ".text-\\[11px\\] > .underline[href$=\"crisis\"][data-discover=\"true\"]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        }
+      ]
+    },
+    {
+      "route": "privacy",
+      "url": "https://unmute-frontend.onrender.com/privacy",
+      "id": "image-redundant-alt",
+      "impact": "minor",
+      "description": "Ensure image alternative is not repeated as text",
+      "help": "Alternative text of images should not be repeated as text",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+      "nodes": [
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".transition-transform"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        },
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        }
+      ]
+    },
+    {
+      "route": "refund-policy",
+      "url": "https://unmute-frontend.onrender.com/refund-policy",
+      "id": "color-contrast",
+      "impact": "serious",
+      "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "help": "Elements must meet minimum color contrast ratio thresholds",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "html": "<button type=\"button\" class=\"inline-flex items-ce...\">",
+          "target": [
+            ".text-primary-foreground"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.46 (foreground color: #ffffff, background color: #6366f1, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"mt-6 inline-flex items-center gap-1.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 px-3 py-1.5 text-xs font-medium hover:bg-destructive/15 transition-colors\" href=\"/crisis\" data-discover=\"true\">",
+          "target": [
+            ".bg-destructive\\/10"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.03 (foreground color: #ef4444, background color: #e5e7eb, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<p class=\"text-[11px] text-muted-foreground leading-relaxed\">",
+          "target": [
+            ".text-\\[11px\\]"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<strong>not</strong>",
+          "target": [
+            ".text-\\[11px\\] > strong"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+        },
+        {
+          "html": "<a class=\"underline\" href=\"/crisis\" data-discover=\"true\">use the crisis resources</a>",
+          "target": [
+            ".underline"
+          ],
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #e5e7eb, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+        }
+      ]
+    },
+    {
+      "route": "refund-policy",
+      "url": "https://unmute-frontend.onrender.com/refund-policy",
+      "id": "image-redundant-alt",
+      "impact": "minor",
+      "description": "Ensure image alternative is not repeated as text",
+      "help": "Alternative text of images should not be repeated as text",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-redundant-alt?application=playwright",
+      "nodes": [
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block transition-transform group-hover:scale-105\" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".transition-transform"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        },
+        {
+          "html": "<img alt=\"unmute\" width=\"32\" height=\"32\" class=\"inline-block \" loading=\"eager\" decoding=\"async\" src=\"/images/logo.png\" style=\"height: 32px; width: 32px;\">",
+          "target": [
+            ".sm\\:justify-start[aria-label=\"unmute — home\"][href=\"/\"] > img"
+          ],
+          "failureSummary": "Fix all of the following:\n  Element contains <img> element with alt text that duplicates existing text"
+        }
+      ]
+    }
+  ]
+}

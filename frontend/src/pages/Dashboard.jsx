@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Calendar, Clock, Wallet, Sparkles, Video, ArrowRight,
   Star, TrendingUp, Bell, Shield, Settings, Banknote, MessageSquare,
+  Mic,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -13,7 +14,9 @@ import {
   reviews as reviewsApi,
   admin as adminApi,
   auth as authApi,
+  voiceDilemmas as voiceApi,
 } from '../api/endpoints.js';
+import VoiceDilemmaCard from '../components/VoiceDilemmaCard.jsx';
 import Card, { CardBody } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Avatar from '../components/Avatar.jsx';
@@ -31,6 +34,7 @@ export default function Dashboard() {
   const [bookings, setBookings] = useState([]);
   const [notifs, setNotifs] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [dilemmas, setDilemmas] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,12 +44,14 @@ export default function Dashboard() {
       bookingsApi.listMine({ limit: 30 }).catch(() => ({ items: [] })),
       notifsApi.list({ limit: 5 }).catch(() => ({ items: [] })),
       reviewsApi.received({ limit: 3 }).catch(() => ({ items: [] })),
-    ]).then(([w, b, n, r]) => {
+      voiceApi.listMine().catch(() => ({ items: [] })),
+    ]).then(([w, b, n, r, d]) => {
       if (cancelled) return;
       setWallet(w);
       setBookings(b.items || []);
       setNotifs(n.items || []);
       setReviews(r.items || []);
+      setDilemmas(d.items || []);
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -126,6 +132,17 @@ export default function Dashboard() {
           ) : (
             <EmptyNextSessionCard role={user.role} />
           )}
+
+          {/* Voice Dilemmas section (?99 audio mentorship) */}
+          <VoiceDilemmasSection
+            dilemmas={dilemmas}
+            user={user}
+            onUpdate={(updated) => {
+              setDilemmas((prev) =>
+                prev.map((it) => (it.uuid === updated.uuid ? { ...it, ...updated } : it))
+              );
+            }}
+          />
 
           {/* Recent activity */}
           <ActivityCard notifications={notifs} />
@@ -570,5 +587,102 @@ function FootnoteCard() {
     <p className="mt-8 text-center text-xs text-slate-400 dark:text-slate-500">
       Built with care for the moments that matter.
     </p>
+  );
+}
+
+
+function VoiceDilemmasSection({ dilemmas, user, onUpdate }) {
+  const [filter, setFilter] = useState('all');
+
+  const isMentor = user.role === 'mentor';
+  const filtered = useMemo(() => {
+    if (filter === 'pending') return dilemmas.filter((d) => d.status === 'submitted');
+    if (filter === 'answered') return dilemmas.filter((d) => d.status === 'answered');
+    return dilemmas;
+  }, [dilemmas, filter]);
+
+  const pendingCount = dilemmas.filter((d) => d.status === 'submitted').length;
+
+  return (
+    <Card>
+      <CardBody className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+              <Mic size={18} />
+            </div>
+            <div>
+              <h2 className="font-semibold text-foreground text-base flex items-center gap-2">
+                Voice Dilemmas
+                {pendingCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    {pendingCount} pending
+                  </span>
+                )}
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isMentor
+                  ? 'Incoming async audio dilemmas (?99). Answer with voice + takeaways to earn ?69.30.'
+                  : 'Your ?99 voice dilemmas and mentors\u2019 personalized audio replies.'}
+              </p>
+            </div>
+          </div>
+
+          {dilemmas.length > 0 && (
+            <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-xl border border-border text-xs self-start sm:self-auto">
+              {['all', 'pending', 'answered'].map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFilter(f)}
+                  className={`px-2.5 py-1 rounded-lg capitalize font-medium transition ${
+                    filter === f
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="text-center py-8 px-4">
+            <div className="mx-auto h-12 w-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-3">
+              <Mic size={22} />
+            </div>
+            <h3 className="font-semibold text-foreground text-sm">
+              {isMentor ? 'No voice dilemmas yet' : 'No voice dilemmas submitted'}
+            </h3>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1 mb-4">
+              {isMentor
+                ? 'When mentees submit a ?99 async dilemma to you, it will appear here for you to record a voice answer.'
+                : 'Need thoughtful perspective without scheduling a full session? Send an async audio dilemma to any mentor for just ?99.'}
+            </p>
+            {!isMentor && (
+              <Link
+                to="/mentors"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-xs shadow-soft hover:shadow-elev transition"
+              >
+                Browse Mentors <ArrowRight size={14} />
+              </Link>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filtered.map((dilemma) => (
+              <VoiceDilemmaCard
+                key={dilemma.uuid}
+                dilemma={dilemma}
+                currentUserId={user.id}
+                onAnswered={(updated) => onUpdate?.(updated)}
+              />
+            ))}
+          </div>
+        )}
+      </CardBody>
+    </Card>
   );
 }

@@ -33,8 +33,8 @@ function listMigrationFiles() {
 }
 
 function checksum(filePath) {
-  const buf = fs.readFileSync(filePath);
-  return crypto.createHash('sha256').update(buf).digest('hex');
+  const content = fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
+  return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
 async function ensureMigrationsTable() {

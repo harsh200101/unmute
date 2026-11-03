@@ -11,6 +11,7 @@ const router = express.Router();
 router.use(authJwt);
 
 router.post('/',                          general, requireEmailVerified, c.create);
+router.post('/instant',                   general, requireEmailVerified, c.createInstant);
 router.get('/me',                         general, c.listMine);
 router.get('/:uuid',                      general, c.getOne);
 router.post('/:uuid/cancel',              general, c.cancel);

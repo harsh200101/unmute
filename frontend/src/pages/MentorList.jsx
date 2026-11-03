@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Search, IndianRupee, Tag as TagIcon, X as XIcon, Sparkles } from 'lucide-react';
 import { mentors as mentorsApi, catalog } from '../api/endpoints.js';
 import MentorCard from '../components/MentorCard.jsx';
+import UpcomingAvailability from '../components/UpcomingAvailability.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
 import Button from '../components/ui/Button.jsx';
 import StaggeredDropdown from '../components/ui/staggered-dropdown.jsx';
@@ -20,6 +21,7 @@ export default function MentorList() {
   const q = searchParams.get('q') || '';
   const tier = searchParams.get('tier') || '';
   const tag = searchParams.get('tag') || '';
+  const availableNow = searchParams.get('available_now') === 'true';
   const [qInput, setQInput] = useState(q);
 
   // Debounced effect on q
@@ -47,12 +49,12 @@ export default function MentorList() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    mentorsApi.list({ q, tier, tag, limit: 30 })
+    mentorsApi.list({ q, tier, tag, available_now: availableNow ? 'true' : undefined, limit: 30 })
       .then((r) => { if (!cancelled) setItems(r.items || []); })
       .catch(() => { if (!cancelled) setItems([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [q, tier, tag]);
+  }, [q, tier, tag, availableNow]);
 
   function setFilter(k, v) {
     const next = new URLSearchParams(searchParams);
@@ -106,6 +108,9 @@ export default function MentorList() {
           Verified mentors, peer guides, and coaches. Pay only for the minutes you talk.
         </p>
       </header>
+
+      {/* Upcoming Availability Quick-Pick Carousel */}
+      <UpcomingAvailability />
 
       {/* ----- Filter bar (lifted card) ----- */}
       <div className="bg-card border border-border rounded-2xl shadow-soft p-3 sm:p-4 mb-6">

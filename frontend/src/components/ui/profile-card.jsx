@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Calendar, ArrowUpRight, Share2, Linkedin, MapPin, ShieldCheck } from 'lucide-react';
+import { Clock, Calendar, ArrowUpRight, Share2, Linkedin, MapPin, ShieldCheck, Mic } from 'lucide-react';
+import VoiceDilemmaModal from '../VoiceDilemmaModal.jsx';
 import { cn } from '@/lib/utils';
 import Avatar from '../Avatar.jsx';
 import RatingStars from './RatingStars.jsx';
@@ -23,6 +24,7 @@ import RatingStars from './RatingStars.jsx';
 export default function MentorProfileCard({ mentor, onBook, canBook = true, className }) {
   const [copied, setCopied] = useState(false);
   const [hovered, setHovered] = useState(null);
+  const [dilemmaOpen, setDilemmaOpen] = useState(false);
 
   // The card surfaces the viewer's current local time as a subtle "now feels
   // like a fine time to chat" cue.
@@ -110,7 +112,16 @@ export default function MentorProfileCard({ mentor, onBook, canBook = true, clas
                 size={96}
                 className="relative ring-2 ring-card shadow-xl"
               />
-            </motion.div>
+              <VoiceDilemmaModal
+        isOpen={dilemmaOpen}
+        onClose={() => setDilemmaOpen(false)}
+        mentor={{
+          ...mentor,
+          full_name: mentor?.user?.full_name,
+          user_id: mentor?.user?.id,
+        }}
+      />
+    </motion.div>
 
             <div className="flex-1 text-center sm:text-left min-w-0">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -176,7 +187,7 @@ export default function MentorProfileCard({ mentor, onBook, canBook = true, clas
           )}
 
           {/* ----- Dual-CTA row ----- */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className={cn("grid grid-cols-1 gap-3", canBook ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
             {canBook && (
               <motion.div
                 whileHover={{ scale: 1.02 }}
@@ -204,6 +215,19 @@ export default function MentorProfileCard({ mentor, onBook, canBook = true, clas
                       />
                     )}
                   </AnimatePresence>
+                </button>
+              </motion.div>
+            )}
+
+            {canBook && (
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <button
+                  type="button"
+                  onClick={() => setDilemmaOpen(true)}
+                  className="h-12 w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold shadow-soft hover:bg-amber-500/20 transition-all flex items-center justify-center gap-1.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                >
+                  <Mic className="h-4 w-4" />
+                  <span>Voice Dilemma (₹99)</span>
                 </button>
               </motion.div>
             )}

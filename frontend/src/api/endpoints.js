@@ -29,6 +29,7 @@ export const me = {
 export const mentors = {
   list: (params) => api.get('/mentors', { params }).then((r) => r.data),
   featured: () => api.get('/mentors/featured').then((r) => r.data),
+  upcomingAvailability: (params) => api.get('/mentors/upcoming-availability', { params }).then((r) => r.data),
   byUuid: (uuid) => api.get(`/mentors/${uuid}`).then((r) => r.data),
   reviews: (uuid, params) => api.get(`/mentors/${uuid}/reviews`, { params }).then((r) => r.data),
   apply: (body) => api.post('/mentors/apply', body).then((r) => r.data),
@@ -46,6 +47,7 @@ export const availability = {
 
 export const bookings = {
   create: (body) => api.post('/bookings', body).then((r) => r.data),
+  createInstant: (body) => api.post('/bookings/instant', body).then((r) => r.data),
   listMine: (params) => api.get('/bookings/me', { params }).then((r) => r.data),
   byUuid: (uuid) => api.get(`/bookings/${uuid}`).then((r) => r.data),
   cancel: (uuid, reason) => api.post(`/bookings/${uuid}/cancel`, { reason }).then((r) => r.data),
@@ -155,4 +157,11 @@ export const catalog = {
   tiers: () => api.get('/pricing-tiers').then((r) => r.data),
 };
 
-export default { auth, me, mentors, catalog, availability, bookings, meetings };
+export const voiceDilemmas = {
+  create:   (body) => api.post('/voice-dilemmas', body).then((r) => r.data),
+  listMine: (params) => api.get('/voice-dilemmas/my', { params }).then((r) => r.data),
+  byUuid:   (uuid) => api.get(`/voice-dilemmas/${uuid}`).then((r) => r.data),
+  answer:   (uuid, body) => api.post(`/voice-dilemmas/${uuid}/answer`, body).then((r) => r.data),
+};
+
+export default { auth, me, mentors, catalog, availability, bookings, meetings, voiceDilemmas };

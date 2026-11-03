@@ -4,6 +4,7 @@ const { query, withTransaction } = require('../config/db');
 const { bad, conflict, notFound, forbidden } = require('../utils/errors');
 const email = require('./emailService');
 const notifications = require('./notificationService');
+const availability = require('./availabilityService');
 
 // --- Mentor language guardrails -------------------------------------------
 //
@@ -287,7 +288,7 @@ async function updateMine(user_id, patch = {}) {
 
 // --- Public list with filters -----------------------------------------------
 
-async function listPublic({ q, tier, language, tag, gender, limit = 20, offset = 0 } = {}) {
+async function listPublic({ q, tier, language, tag, gender, available_now, limit = 20, offset = 0 } = {}) {
   const limitN = Math.min(Math.max(Number(limit) || 20, 1), 50);
   const offsetN = Math.max(Number(offset) || 0, 0);
 
@@ -305,6 +306,9 @@ async function listPublic({ q, tier, language, tag, gender, limit = 20, offset =
   if (language) {
     params.push(language);
     where.push(`$${params.length} = ANY(m.languages)`);
+  }
+  if (available_now === true || available_now === 'true' || available_now === '1') {
+    where.push(`(m.is_available_now = TRUE AND (m.available_now_until IS NULL OR m.available_now_until > NOW()))`);
   }
   if (gender) {
     params.push(gender);
@@ -336,6 +340,8 @@ async function listPublic({ q, tier, language, tag, gender, limit = 20, offset =
            m.timezone,
            m.rating_avg,
            m.rating_count,
+           m.is_available_now,
+           m.available_now_until,
            pt.name           AS tier_name,
            pt.display_name   AS tier_display,
            pt.per_minute_paise
@@ -343,27 +349,38 @@ async function listPublic({ q, tier, language, tag, gender, limit = 20, offset =
       JOIN users u           ON u.id = m.user_id
       JOIN pricing_tiers pt  ON pt.id = m.pricing_tier_id
      WHERE ${where.join(' AND ')}
-     ORDER BY m.rating_avg DESC, m.rating_count DESC, u.full_name ASC
+     ORDER BY (CASE WHEN m.is_available_now = TRUE AND (m.available_now_until IS NULL OR m.available_now_until > NOW()) THEN 1 ELSE 0 END) DESC, m.rating_avg DESC, m.rating_count DESC, u.full_name ASC
      LIMIT ${limitN} OFFSET ${offsetN}`;
 
   const rows = (await query(sql, params)).rows;
-  // Attach tags per row in a single query
+  // Attach tags & next_slot_at per row in single batch queries
   if (rows.length) {
     const ids = rows.map((r) => r.user_id);
-    const tags = await query(
-      `SELECT mt.mentor_user_id, t.id, t.slug, t.display_name, t.kind
-         FROM mentor_tags mt JOIN tags t ON t.id = mt.tag_id
-        WHERE mt.mentor_user_id = ANY($1::bigint[]) AND t.is_active = TRUE`,
-      [ids]
-    );
+    const [tags, availabilityMap] = await Promise.all([
+      query(
+        `SELECT mt.mentor_user_id, t.id, t.slug, t.display_name, t.kind
+           FROM mentor_tags mt JOIN tags t ON t.id = mt.tag_id
+          WHERE mt.mentor_user_id = ANY($1::bigint[]) AND t.is_active = TRUE`,
+        [ids]
+      ),
+      availability.batchGetNextAvailableSlots(ids),
+    ]);
     const byUser = new Map();
     for (const t of tags.rows) {
       if (!byUser.has(t.mentor_user_id)) byUser.set(t.mentor_user_id, []);
       byUser.get(t.mentor_user_id).push({ id: t.id, slug: t.slug, display_name: t.display_name, kind: t.kind });
     }
-    for (const r of rows) r.tags = byUser.get(r.user_id) || [];
+    for (const r of rows) {
+      r.tags = byUser.get(r.user_id) || [];
+      const avail = availabilityMap.get ? availabilityMap.get(r.user_id) : availabilityMap[r.user_id];
+      r.next_slot_at = avail?.next_slot_at || (typeof avail === 'string' ? avail : null);
+      r.is_available_now = Boolean(r.is_available_now && (!r.available_now_until || new Date(r.available_now_until) > new Date()));
+    }
   }
 
+  for (const r of rows) {
+    r.is_available_now = Boolean(r.is_available_now && (!r.available_now_until || new Date(r.available_now_until) > new Date()));
+  }
   return { items: rows, limit: limitN, offset: offsetN };
 }
 
@@ -417,10 +434,153 @@ async function assemble(clientOrNull, profile) {
     verification_status: profile.verification_status,
     rating_avg: profile.rating_avg,
     rating_count: profile.rating_count,
+    is_available_now: Boolean(profile.is_available_now && (!profile.available_now_until || new Date(profile.available_now_until) > new Date())),
+    available_now_until: profile.available_now_until || null,
     pricing_tier: tier.rows[0],
     tags: tags.rows,
     created_at: profile.created_at,
   };
 }
 
-module.exports = { apply, getMine, updateMine, listPublic, listFeatured, getPublicByUuid };
+async function listUpcomingAvailability({ limit = 10, horizonDays = 7 } = {}) {
+  const limitN = Math.min(Math.max(Number(limit) || 10, 1), 50);
+  const horizonN = Math.min(Math.max(Number(horizonDays) || 7, 1), 30);
+  const minStart = new Date(Date.now() + 15 * 60_000);
+  const horizonEnd = new Date(minStart.getTime() + horizonN * 86400_000);
+
+  const sql = `
+    WITH
+    mentors AS (
+      SELECT mp.user_id, COALESCE(NULLIF(mp.timezone, ''), 'Asia/Kolkata') AS timezone
+      FROM mentor_profiles mp
+      JOIN users u ON u.id = mp.user_id
+      WHERE mp.verification_status = 'approved' AND u.is_active = TRUE
+    ),
+    template_candidates AS (
+      SELECT
+        m.user_id AS mentor_user_id,
+        (d.d::timestamp + at.start_time_local) AT TIME ZONE m.timezone AS slot_at
+      FROM mentors m
+      JOIN availability_template at
+        ON at.mentor_user_id = m.user_id
+       AND at.is_active = TRUE
+      CROSS JOIN LATERAL generate_series(
+        ($1::timestamptz AT TIME ZONE m.timezone)::date - INTERVAL '1 day',
+        ($2::timestamptz AT TIME ZONE m.timezone)::date + INTERVAL '1 day',
+        INTERVAL '1 day'
+      ) AS d(d)
+      WHERE EXTRACT(DOW FROM d.d)::int = at.day_of_week
+    ),
+    template_in_window AS (
+      SELECT mentor_user_id, slot_at
+      FROM template_candidates
+      WHERE slot_at >= $1 AND slot_at < $2
+    ),
+    blocks AS (
+      SELECT ao.mentor_user_id, ao.slot_at
+      FROM availability_override ao
+      JOIN mentors m ON m.user_id = ao.mentor_user_id
+      WHERE ao.action = 'block'
+    ),
+    adds AS (
+      SELECT ao.mentor_user_id, ao.slot_at
+      FROM availability_override ao
+      JOIN mentors m ON m.user_id = ao.mentor_user_id
+      WHERE ao.action = 'add'
+        AND ao.slot_at >= $1 AND ao.slot_at < $2
+    ),
+    booked AS (
+      SELECT b.mentor_user_id, b.slot_start_at
+      FROM bookings b
+      JOIN mentors m ON m.user_id = b.mentor_user_id
+      WHERE b.status IN ('scheduled', 'in_call')
+    ),
+    all_slots AS (
+      SELECT mentor_user_id, slot_at
+      FROM template_in_window
+      WHERE (mentor_user_id, slot_at) NOT IN (SELECT mentor_user_id, slot_at FROM blocks)
+        AND (mentor_user_id, slot_at) NOT IN (SELECT mentor_user_id, slot_start_at FROM booked)
+      UNION
+      SELECT mentor_user_id, slot_at
+      FROM adds
+      WHERE (mentor_user_id, slot_at) NOT IN (SELECT mentor_user_id, slot_start_at FROM booked)
+    ),
+    earliest_per_mentor AS (
+      SELECT mentor_user_id,
+             MIN(slot_at) AS next_slot_at,
+             ARRAY_AGG(slot_at ORDER BY slot_at) AS upcoming_slots
+      FROM (
+        SELECT mentor_user_id, slot_at
+        FROM all_slots
+        ORDER BY mentor_user_id, slot_at
+      ) s
+      GROUP BY mentor_user_id
+    )
+    SELECT u.id AS user_id,
+           u.uuid AS user_uuid,
+           u.full_name,
+           u.avatar_url,
+           u.gender,
+           u.location_city,
+           u.location_country,
+           m.uuid AS profile_uuid,
+           m.headline,
+           m.bio,
+           m.languages,
+           m.years_experience,
+           m.linkedin_url,
+           m.video_intro_url,
+           m.timezone,
+           m.rating_avg,
+           m.rating_count,
+           m.is_available_now,
+           m.available_now_until,
+           pt.name AS tier_name,
+           pt.display_name AS tier_display,
+           pt.per_minute_paise,
+           epm.next_slot_at,
+           epm.upcoming_slots AS slots
+    FROM earliest_per_mentor epm
+    JOIN mentor_profiles m ON m.user_id = epm.mentor_user_id
+    JOIN users u ON u.id = m.user_id
+    JOIN pricing_tiers pt ON pt.id = m.pricing_tier_id
+    WHERE m.verification_status = 'approved' AND u.is_active = TRUE
+    ORDER BY epm.next_slot_at ASC, m.rating_avg DESC, u.full_name ASC
+    LIMIT $3
+  `;
+
+  const rows = (await query(sql, [minStart.toISOString(), horizonEnd.toISOString(), limitN])).rows;
+
+  if (rows.length) {
+    const ids = rows.map((r) => r.user_id);
+    const tags = await query(
+      `SELECT mt.mentor_user_id, t.id, t.slug, t.display_name, t.kind
+         FROM mentor_tags mt JOIN tags t ON t.id = mt.tag_id
+        WHERE mt.mentor_user_id = ANY($1::bigint[]) AND t.is_active = TRUE`,
+      [ids]
+    );
+    const byUser = new Map();
+    for (const t of tags.rows) {
+      if (!byUser.has(t.mentor_user_id)) byUser.set(t.mentor_user_id, []);
+      byUser.get(t.mentor_user_id).push({ id: t.id, slug: t.slug, display_name: t.display_name, kind: t.kind });
+    }
+    for (const r of rows) {
+      r.tags = byUser.get(r.user_id) || [];
+      r.next_slot_at = r.next_slot_at ? new Date(r.next_slot_at).toISOString() : null;
+      r.slots = (r.slots || []).map((s) => new Date(s).toISOString());
+    }
+  }
+
+  return rows;
+}
+
+module.exports = {
+  apply,
+  getMine,
+  updateMine,
+  listPublic,
+  listFeatured,
+  getPublicByUuid,
+  batchGetNextAvailableSlots: availability.batchGetNextAvailableSlots,
+  listUpcomingAvailability,
+};

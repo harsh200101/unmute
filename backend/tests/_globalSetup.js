@@ -71,22 +71,41 @@ module.exports = async function globalSetup() {
   const parts = urlParts(testUrl);
 
   // 1. Drop + create the test database from the `postgres` admin DB
+  const ssl =
+    parts.host.includes('render.com') ||
+    process.env.DB_SSL === 'true' ||
+    process.env.NODE_ENV === 'production';
+
   const admin = new Client({
     user: parts.user,
     password: parts.password || undefined,
     host: parts.host,
     port: Number(parts.port),
     database: 'postgres',
+    ssl: ssl ? { rejectUnauthorized: false } : false,
   });
   await admin.connect();
   try {
     // Terminate any lingering connections so DROP succeeds
-    await admin.query(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-      [parts.database]
-    );
+    try {
+      await admin.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+        [parts.database]
+      );
+    } catch (_) {}
     await admin.query(`DROP DATABASE IF EXISTS "${parts.database}"`);
-    await admin.query(`CREATE DATABASE "${parts.database}"`);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await admin.query(`CREATE DATABASE "${parts.database}"`);
+        break;
+      } catch (err) {
+        if (err.code === '23505' && attempt < 4) {
+          await new Promise((r) => setTimeout(r, 600));
+        } else {
+          throw err;
+        }
+      }
+    }
   } finally {
     await admin.end();
   }

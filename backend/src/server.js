@@ -29,6 +29,7 @@ const reviewRoutes = require('./routes/reviews.routes');
 const notificationRoutes = require('./routes/notifications.routes');
 const kycRoutes = require('./routes/kyc.routes');
 const payoutRoutes = require('./routes/payouts.routes');
+const voiceDilemmaRoutes = require('./routes/voiceDilemmas.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -71,7 +72,7 @@ app.use(
 // Re-serialising a parsed body changes whitespace/key order and breaks HMAC.
 app.use(
   express.json({
-    limit: '1mb',
+    limit: '20mb',
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
@@ -158,6 +159,9 @@ app.use('/api/me/notifications', notificationRoutes);
 // --- Phase 11: KYC + mentor payouts ---
 app.use('/api/mentors/kyc', kycRoutes);
 app.use('/api/payouts',     payoutRoutes);
+
+// --- Async Voice Dilemmas (?99 audio mentorship) ---
+app.use('/api/voice-dilemmas', voiceDilemmaRoutes);
 
 // Anything else under /api is not implemented yet.
 app.use('/api', (_req, res) => {

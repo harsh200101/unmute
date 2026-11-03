@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Calendar as CalendarIcon, Clock } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Shield } from 'lucide-react';
 import { mentors as mentorsApi, availability as avApi, bookings as bookingsApi } from '../api/endpoints.js';
 import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import { Field, Input } from '../components/ui/Field.jsx';
 import { PageSpinner } from '../components/ui/Spinner.jsx';
 import MonthCalendar from '../components/ui/calendar.jsx';
+import CrisisSupportModal from '../components/CrisisSupportModal.jsx';
 import Avatar from '../components/Avatar.jsx';
+import { INTENT_TYPES, DEFAULT_INTENT } from '../lib/intentTypes.js';
 import { formatPerMinute, formatDate, formatTime } from '../lib/format.js';
 
 // Helpers
@@ -31,7 +33,9 @@ export default function Book() {
   const [picked, setPicked] = useState(null);
   const [mentee_title, setTitle] = useState('');
   const [mentee_topic, setTopic] = useState('');
+  const [intent_type, setIntentType] = useState(DEFAULT_INTENT);
   const [submitting, setSubmitting] = useState(false);
+  const [crisisOpen, setCrisisOpen] = useState(false);
 
   // Load mentor + a 14-day window of slots
   useEffect(() => {
@@ -78,6 +82,7 @@ export default function Book() {
         slot_start_at: picked,
         mentee_title: mentee_title.trim() || null,
         mentee_topic: mentee_topic.trim() || null,
+        intent_type,
       });
       toast.success('Booked. Calendar invite sent to your email.');
       navigate(`/bookings/${r.booking.uuid}`);
@@ -169,6 +174,45 @@ export default function Book() {
             <p className="text-xs text-muted-foreground mt-1">{formatDate(picked)}</p>
           </CardHeader>
           <CardBody className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground block">
+                Session Intent — How should your mentor help?
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Select the focus of your session so your mentor knows how best to support you.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                {Object.values(INTENT_TYPES).map((intent) => {
+                  const Icon = intent.icon;
+                  const isSelected = intent_type === intent.id;
+                  return (
+                    <button
+                      key={intent.id}
+                      type="button"
+                      onClick={() => setIntentType(intent.id)}
+                      className={`flex flex-col text-left p-3.5 rounded-xl border transition-all cursor-pointer ${
+                        isSelected
+                          ? `${intent.colorScheme.activeBorder} ${intent.colorScheme.bg} shadow-sm`
+                          : 'border-border bg-card hover:border-muted-foreground/30 hover:bg-muted/30'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className={`p-1.5 rounded-lg ${intent.colorScheme.bg} ${intent.colorScheme.iconColor}`}>
+                          <Icon size={18} />
+                        </span>
+                        <span className="font-semibold text-sm text-foreground">
+                          {intent.label}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                        {intent.tagline}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <Field label="Session title (optional)" htmlFor="title">
               <Input id="title" value={mentee_title} onChange={(e) => setTitle(e.target.value)}
                 placeholder="What's on your mind?" maxLength={120} />

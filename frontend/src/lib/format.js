@@ -77,3 +77,45 @@ export function capitalize(s) {
   if (!s) return s;
   return s[0].toUpperCase() + s.slice(1);
 }
+
+// Formats an ISO string into "Today at 6:00 PM", "Tomorrow at 10:00 AM", "Wed at 4:00 PM"
+export function formatNextAvailable(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+
+  const now = new Date();
+  const timeStr = d.toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((targetDay - today) / (86400 * 1000));
+
+  if (diffDays === 0) {
+    return `Today at ${timeStr}`;
+  }
+  if (diffDays === 1) {
+    return `Tomorrow at ${timeStr}`;
+  }
+  if (diffDays > 1 && diffDays < 7) {
+    const weekday = d.toLocaleDateString('en-IN', { weekday: 'short' });
+    return `${weekday} at ${timeStr}`;
+  }
+  const dateShort = d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+  return `${dateShort} at ${timeStr}`;
+}
+
+export function isToday(iso) {
+  if (!iso) return false;
+  const d = new Date(iso);
+  const now = new Date();
+  return (
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear()
+  );
+}

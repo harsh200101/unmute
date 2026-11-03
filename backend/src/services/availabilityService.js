@@ -22,6 +22,10 @@ const MIN_LEAD_MINUTES = 15; // bookings must start at least 15 min from now
 // --- Editor APIs (mentor self-service) --------------------------------------
 
 async function getMyAvailability(mentor_user_id) {
+  const prof = await query(
+    `SELECT is_available_now, available_now_until FROM mentor_profiles WHERE user_id = $1`,
+    [mentor_user_id]
+  );
   const tmpl = await query(
     `SELECT id, day_of_week, start_time_local, is_active
        FROM availability_template
@@ -36,7 +40,14 @@ async function getMyAvailability(mentor_user_id) {
       ORDER BY slot_at`,
     [mentor_user_id]
   );
-  return { template: tmpl.rows, overrides: overrides.rows };
+  const p = prof.rows[0];
+  const isOnline = Boolean(p?.is_available_now && (!p?.available_now_until || new Date(p.available_now_until) > new Date()));
+  return {
+    template: tmpl.rows,
+    overrides: overrides.rows,
+    is_available_now: isOnline,
+    available_now_until: isOnline ? p.available_now_until : null,
+  };
 }
 
 // Replace the template atomically: delete all current rows + insert the new set.
@@ -115,6 +126,43 @@ async function deleteOverride({ mentor_user_id, override_id }) {
   );
   if (r.rowCount === 0) throw notFound('override_not_found');
   return { ok: true };
+}
+
+async function setAvailableNow({ mentor_user_id, enabled, duration_minutes = 60 }) {
+  const isEnabled = Boolean(enabled);
+  let duration = parseInt(duration_minutes, 10);
+  if (isNaN(duration) || duration <= 0) {
+    duration = 60;
+  }
+  if (isEnabled) {
+    const r = await query(
+      `UPDATE mentor_profiles
+          SET is_available_now = TRUE,
+              available_now_until = NOW() + ($2 || ' minutes')::interval
+        WHERE user_id = $1
+        RETURNING is_available_now, available_now_until`,
+      [mentor_user_id, `${duration}`]
+    );
+    if (!r.rows[0]) throw notFound('mentor_not_found', 'Mentor profile not found');
+    return {
+      is_available_now: true,
+      available_now_until: r.rows[0].available_now_until,
+    };
+  } else {
+    const r = await query(
+      `UPDATE mentor_profiles
+          SET is_available_now = FALSE,
+              available_now_until = NULL
+        WHERE user_id = $1
+        RETURNING is_available_now, available_now_until`,
+      [mentor_user_id]
+    );
+    if (!r.rows[0]) throw notFound('mentor_not_found', 'Mentor profile not found');
+    return {
+      is_available_now: false,
+      available_now_until: null,
+    };
+  }
 }
 
 // --- Public computed-slots --------------------------------------------------
@@ -217,10 +265,107 @@ async function computeSlots({ mentor_uuid, from, to }) {
   };
 }
 
+async function batchGetNextAvailableSlots(mentorUserIds, { horizonDays = DEFAULT_HORIZON_DAYS } = {}) {
+  if (!Array.isArray(mentorUserIds) || mentorUserIds.length === 0) {
+    return new Map();
+  }
+  const minStart = new Date(Date.now() + MIN_LEAD_MINUTES * 60_000);
+  const horizonEnd = new Date(minStart.getTime() + horizonDays * 86400_000);
+
+  const sql = `
+    WITH
+    mentors AS (
+      SELECT mp.user_id, COALESCE(NULLIF(mp.timezone, ''), 'Asia/Kolkata') AS timezone
+      FROM mentor_profiles mp
+      WHERE mp.user_id = ANY($1::bigint[])
+    ),
+    template_candidates AS (
+      SELECT
+        m.user_id AS mentor_user_id,
+        (d.d::timestamp + at.start_time_local) AT TIME ZONE m.timezone AS slot_at
+      FROM mentors m
+      JOIN availability_template at
+        ON at.mentor_user_id = m.user_id
+       AND at.is_active = TRUE
+      CROSS JOIN LATERAL generate_series(
+        ($2::timestamptz AT TIME ZONE m.timezone)::date - INTERVAL '1 day',
+        ($3::timestamptz AT TIME ZONE m.timezone)::date + INTERVAL '1 day',
+        INTERVAL '1 day'
+      ) AS d(d)
+      WHERE EXTRACT(DOW FROM d.d)::int = at.day_of_week
+    ),
+    template_in_window AS (
+      SELECT mentor_user_id, slot_at
+      FROM template_candidates
+      WHERE slot_at >= $2 AND slot_at < $3
+    ),
+    blocks AS (
+      SELECT mentor_user_id, slot_at
+      FROM availability_override
+      WHERE mentor_user_id = ANY($1::bigint[])
+        AND action = 'block'
+    ),
+    adds AS (
+      SELECT mentor_user_id, slot_at
+      FROM availability_override
+      WHERE mentor_user_id = ANY($1::bigint[])
+        AND action = 'add'
+        AND slot_at >= $2 AND slot_at < $3
+    ),
+    booked AS (
+      SELECT mentor_user_id, slot_start_at
+      FROM bookings
+      WHERE mentor_user_id = ANY($1::bigint[])
+        AND status IN ('scheduled', 'in_call')
+    ),
+    all_slots AS (
+      SELECT mentor_user_id, slot_at
+      FROM template_in_window
+      WHERE (mentor_user_id, slot_at) NOT IN (SELECT mentor_user_id, slot_at FROM blocks)
+        AND (mentor_user_id, slot_at) NOT IN (SELECT mentor_user_id, slot_start_at FROM booked)
+      UNION
+      SELECT mentor_user_id, slot_at
+      FROM adds
+      WHERE (mentor_user_id, slot_at) NOT IN (SELECT mentor_user_id, slot_start_at FROM booked)
+    )
+    SELECT mentor_user_id,
+           MIN(slot_at) AS next_slot_at,
+           ARRAY_AGG(slot_at ORDER BY slot_at) AS upcoming_slots
+    FROM (
+      SELECT mentor_user_id, slot_at
+      FROM all_slots
+      ORDER BY mentor_user_id, slot_at
+    ) s
+    GROUP BY mentor_user_id
+  `;
+
+  const result = await query(sql, [
+    mentorUserIds,
+    minStart.toISOString(),
+    horizonEnd.toISOString(),
+  ]);
+
+  const map = new Map();
+  for (const r of result.rows) {
+    const next_slot_at = r.next_slot_at ? new Date(r.next_slot_at).toISOString() : null;
+    const upcoming_slots = (r.upcoming_slots || []).map((s) => new Date(s).toISOString());
+    const info = {
+      next_slot_at,
+      upcoming_slots,
+      toString: () => next_slot_at || '',
+    };
+    map.set(r.mentor_user_id, info);
+    map[r.mentor_user_id] = info;
+  }
+  return map;
+}
+
 module.exports = {
   getMyAvailability,
   replaceTemplate,
   createOverride,
   deleteOverride,
+  setAvailableNow,
   computeSlots,
+  batchGetNextAvailableSlots,
 };

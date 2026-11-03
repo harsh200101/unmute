@@ -49,4 +49,16 @@ async function publicSlots(req, res, next) {
   } catch (e) { next(e); }
 }
 
-module.exports = { getMine, putTemplate, postOverride, deleteOverride, publicSlots };
+
+async function setAvailableNow(req, res, next) {
+  try {
+    const result = await svc.setAvailableNow({
+      mentor_user_id: req.user.id,
+      enabled: req.body?.enabled,
+      duration_minutes: req.body?.duration_minutes,
+    });
+    res.json(result);
+  } catch (e) { next(e); }
+}
+
+module.exports = { getMine, putTemplate, postOverride, deleteOverride, publicSlots, setAvailableNow };

@@ -16,12 +16,12 @@ types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10)));
 // entirely because dev databases run plain TCP. The `?sslmode=disable` escape
 // hatch lets tests opt out even in production-like environments.
 const sslRequired =
-  env.NODE_ENV === 'production' &&
+  (env.NODE_ENV === 'production' || /render\.com/.test(env.DATABASE_URL || '')) &&
   !/sslmode=disable/.test(env.DATABASE_URL || '');
 
 // Single pool, lazily created. Tests can override DATABASE_URL.
 const pool = new Pool({
-  connectionString: env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL || env.DATABASE_URL,
   ssl: sslRequired ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30_000,
