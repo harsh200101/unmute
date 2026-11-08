@@ -155,8 +155,22 @@ async function creditUserWallet(req, res, next) {
   } catch (e) { next(e); }
 }
 
+async function broadcastNotification(req, res, next) {
+  try {
+    const result = await svc.broadcastNotification({
+      admin_user_id: req.user.id,
+      target: req.body?.target,
+      title: req.body?.title,
+      body: req.body?.body,
+      link_url: req.body?.link_url,
+    });
+    res.json(result);
+  } catch (e) { next(e); }
+}
+
 module.exports = {
   creditUserWallet,
+  broadcastNotification,
   listUsers, patchUser,
   listMentorApplications, approveMentor, rejectMentor,
   listActiveMeetings, forceEndMeeting, startInstantMeeting,

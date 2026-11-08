@@ -153,6 +153,7 @@ export const admin = {
   recentActivity: (params) => api.get('/admin/recent-activity', { params }).then((r) => r.data),
   creditUser: (id, body) => api.post(`/admin/users/${id}/credit`, body).then((r) => r.data),
   creditSelf: (body) => api.post('/admin/credit-self', body).then((r) => r.data),
+  broadcastNotification: (body) => api.post('/admin/broadcast-notification', body).then((r) => r.data),
 };
 
 export const catalog = {

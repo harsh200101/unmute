@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bell } from 'lucide-react';
 import { notifications as notifApi } from '../api/endpoints.js';
+import { showNotificationInTray } from '../services/pushNotificationService.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { relativeTime } from '../lib/format.js';
 

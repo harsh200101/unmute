@@ -634,8 +634,61 @@ async function creditUserWallet({ admin_user_id, target_user_id, amount_paise = 
   });
 }
 
+async function broadcastNotification({ admin_user_id, target, title, body, link_url }) {
+  if (!title || !title.trim()) throw bad('title_required');
+  if (!body || !body.trim()) throw bad('body_required');
+
+  let roleClause = '';
+  if (target === 'mentee') {
+    roleClause = "AND role = 'mentee'";
+  } else if (target === 'mentor') {
+    roleClause = "AND role = 'mentor'";
+  } else {
+    // 'both' or default: mentees and mentors
+    roleClause = "AND role IN ('mentee', 'mentor', 'admin')";
+  }
+
+  const { rows: users } = await query(
+    `SELECT id, email, full_name, role FROM users WHERE is_active = true ${roleClause}`
+  );
+
+  let delivered = 0;
+  for (const u of users) {
+    await notify.notify({
+      user_id: u.id,
+      kind: 'admin_broadcast',
+      title: title.trim(),
+      body: body.trim(),
+      link_url: link_url || '/me/notifications',
+      send_email: false,
+    });
+    delivered++;
+  }
+
+  if (admin_user_id) {
+    await query(
+      `INSERT INTO admin_audit_log
+         (admin_user_id, action, target_table, target_id, after_state, notes)
+       VALUES ($1, 'broadcast_notification', 'notifications', $1, $2, $3)`,
+      [
+        admin_user_id,
+        JSON.stringify({ target: target || 'both', total_recipients: users.length, delivered, title: title.trim() }),
+        body.trim(),
+      ]
+    ).catch(() => {});
+  }
+
+  return {
+    ok: true,
+    target: target || 'both',
+    total_recipients: users.length,
+    delivered,
+  };
+}
+
 module.exports = {
   creditUserWallet,
+  broadcastNotification,
   listUsers, patchUser,
   listMentorApplications, approveMentor, rejectMentor,
   listActiveMeetings, forceEndMeeting, startInstantMeeting,

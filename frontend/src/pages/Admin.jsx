@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Video } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { admin as adminApi } from '../api/endpoints.js';
+import { showNotificationInTray } from '../services/pushNotificationService.js';
 import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Modal from '../components/ui/Modal.jsx';
@@ -24,6 +25,12 @@ export default function Admin() {
   const [params, setParams] = useSearchParams();
   const active = params.get('tab') || 'overview';
   const [creditingSelf, setCreditingSelf] = useState(false);
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [bTarget, setBTarget] = useState('both');
+  const [bTitle, setBTitle] = useState('Demo Notification from Unmute');
+  const [bBody, setBBody] = useState('Hello! This is a test notification from the admin team.');
+  const [bLink, setBLink] = useState('/me/notifications');
+  const [bSending, setBSending] = useState(false);
 
   function setTab(id) {
     const next = new URLSearchParams(params); next.set('tab', id);
@@ -75,6 +82,126 @@ export default function Admin() {
           </button>
         ))}
       </div>
+
+      <Modal
+        open={showBroadcastModal}
+        onClose={() => setShowBroadcastModal(false)}
+        title="Send Demo Broadcast Notification"
+      >
+        <p className="text-xs text-muted-foreground mb-4">
+          Dispatches in-app notifications and real native push notifications to devices.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1">Target Audience</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'mentee', label: '🎓 Mentee only' },
+                { id: 'mentor', label: '👨‍🏫 Mentor only' },
+                { id: 'both',   label: '👥 Both (All)' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setBTarget(opt.id)}
+                  className={`py-2 px-3 text-xs font-medium rounded-lg border text-center transition-all ${
+                    bTarget === opt.id
+                      ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-semibold shadow-sm'
+                      : 'border-border bg-card text-muted-foreground hover:bg-muted/50'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Field label="Notification Title" htmlFor="btitle">
+            <Input
+              id="btitle"
+              value={bTitle}
+              onChange={(e) => setBTitle(e.target.value)}
+              placeholder="e.g. Session Starting Soon / Special Offer"
+              required
+            />
+          </Field>
+
+          <Field label="Notification Message" htmlFor="bbody">
+            <textarea
+              id="bbody"
+              rows={3}
+              value={bBody}
+              onChange={(e) => setBBody(e.target.value)}
+              placeholder="Write the message that appears in the notification tray..."
+              className="w-full rounded-lg border border-border bg-card text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300/40"
+              required
+            />
+          </Field>
+
+          <Field label="Action / Link URL" htmlFor="blink">
+            <Input
+              id="blink"
+              value={bLink}
+              onChange={(e) => setBLink(e.target.value)}
+              placeholder="/me/notifications or /mentors"
+            />
+          </Field>
+
+          <div className="pt-2 border-t border-border flex items-center justify-between flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                await showNotificationInTray({
+                  title: bTitle,
+                  body: bBody,
+                  link_url: bLink,
+                });
+                toast.success('Triggered notification in this device\'s notification tray!');
+              }}
+              title="Test posting directly into this phone\'s notification tray"
+            >
+              🔔 Test on This Phone
+            </Button>
+
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setShowBroadcastModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={bSending}
+                onClick={async () => {
+                  if (!bTitle.trim() || !bBody.trim()) {
+                    toast.error('Title and message are required');
+                    return;
+                  }
+                  setBSending(true);
+                  try {
+                    const r = await adminApi.broadcastNotification({
+                      target: bTarget,
+                      title: bTitle,
+                      body: bBody,
+                      link_url: bLink,
+                    });
+                    toast.success(`🎉 Sent notification to ${r.delivered || r.total_recipients || 0} user(s) (${bTarget})!`);
+                    setShowBroadcastModal(false);
+                  } catch (e) {
+                    toast.error(e.response?.data?.error || 'Failed to send notification');
+                  } finally {
+                    setBSending(false);
+                  }
+                }}
+              >
+                🚀 Send Broadcast
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       <div className="mt-6">
         {active === 'overview' && <Overview setTab={setTab} />}

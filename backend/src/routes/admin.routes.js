@@ -17,6 +17,7 @@ router.get('/users',                                c.listUsers);
 router.patch('/users/:id',                          c.patchUser);
 router.post('/users/:id/credit',                    c.creditUserWallet);
 router.post('/credit-self',                         (req, res, next) => { req.params.id = req.user.id; c.creditUserWallet(req, res, next); });
+router.post('/broadcast-notification',              c.broadcastNotification);
 
 router.get('/mentor-applications',                  c.listMentorApplications);
 router.post('/mentor-applications/:id/approve',     c.approveMentor);

@@ -12,7 +12,7 @@ function getFirebaseAdmin() {
   isFirebaseInitialized = true;
 
   try {
-    const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+    const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
     const admin = require('firebase-admin');
     let serviceAccount = null;
 
@@ -20,14 +20,26 @@ function getFirebaseAdmin() {
       const trimmed = rawKey.trim();
       if (trimmed.startsWith('{')) {
         // Raw JSON string
-        serviceAccount = JSON.parse(trimmed);
-      } else if (trimmed.startsWith('ey') || trimmed.length > 200 && !trimmed.includes('{')) {
+        try {
+          serviceAccount = JSON.parse(trimmed);
+        } catch (_) {
+          try {
+            serviceAccount = JSON.parse(trimmed.replace(/\r?\n/g, '\\n'));
+          } catch (e2) {
+            console.error('[pushNotificationService] JSON parse error on FIREBASE_SERVICE_ACCOUNT_KEY:', e2.message);
+          }
+        }
+      } else if (trimmed.startsWith('ey') || trimmed.length > 100 && !trimmed.includes('{')) {
         // Base64 encoded JSON string
         try {
           const decoded = Buffer.from(trimmed, 'base64').toString('utf8');
           serviceAccount = JSON.parse(decoded);
         } catch (_) {
-          serviceAccount = require(path.resolve(trimmed));
+          try {
+            serviceAccount = require(path.resolve(trimmed));
+          } catch (e3) {
+            console.error('[pushNotificationService] Base64/file error on FIREBASE_SERVICE_ACCOUNT_KEY:', e3.message);
+          }
         }
       } else if (fs.existsSync(trimmed)) {
         // Direct file path

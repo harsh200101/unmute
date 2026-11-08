@@ -3,8 +3,6 @@ package com.unmute.app;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.webkit.PermissionRequest;
-import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import androidx.core.app.ActivityCompat;
@@ -24,7 +22,8 @@ public class MainActivity extends BridgeActivity {
         String[] permissions = {
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.MODIFY_AUDIO_SETTINGS
+            Manifest.permission.MODIFY_AUDIO_SETTINGS,
+            Manifest.permission.POST_NOTIFICATIONS
         };
         boolean needsRequest = false;
         for (String perm : permissions) {
@@ -46,15 +45,6 @@ public class MainActivity extends BridgeActivity {
             WebSettings settings = webView.getSettings();
             settings.setMediaPlaybackRequiresUserGesture(false);
             settings.setJavaScriptCanOpenWindowsAutomatically(true);
-
-            webView.setWebChromeClient(new WebChromeClient() {
-                @Override
-                public void onPermissionRequest(final PermissionRequest request) {
-                    MainActivity.this.runOnUiThread(() -> {
-                        request.grant(request.getResources());
-                    });
-                }
-            });
         }
     }
 }

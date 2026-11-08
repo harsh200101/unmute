@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { lazy, Suspense, useEffect } from 'react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import ProtectedRoute, { PublicOnly } from './components/ProtectedRoute.jsx';
 import { PageSpinner } from './components/ui/Spinner.jsx';
@@ -37,6 +37,12 @@ import RefundPolicy from './pages/RefundPolicy.jsx';
 import Crisis from './pages/Crisis.jsx';
 
 export default function App() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    window.__unmuteNavigate = navigate;
+    return () => { window.__unmuteNavigate = null; };
+  }, [navigate]);
+
   return (
     <Routes>
       <Route element={<Layout />}>
