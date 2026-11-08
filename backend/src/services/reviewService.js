@@ -40,17 +40,51 @@ async function submitReview({ user_id, booking_uuid, rating, body, is_anonymous 
          RETURNING *`,
         [booking.id, reviewer_user_id, reviewee_user_id, direction, r, body || null, anon]
       );
-      await notify.notify({
-        client,
-        user_id: reviewee_user_id,
-        kind: 'review_received',
-        title: `You received a ${r}-star review`,
-        body: body ? body.slice(0, 200) : null,
-        link_url: '/me/reviews/received',
-        reference_table: 'reviews',
-        reference_id: ins.rows[0].id,
-        send_email: true,
-      });
+
+      // Notification logic:
+      // 1. Mentee rating Mentor: notify the mentor
+      if (direction === 'mentee_to_mentor') {
+        await notify.notify({
+          client,
+          user_id: reviewee_user_id,
+          kind: 'review_received',
+          title: `You received a ${r}-star review`,
+          body: body ? body.slice(0, 200) : null,
+          link_url: '/mentor/reviews',
+          reference_table: 'reviews',
+          reference_id: ins.rows[0].id,
+          send_email: true,
+        });
+      }
+      // 2. Mentor rating Mentee: DO NOT notify the mentee.
+      // (Mentors' rating and comments about mentees are confidential/internal).
+
+      // 3. Notify Admins on all submitted ratings:
+      try {
+        const admins = (await client.query(
+          `SELECT id FROM users WHERE role = 'admin' AND is_active = TRUE AND email NOT LIKE '%@unmute.internal'`
+        )).rows;
+
+        const adminTitle = direction === 'mentee_to_mentor'
+          ? `⭐ New Review: ${anon ? 'Anonymous Mentee' : (booking.mentee_name || 'Mentee')} rated ${booking.mentor_name || 'Mentor'} (${r}/5)`
+          : `📝 Mentor Assessment: ${booking.mentor_name || 'Mentor'} rated ${booking.is_incognito ? 'Anonymous Mentee' : (booking.mentee_name || 'Mentee')} (${r}/5)`;
+
+        for (const admin of admins) {
+          await notify.notify({
+            client,
+            user_id: admin.id,
+            kind: 'admin_review_alert',
+            title: adminTitle,
+            body: body ? body.slice(0, 200) : 'No comment provided.',
+            link_url: '/admin',
+            reference_table: 'reviews',
+            reference_id: ins.rows[0].id,
+          });
+        }
+      } catch (admErr) {
+        console.error('[review] Admin notification failed:', admErr.message);
+      }
+
       return { review: publicReview(ins.rows[0], { include_internal: true }), direction };
     } catch (err) {
       if (err.code === '23505') {
@@ -121,14 +155,14 @@ async function listMyGiven({ user_id, limit = 50, offset = 0 }) {
 async function listAboutMe({ user_id, limit = 50, offset = 0 }) {
   const limitN = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const offsetN = Math.max(Number(offset) || 0, 0);
-  // Returns BOTH directions of reviews about the caller. For mentors:
-  // mentee_to_mentor (public) — they can see ratings + text + reviewer
-  // For mentees: mentor_to_mentee (private) — only their own mentor's score is visible
+  // Mentors' ratings and comments about mentees are confidential (mentor/admin eyes only)
+  // and MUST NOT be visible to mentees. Only mentee_to_mentor reviews are returned here.
   const rows = await query(
     `SELECT r.*, u.full_name AS reviewer_name, u.avatar_url AS reviewer_avatar
        FROM reviews r
        JOIN users u ON u.id = r.reviewer_user_id
       WHERE r.reviewee_user_id = $1
+        AND r.direction = 'mentee_to_mentor'
       ORDER BY r.created_at DESC
       LIMIT ${limitN} OFFSET ${offsetN}`,
     [user_id]
