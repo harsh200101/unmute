@@ -94,3 +94,5 @@ build/
 *.tmp
 *.temp
 *.pptx
+firebase-service-account.json
+*firebase-adminsdk*.json
