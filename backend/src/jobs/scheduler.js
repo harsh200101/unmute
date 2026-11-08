@@ -13,9 +13,11 @@
 
 const env = require('../config/env');
 const billing = require('../services/billingEngine');
+const reminders = require('../services/meetingReminderService');
 
 const TICK_BILLING_MS = 10_000;
 const FINALIZE_EXPIRED_MS = 30_000;
+const REMINDER_TICK_MS = 30_000;
 
 const _timers = [];
 let _started = false;
@@ -38,6 +40,13 @@ function start() {
       console.error('[scheduler] finalizeExpiredMeetings failed:', err.message);
     });
   }, FINALIZE_EXPIRED_MS));
+
+  _timers.push(setInterval(() => {
+    reminders.processMeetingReminders().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('[scheduler] processMeetingReminders failed:', err.message);
+    });
+  }, REMINDER_TICK_MS));
 
   // eslint-disable-next-line no-console
   console.log(`[scheduler] started — tickBilling every ${TICK_BILLING_MS}ms, finalizeExpired every ${FINALIZE_EXPIRED_MS}ms`);
