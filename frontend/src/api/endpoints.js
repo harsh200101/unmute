@@ -6,7 +6,7 @@ export const auth = {
   register: (body) => api.post('/auth/register', body).then((r) => r.data),
   login:    (body) => api.post('/auth/login', body).then((r) => r.data),
   logout:   ()     => api.post('/auth/logout').then((r) => r.data),
-  refresh:  ()     => api.post('/auth/refresh').then((r) => r.data),
+  refresh:  (body = {}) => api.post('/auth/refresh', body).then((r) => r.data),
   // OAuth exchange: trade the short-lived token from the Google-callback URL
   // for a refresh cookie set under the FRONTEND's partition + an access token.
   // See backend googleCallback for the partition rationale.

@@ -61,8 +61,12 @@ api.interceptors.response.use(
     if (status === 401 && code === 'invalid_token' && !original._retry && !isAuthRoute) {
       original._retry = true;
       try {
-        _refreshPromise = _refreshPromise || api.post('/auth/refresh').then((r) => {
+        const savedRefresh = typeof window !== 'undefined' ? localStorage.getItem('unmute_refresh_token') || undefined : undefined;
+        _refreshPromise = _refreshPromise || api.post('/auth/refresh', { refresh_token: savedRefresh }).then((r) => {
           setAccessToken(r.data.access_token);
+          if (r.data.refresh_token && typeof window !== 'undefined') {
+            localStorage.setItem('unmute_refresh_token', r.data.refresh_token);
+          }
           return r.data.access_token;
         }).finally(() => { _refreshPromise = null; });
         const newToken = await _refreshPromise;
@@ -73,6 +77,9 @@ api.interceptors.response.use(
         }
       } catch (_) {
         setAccessToken(null);
+        if (typeof window !== 'undefined') {
+          try { localStorage.removeItem('unmute_refresh_token'); } catch (e) {}
+        }
         _onAuthChange(null);
       }
     }

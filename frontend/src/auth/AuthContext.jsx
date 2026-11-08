@@ -9,14 +9,20 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const applySession = useCallback(({ access_token, user: u }) => {
-    try { localStorage.setItem('unmute_session', '1'); } catch (_) {}
+  const applySession = useCallback(({ access_token, refresh_token, user: u }) => {
+    try {
+      localStorage.setItem('unmute_session', '1');
+      if (refresh_token) localStorage.setItem('unmute_refresh_token', refresh_token);
+    } catch (_) {}
     setAccessToken(access_token);
     setUser(u || null);
   }, []);
 
   const clearSession = useCallback(() => {
-    try { localStorage.removeItem('unmute_session'); } catch (_) {}
+    try {
+      localStorage.removeItem('unmute_session');
+      localStorage.removeItem('unmute_refresh_token');
+    } catch (_) {}
     setAccessToken(null);
     setUser(null);
   }, []);
@@ -32,8 +38,12 @@ export function AuthProvider({ children }) {
         return;
       }
       try {
-        const r = await authApi.refresh();
+        const savedRefresh = localStorage.getItem('unmute_refresh_token') || undefined;
+        const r = await authApi.refresh({ refresh_token: savedRefresh });
         setAccessToken(r.access_token);
+        if (r.refresh_token) {
+          try { localStorage.setItem('unmute_refresh_token', r.refresh_token); } catch (_) {}
+        }
         const m = await meApi.get();
         if (!cancelled) setUser(m.user);
       } catch (_) {

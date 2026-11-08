@@ -7,7 +7,7 @@ import {
 import toast from 'react-hot-toast';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import { meetings as meetingsApi } from '../api/endpoints.js';
-import { getAccessToken } from '../api/client.js';
+import { getAccessToken, API_BASE_URL } from '../api/client.js';
 import Button from '../components/ui/Button.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import { PageSpinner } from '../components/ui/Spinner.jsx';

@@ -64,6 +64,7 @@ async function login(req, res, next) {
       user: result.user,
       access_token: result.access_token,
       access_expires_in: result.access_expires_in,
+      refresh_token: result.refresh_token,
     });
   } catch (e) { next(e); }
 }
@@ -86,6 +87,7 @@ async function refresh(req, res, next) {
     res.json({
       access_token: result.access_token,
       access_expires_in: result.access_expires_in,
+      refresh_token: result.refresh_token,
     });
   } catch (e) { next(e); }
 }

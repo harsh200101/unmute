@@ -79,9 +79,29 @@ app.use(
   })
 );
 app.use(express.urlencoded({ extended: true }));
+// Mobile (Capacitor/WebView) origins and web origins
+const ALLOWED_ORIGIN_PATTERNS = [
+  /^https?:\/\/localhost(:\d+)?$/,
+  /^capacitor:\/\/localhost$/,
+  /^ionic:\/\/localhost$/,
+  /\.onrender\.com$/,
+];
+
 app.use(
   cors({
-    origin: env.FRONTEND_URL,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (native mobile requests, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      const clean = origin.replace(/\/$/, '');
+      const frontendClean = env.FRONTEND_URL ? env.FRONTEND_URL.replace(/\/$/, '') : null;
+      if (frontendClean && clean === frontendClean) {
+        return callback(null, origin);
+      }
+      if (ALLOWED_ORIGIN_PATTERNS.some((pat) => pat.test(clean))) {
+        return callback(null, origin);
+      }
+      return callback(null, false);
+    },
     credentials: true,
   })
 );
