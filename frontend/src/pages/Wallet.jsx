@@ -89,6 +89,15 @@ export default function Wallet() {
 
   useEffect(() => { reload(); }, []);
 
+  // When returning from PhonePe on mobile browser, bounce back directly into native APK!
+  useEffect(() => {
+    const isMobileBrowser = /Android|iPhone|iPad/i.test(navigator.userAgent);
+    const topupParam = params.get('topup');
+    if (!Capacitor.isNativePlatform() && isMobileBrowser && topupParam && params.get('mobile') === '1') {
+      window.location.href = `com.unmute.app://wallet?topup=${topupParam}`;
+    }
+  }, [params]);
+
   // If returned from PhonePe — poll status until succeeded/failed
   useEffect(() => {
     if (!orderIdFromQuery) return;
@@ -171,7 +180,7 @@ export default function Wallet() {
     }
     setTopupBusy(true);
     try {
-      const r = await paymentsApi.topup(topupAmount);
+      const r = await paymentsApi.topup(topupAmount, Capacitor.isNativePlatform() ? 'mobile' : 'web');
 
       // Razorpay Standard Checkout: settle in a modal on this page.
       if (r.mode === 'checkout' || r.provider === 'razorpay') {

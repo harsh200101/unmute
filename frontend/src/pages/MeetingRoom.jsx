@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AgoraRTC from 'agora-rtc-sdk-ng';
+import { Capacitor } from '@capacitor/core';
 import { meetings as meetingsApi } from '../api/endpoints.js';
 import { getAccessToken, API_BASE_URL } from '../api/client.js';
 import Button from '../components/ui/Button.jsx';
@@ -393,8 +394,17 @@ export default function MeetingRoom() {
                 <AlertTriangle size={14} className="inline mr-1" />
                 Wallet empty. Auto-ending in <strong>{formatDuration(billing.grace_seconds_remaining || 0)}</strong>.{' '}
                 <button
-                  onClick={() => window.open('/wallet?topup=1', '_blank', 'width=520,height=720')}
-                  className="underline">Top up</button>
+                  onClick={() => {
+                    if (Capacitor.isNativePlatform()) {
+                      navigate('/wallet?topup=1');
+                    } else {
+                      window.open('/wallet?topup=1', '_blank', 'width=520,height=720');
+                    }
+                  }}
+                  className="underline font-semibold"
+                >
+                  Top up
+                </button>
               </Banner>
             )}
             {billing?.billing_state === 'paused' && remoteJoined === false && (

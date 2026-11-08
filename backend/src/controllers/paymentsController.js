@@ -4,9 +4,11 @@ const svc = require('../services/paymentsService');
 
 async function topup(req, res, next) {
   try {
+    const platform = req.body?.platform || (req.headers['x-platform'] === 'android' ? 'mobile' : 'web');
     const result = await svc.createTopup({
       user_id: req.user.id,
       amount_paise: req.body?.amount_paise,
+      platform,
     });
     res.status(201).json(result);
   } catch (e) { next(e); }

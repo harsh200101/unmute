@@ -24,7 +24,7 @@ function gatewayLabel(gateway) {
 
 // --- Top-up initiation -------------------------------------------------------
 
-async function createTopup({ user_id, amount_paise }) {
+async function createTopup({ user_id, amount_paise, platform }) {
   const n = Number(amount_paise);
   if (!Number.isInteger(n)) throw bad('invalid_amount', 'amount_paise must be an integer');
   if (n < MIN_TOPUP_PAISE) throw bad('amount_too_small', `Minimum top-up is ${MIN_TOPUP_PAISE / 100} INR`);
@@ -32,12 +32,12 @@ async function createTopup({ user_id, amount_paise }) {
 
   return selectedGateway() === 'razorpay'
     ? createRazorpayTopup({ user_id, amount_paise: n })
-    : createPhonepeTopup({ user_id, amount_paise: n });
+    : createPhonepeTopup({ user_id, amount_paise: n, platform });
 }
 
 // PhonePe: redirect the browser to the gateway, settle later via webhook.
-async function createPhonepeTopup({ user_id, amount_paise }) {
-  const init = await phonepe.initiateTopup({ amount_paise, user_id });
+async function createPhonepeTopup({ user_id, amount_paise, platform }) {
+  const init = await phonepe.initiateTopup({ amount_paise, user_id, platform });
 
   // Persist the payment row in 'created' state. Webhook will flip to succeeded.
   const r = await query(

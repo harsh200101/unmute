@@ -128,7 +128,8 @@ async function authedFetch(url, options = {}) {
 
 // --- V2 initiate ------------------------------------------------------------
 
-async function initiateV2({ amount_paise, user_id, gateway_order_id }) {
+async function initiateV2({ amount_paise, user_id, gateway_order_id, platform }) {
+  const mobileSuffix = platform === 'mobile' ? '&mobile=1' : '';
   const payload = {
     merchantOrderId: gateway_order_id,
     amount: amount_paise,
@@ -138,7 +139,7 @@ async function initiateV2({ amount_paise, user_id, gateway_order_id }) {
       merchantUrls: {
         // Frontend route. V2 delivers the browser here after checkout; the
         // actual settlement arrives on the dashboard-configured webhook.
-        redirectUrl: `${env.FRONTEND_URL.replace(/\/$/, '')}/wallet?topup=${gateway_order_id}`,
+        redirectUrl: `${env.FRONTEND_URL.replace(/\/$/, '')}/wallet?topup=${gateway_order_id}${mobileSuffix}`,
       },
     },
     metaInfo: {
@@ -173,7 +174,7 @@ async function initiateV2({ amount_paise, user_id, gateway_order_id }) {
 
 // --- V1 initiate (legacy) ---------------------------------------------------
 
-async function initiateV1({ amount_paise, user_id, gateway_order_id }) {
+async function initiateV1({ amount_paise, user_id, gateway_order_id, platform }) {
   // callbackUrl is PhonePe's server-to-server webhook and must point at THIS
   // service. It is not derivable from FRONTEND_URL: the old
   // FRONTEND_URL.replace(/^https?/, 'https://api.') rewrite produced a host
@@ -187,12 +188,13 @@ async function initiateV1({ amount_paise, user_id, gateway_order_id }) {
     );
   }
 
+  const mobileSuffix = platform === 'mobile' ? '&mobile=1' : '';
   const payload = {
     merchantId: env.PHONEPE_MERCHANT_ID,
     merchantTransactionId: gateway_order_id,
     merchantUserId: `u_${user_id}`,
     amount: amount_paise,
-    redirectUrl: `${env.FRONTEND_URL.replace(/\/$/, '')}/wallet?topup=${gateway_order_id}`,
+    redirectUrl: `${env.FRONTEND_URL.replace(/\/$/, '')}/wallet?topup=${gateway_order_id}${mobileSuffix}`,
     redirectMode: 'REDIRECT',
     callbackUrl: `${env.API_PUBLIC_URL.replace(/\/$/, '')}/api/webhooks/phonepe`,
     paymentInstrument: { type: 'PAY_PAGE' },
@@ -231,23 +233,24 @@ async function initiateV1({ amount_paise, user_id, gateway_order_id }) {
 
 // --- Initiate top-up --------------------------------------------------------
 
-async function initiateTopup({ amount_paise, user_id }) {
+async function initiateTopup({ amount_paise, user_id, platform }) {
   const gateway_order_id = generateOrderId();
 
   if (!isConfigured()) {
     if (!allowsStub()) throw notConfiguredError();
+    const mobileSuffix = platform === 'mobile' ? '&mobile=1' : '';
     return {
       provider: 'stub',
       gateway_order_id,
-      redirect_url: `${env.FRONTEND_URL.replace(/\/$/, '')}/dev/phonepe-stub?order=${gateway_order_id}&amount=${amount_paise}`,
+      redirect_url: `${env.FRONTEND_URL.replace(/\/$/, '')}/dev/phonepe-stub?order=${gateway_order_id}&amount=${amount_paise}${mobileSuffix}`,
       raw_request: { stub: true, amount_paise, user_id },
       raw_response: { stub_redirect: true },
     };
   }
 
   return apiVersion() === 'v2'
-    ? initiateV2({ amount_paise, user_id, gateway_order_id })
-    : initiateV1({ amount_paise, user_id, gateway_order_id });
+    ? initiateV2({ amount_paise, user_id, gateway_order_id, platform })
+    : initiateV1({ amount_paise, user_id, gateway_order_id, platform });
 }
 
 // --- Order status -----------------------------------------------------------
