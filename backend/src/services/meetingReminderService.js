@@ -27,32 +27,32 @@ async function processMeetingReminders() {
       const menteeDisplay = b.is_incognito ? 'Anonymous Mentee' : (b.mentee_name || 'Mentee');
       const mentorDisplay = b.mentor_name || 'Mentor';
 
-      // Notify Mentor
+      // Notify Mentor (Links to dashboard before meeting time)
       await notify.notify({
         user_id: b.mentor_user_id,
         kind: 'meeting_reminder_15m',
         title: '⏰ Session starting in 15 minutes',
-        body: `Your scheduled session with ${menteeDisplay} begins in 15 minutes. Click to get ready!`,
-        link_url: `/meetings/${b.uuid}`,
+        body: `Your scheduled session with ${menteeDisplay} begins in 15 minutes. Check details on your dashboard.`,
+        link_url: '/dashboard',
         reference_table: 'bookings',
         reference_id: b.id,
         send_email: false,
       });
 
-      // Notify Mentee
+      // Notify Mentee (Links to dashboard before meeting time)
       await notify.notify({
         user_id: b.mentee_user_id,
         kind: 'meeting_reminder_15m',
         title: '⏰ Session starting in 15 minutes',
-        body: `Your session with ${mentorDisplay} begins in 15 minutes. Click to get ready!`,
-        link_url: `/meetings/${b.uuid}`,
+        body: `Your session with ${mentorDisplay} begins in 15 minutes. Check details on your dashboard.`,
+        link_url: '/dashboard',
         reference_table: 'bookings',
         reference_id: b.id,
         send_email: false,
       });
     }
 
-    // 2. Process 5-Minute Reminders
+    // 2. Process 5-Minute Reminders (Meeting is open — Join Now!)
     const due5 = await query(
       `SELECT b.id, b.uuid, b.mentor_user_id, b.mentee_user_id, b.is_incognito,
               b.slot_start_at,
@@ -74,24 +74,24 @@ async function processMeetingReminders() {
       const menteeDisplay = b.is_incognito ? 'Anonymous Mentee' : (b.mentee_name || 'Mentee');
       const mentorDisplay = b.mentor_name || 'Mentor';
 
-      // Notify Mentor
+      // Notify Mentor (Open to join now)
       await notify.notify({
         user_id: b.mentor_user_id,
         kind: 'meeting_reminder_5m',
-        title: '🚨 Session starting in 5 minutes!',
-        body: `Your session with ${menteeDisplay} begins in 5 minutes. Join meeting room now.`,
+        title: '🚨 Session starting — Join now!',
+        body: `Your session with ${menteeDisplay} is ready. Tap to Join now!`,
         link_url: `/meetings/${b.uuid}`,
         reference_table: 'bookings',
         reference_id: b.id,
         send_email: false,
       });
 
-      // Notify Mentee
+      // Notify Mentee (Open to join now)
       await notify.notify({
         user_id: b.mentee_user_id,
         kind: 'meeting_reminder_5m',
-        title: '🚨 Session starting in 5 minutes!',
-        body: `Your session with ${mentorDisplay} begins in 5 minutes. Join meeting room now.`,
+        title: '🚨 Session starting — Join now!',
+        body: `Your session with ${mentorDisplay} is ready. Tap to Join now!`,
         link_url: `/meetings/${b.uuid}`,
         reference_table: 'bookings',
         reference_id: b.id,

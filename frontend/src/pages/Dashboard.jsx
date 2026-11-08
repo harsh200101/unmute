@@ -337,7 +337,7 @@ function NextSessionCard({ booking, user }) {
           {canJoin ? (
             <Link to={`/meetings/${booking.uuid}`} className="flex-1 sm:flex-none">
               <Button className="w-full sm:w-auto">
-                <Video size={16} /> Join meeting
+                <Video size={16} /> Join now
               </Button>
             </Link>
           ) : (

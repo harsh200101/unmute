@@ -211,7 +211,7 @@ export default function BookingDetail() {
               <p className="text-xs text-emerald-700">Both of you join from this page to start billing.</p>
             </div>
             <Button onClick={() => navigate(`/meetings/${booking.uuid}`)}>
-              <Video size={16} /> Join meeting
+              <Video size={16} /> Join now
             </Button>
           </CardBody>
         </Card>
