@@ -1,4 +1,7 @@
-import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
+import { useAuth } from '../auth/AuthContext.jsx';
 import {
   ArrowRight, Heart, Shield, Clock, Sparkles,
   Briefcase, Users, Brain, Mic, Compass, Flame,
@@ -20,6 +23,15 @@ const HERO_TOPICS = [
 ];
 
 export default function Landing() {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+
+  // On native mobile app, logged-in users skip the landing pitch and land straight on dashboard
+  useEffect(() => {
+    if (!loading && user && Capacitor.isNativePlatform()) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, loading, navigate]);
   return (
     <div className="overflow-x-hidden">
       {/* ----------------- HERO ----------------- */}
@@ -58,11 +70,19 @@ export default function Landing() {
                 Pay only for the minutes you talk — no minimums, no commitment.
               </p>
               <div className="mt-7 flex flex-col sm:flex-row gap-3 sm:gap-3 justify-center lg:justify-start sm:items-center">
-                <Link to="/register" className="contents">
-                  <Button size="lg" className="w-full sm:w-auto">
-                    Get started <ArrowRight size={16} />
-                  </Button>
-                </Link>
+                {user ? (
+                  <Link to="/dashboard" className="contents">
+                    <Button size="lg" className="w-full sm:w-auto">
+                      Go to dashboard <ArrowRight size={16} />
+                    </Button>
+                  </Link>
+                ) : (
+                  <Link to="/register" className="contents">
+                    <Button size="lg" className="w-full sm:w-auto">
+                      Get started <ArrowRight size={16} />
+                    </Button>
+                  </Link>
+                )}
                 {/* Topic browser — opens to a staggered list of common things people */}
                 {/* come here to talk about; each navigates to the mentor list page. */}
                 <StaggeredDropdown
