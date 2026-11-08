@@ -203,6 +203,8 @@ const schema = z.object({
 
   AGORA_APP_ID: z.string().optional().default(''),
   AGORA_APP_CERTIFICATE: z.string().optional().default(''),
+
+  FIREBASE_SERVICE_ACCOUNT_KEY: z.string().optional().default(''),
 })
   // Cross-field email validation. The old setup let a server boot with a
   // placeholder sender and no credentials, then fail silently on every send.

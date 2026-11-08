@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('path');
+const fs = require('fs');
 const { query } = require('../config/db');
 
 let firebaseAdmin = null;
@@ -11,15 +13,48 @@ function getFirebaseAdmin() {
 
   try {
     const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-    if (!rawKey) {
-      console.log('[pushNotificationService] FIREBASE_SERVICE_ACCOUNT_KEY not set; push notifications will run in mock/log mode.');
-      return null;
+    const admin = require('firebase-admin');
+    let serviceAccount = null;
+
+    if (rawKey) {
+      const trimmed = rawKey.trim();
+      if (trimmed.startsWith('{')) {
+        // Raw JSON string
+        serviceAccount = JSON.parse(trimmed);
+      } else if (trimmed.startsWith('ey') || trimmed.length > 200 && !trimmed.includes('{')) {
+        // Base64 encoded JSON string
+        try {
+          const decoded = Buffer.from(trimmed, 'base64').toString('utf8');
+          serviceAccount = JSON.parse(decoded);
+        } catch (_) {
+          serviceAccount = require(path.resolve(trimmed));
+        }
+      } else if (fs.existsSync(trimmed)) {
+        // Direct file path
+        serviceAccount = JSON.parse(fs.readFileSync(trimmed, 'utf8'));
+      } else if (fs.existsSync(path.resolve(process.cwd(), trimmed))) {
+        serviceAccount = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), trimmed), 'utf8'));
+      }
+    } else {
+      // Check default fallback file locations in backend/
+      const defaultPaths = [
+        path.resolve(process.cwd(), 'firebase-service-account.json'),
+        path.resolve(__dirname, '../../firebase-service-account.json'),
+        path.resolve(process.cwd(), 'serviceAccountKey.json'),
+      ];
+      for (const p of defaultPaths) {
+        if (fs.existsSync(p)) {
+          serviceAccount = JSON.parse(fs.readFileSync(p, 'utf8'));
+          console.log(`[pushNotificationService] Loaded Firebase service account from ${p}`);
+          break;
+        }
+      }
     }
 
-    const admin = require('firebase-admin');
-    const serviceAccount = typeof rawKey === 'string' && rawKey.startsWith('{')
-      ? JSON.parse(rawKey)
-      : require(rawKey);
+    if (!serviceAccount) {
+      console.log('[pushNotificationService] Firebase service account not configured. Push notifications will run in mock/log mode.');
+      return null;
+    }
 
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
