@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { Capacitor } from '@capacitor/core';
 
 // Single axios instance. The access token lives in memory only; the refresh
 // token sits in an httpOnly cookie set by the backend at login. On boot,
@@ -18,12 +19,15 @@ export function onAuthChange(handler) {
   _onAuthChange = handler;
 }
 
-// In dev, baseURL is `/api` so Vite's proxy can forward to the local
-// backend (avoids CORS + cookie domain headaches). In prod, VITE_API_URL
-// points at the deployed backend's origin (e.g. https://unmute-backend-...
-// .onrender.com) and we hit it directly; the backend's CORS allows the
-// static-site origin and credentials.
-const API_ORIGIN = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
+// In dev web, baseURL is `/api` so Vite's proxy can forward to the local
+// backend. In prod web or native mobile (Capacitor/Android/iOS), it must target
+// the deployed backend (https://unmute-backend-4x1x.onrender.com).
+const DEFAULT_PROD_API = 'https://unmute-backend-4x1x.onrender.com';
+const isNative = typeof window !== 'undefined' && (
+  Capacitor.isNativePlatform() ||
+  (window.location.hostname === 'localhost' && window.location.protocol === 'https:')
+);
+const API_ORIGIN = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || (isNative ? DEFAULT_PROD_API : '');
 const api = axios.create({
   baseURL: `${API_ORIGIN}/api`,
   withCredentials: true,

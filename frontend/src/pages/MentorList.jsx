@@ -40,7 +40,7 @@ export default function MentorList() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([catalog.tiers(), catalog.tags()])
-      .then(([t, g]) => { if (!cancelled) { setTiers(t.items); setTags(g.items); } })
+      .then(([t, g]) => { if (!cancelled) { setTiers(Array.isArray(t?.items) ? t.items : []); setTags(Array.isArray(g?.items) ? g.items : []); } })
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
@@ -67,8 +67,8 @@ export default function MentorList() {
 
   // Build the dropdown items lists. Each first row is a "clear" option that
   // resets the filter to empty; everything else is one button per option.
-  const selectedTier = tiers.find((t) => t.name === tier);
-  const selectedTag  = tags.find((t) => t.slug === tag);
+  const selectedTier = (tiers || []).find((t) => t?.name === tier);
+  const selectedTag  = (tags || []).find((t) => t?.slug === tag);
 
   const tierItems = useMemo(() => [
     { type: 'button', onClick: () => setFilter('tier', ''), label: 'All prices', icon: XIcon },

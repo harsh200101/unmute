@@ -42,6 +42,7 @@ jobs:
         working-directory: frontend
         env:
           CI: false
+          VITE_API_URL: https://unmute-backend-4x1x.onrender.com
         run: npm run build
 
       - name: Sync Capacitor Android
