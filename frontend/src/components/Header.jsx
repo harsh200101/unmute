@@ -97,7 +97,7 @@ export default function Header() {
                   </span>
                 }
                 triggerClassName="inline-flex items-center"
-                items={buildUserMenuItems({ isMentor, onSignOut: async () => { await logout(); navigate('/'); } })}
+                items={buildUserMenuItems({ isMentor, isAdmin: user?.role === 'admin', onSignOut: async () => { await logout(); navigate('/'); } })}
               />
             </>
           )}

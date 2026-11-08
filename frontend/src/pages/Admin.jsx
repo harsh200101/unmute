@@ -56,15 +56,26 @@ export default function Admin() {
           <h1 className="text-2xl font-bold text-foreground">Admin</h1>
           <p className="text-muted-foreground mt-1">Mentor & money operations.</p>
         </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          loading={creditingSelf}
-          onClick={creditSelfMoney}
-          title="Add ₹5,000 dummy money to your admin wallet for testing"
-        >
-          💰 + ₹5,000 Dummy Money
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => setShowBroadcastModal(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm"
+            title="Send notification to mentee only, mentor only, or both"
+          >
+            📢 Send Demo Notification
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={creditingSelf}
+            onClick={creditSelfMoney}
+            title="Add ₹5,000 dummy money to your admin wallet for testing"
+          >
+            💰 + ₹5,000 Dummy Money
+          </Button>
+        </div>
       </header>
 
       <div className="flex gap-1 border-b border-slate-200 overflow-x-auto">
@@ -211,6 +222,20 @@ export default function Admin() {
         {active === 'meetings' && <ActiveMeetings />}
         {active === 'users' && <Users />}
         {active === 'audit' && <AuditLog />}
+        {active === 'notifications' && (
+          <BroadcastNotificationPanel
+            bTarget={bTarget}
+            setBTarget={setBTarget}
+            bTitle={bTitle}
+            setBTitle={setBTitle}
+            bBody={bBody}
+            setBBody={setBBody}
+            bLink={bLink}
+            setBLink={setBLink}
+            bSending={bSending}
+            setBSending={setBSending}
+          />
+        )}
       </div>
     </div>
   );
@@ -905,6 +930,141 @@ function EmptyState({ label }) {
   return (
     <Card>
       <CardBody className="text-center py-10 text-muted-foreground">{label}</CardBody>
+    </Card>
+  );
+}
+
+
+function BroadcastNotificationPanel({
+  bTarget, setBTarget,
+  bTitle, setBTitle,
+  bBody, setBBody,
+  bLink, setBLink,
+  bSending, setBSending,
+}) {
+  return (
+    <Card className="max-w-2xl border-indigo-200 dark:border-indigo-900 shadow-md">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+              <span>📢</span> Broadcast Push & In-App Notification
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Instantly push notifications to user phones (Android tray) and in-app notification centers.
+            </p>
+          </div>
+          <span className="px-2 py-0.5 text-[11px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 rounded-full">
+            Live Push
+          </span>
+        </div>
+      </CardHeader>
+      <CardBody className="space-y-5">
+        <div>
+          <label className="block text-xs font-semibold text-foreground mb-1.5">
+            Target Audience: Who should receive this?
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'mentee', label: '🎓 Mentee only' },
+              { id: 'mentor', label: '👨‍🏫 Mentor only' },
+              { id: 'both',   label: '👥 Both (All Users)' },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setBTarget(opt.id)}
+                className={`py-2.5 px-3 text-xs font-semibold rounded-lg border text-center transition-all ${
+                  bTarget === opt.id
+                    ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm'
+                    : 'border-border bg-card text-muted-foreground hover:bg-muted/60'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <Field label="Notification Title" htmlFor="tab_btitle">
+          <Input
+            id="tab_btitle"
+            value={bTitle}
+            onChange={(e) => setBTitle(e.target.value)}
+            placeholder="e.g. Session Starting Soon / Special Announcement"
+            required
+          />
+        </Field>
+
+        <Field label="Notification Message" htmlFor="tab_bbody">
+          <textarea
+            id="tab_bbody"
+            rows={3}
+            value={bBody}
+            onChange={(e) => setBBody(e.target.value)}
+            placeholder="Write the message that appears in the phone notification tray..."
+            className="w-full rounded-lg border border-border bg-card text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            required
+          />
+        </Field>
+
+        <Field label="Action / Link URL (Optional)" htmlFor="tab_blink">
+          <Input
+            id="tab_blink"
+            value={bLink}
+            onChange={(e) => setBLink(e.target.value)}
+            placeholder="/me/notifications or /dashboard or /mentors"
+          />
+        </Field>
+
+        <div className="pt-3 border-t border-border flex items-center justify-between flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              await showNotificationInTray({
+                title: bTitle,
+                body: bBody,
+                link_url: bLink,
+              });
+              toast.success('🔔 Notification posted to this phone\'s notification tray!');
+            }}
+            title="Test posting directly into this phone\'s notification tray"
+          >
+            🔔 Test on This Phone
+          </Button>
+
+          <Button
+            variant="primary"
+            size="sm"
+            loading={bSending}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
+            onClick={async () => {
+              if (!bTitle.trim() || !bBody.trim()) {
+                toast.error('Title and message are required');
+                return;
+              }
+              setBSending(true);
+              try {
+                const r = await adminApi.broadcastNotification({
+                  target: bTarget,
+                  title: bTitle,
+                  body: bBody,
+                  link_url: bLink,
+                });
+                toast.success(`🎉 Successfully sent notification to ${r.delivered || r.total_recipients || 0} user(s) (${bTarget})!`);
+              } catch (e) {
+                toast.error(e.response?.data?.error || 'Failed to send broadcast');
+              } finally {
+                setBSending(false);
+              }
+            }}
+          >
+            🚀 Send Broadcast to ${bTarget === 'both' ? 'All Users' : bTarget === 'mentee' ? 'Mentees' : 'Mentors'}
+          </Button>
+        </div>
+      </CardBody>
     </Card>
   );
 }
