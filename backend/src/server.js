@@ -41,7 +41,7 @@ if (env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
 }
 
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(compression());
 app.use(cookieParser());
 // PhonePe V2 may post its webhook as `application/json` OR as `text/plain`

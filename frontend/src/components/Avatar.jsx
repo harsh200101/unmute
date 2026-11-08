@@ -1,4 +1,5 @@
 import clsx from 'clsx';
+import { resolveApiUrl } from '../api/client.js';
 
 export default function Avatar({ src, name = '?', size = 40, className }) {
   const initials = name
@@ -11,7 +12,7 @@ export default function Avatar({ src, name = '?', size = 40, className }) {
   if (src) {
     return (
       <img
-        src={src}
+        src={resolveApiUrl(src)}
         alt={name}
         className={clsx('rounded-full object-cover bg-slate-200 border border-slate-200', className)}
         style={{ width: size, height: size }}

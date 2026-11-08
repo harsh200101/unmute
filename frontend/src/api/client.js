@@ -27,7 +27,11 @@ const isNative = typeof window !== 'undefined' && (
   Capacitor.isNativePlatform() ||
   (window.location.hostname === 'localhost' && window.location.protocol === 'https:')
 );
-const API_ORIGIN = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || (isNative ? DEFAULT_PROD_API : '');
+const isProdWeb = typeof window !== 'undefined' && (
+  window.location.hostname.endsWith('.onrender.com') ||
+  (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+);
+export const API_ORIGIN = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || (isNative || isProdWeb ? DEFAULT_PROD_API : '');
 const api = axios.create({
   baseURL: `${API_ORIGIN}/api`,
   withCredentials: true,
@@ -37,6 +41,16 @@ const api = axios.create({
 // Exported for places that need to build full URLs themselves (e.g. OAuth
 // redirects via window.location, which can't go through the axios instance).
 export const API_BASE_URL = `${API_ORIGIN}/api`;
+
+export function resolveApiUrl(path) {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:') || path.startsWith('data:')) {
+    return path;
+  }
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const origin = API_ORIGIN || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? '' : DEFAULT_PROD_API);
+  return `${origin}${cleanPath}`;
+}
 
 api.interceptors.request.use((config) => {
   if (_accessToken) {

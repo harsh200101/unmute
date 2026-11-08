@@ -134,21 +134,44 @@ export default function MeetingRoom() {
           await client.join(creds.app_id, creds.channel, creds.token, creds.uid);
           if (cancelled) { try { await client.leave(); } catch (_) {} return; }
 
-          const [audio, video] = await AgoraRTC.createMicrophoneAndCameraTracks({}, {
-            encoderConfig: '720p_1',
-          });
+          let audio = null;
+          let video = null;
+
+          // 1. Microphone track (primary)
+          try {
+            audio = await AgoraRTC.createMicrophoneAudioTrack();
+          } catch (audioErr) {
+            console.error('[agora] audio track creation failed', audioErr);
+            throw new Error('Microphone permission or device unavailable. Please allow microphone access.');
+          }
+
+          // 2. Camera track (optional / resilient fallback for emulators or missing webcams)
+          const skipVideo = creds.is_incognito && creds.role === 'mentee';
+          if (!skipVideo) {
+            try {
+              video = await AgoraRTC.createCameraVideoTrack({
+                encoderConfig: '720p_1',
+              });
+            } catch (videoErr) {
+              console.warn('[agora] camera unavailable, falling back to audio-only', videoErr);
+              toast.error('Camera unavailable. Joined with audio only.');
+              setCamOff(true);
+            }
+          } else {
+            setCamOff(true);
+          }
+
           if (cancelled) {
-            try { audio.close(); video.close(); } catch (_) {}
+            try { audio?.close(); video?.close(); } catch (_) {}
             try { await client.leave(); } catch (_) {}
             return;
           }
-          if (creds.is_incognito && creds.role === 'mentee') {
-            await video.setEnabled(false);
-            setCamOff(true);
-          }
+
+          const publishTracks = [audio, video].filter(Boolean);
           localTracksRef.current = { audio, video };
-          await client.publish([audio, video]);
-          if (localVideoRef.current && !(creds.is_incognito && creds.role === 'mentee')) {
+          await client.publish(publishTracks);
+
+          if (video && localVideoRef.current && !skipVideo) {
             video.play(localVideoRef.current);
           }
         }

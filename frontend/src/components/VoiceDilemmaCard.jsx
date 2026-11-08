@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import Avatar from './Avatar.jsx';
 import Button from './ui/Button.jsx';
 import { voiceDilemmas as voiceApi } from '../api/endpoints.js';
+import { resolveApiUrl } from '../api/client.js';
 import { relativeTime, formatDate } from '../lib/format.js';
 
 export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered }) {
@@ -216,7 +217,7 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
             </span>
           )}
         </div>
-        <audio controls src={dilemma.mentee_audio_url} className="w-full h-9 rounded-lg" />
+        <audio controls src={resolveApiUrl(dilemma.mentee_audio_url)} className="w-full h-9 rounded-lg" />
 
         {dilemma.mentee_text_notes && (
           <p className="text-xs text-muted-foreground italic pt-1">
@@ -239,7 +240,7 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
                 {formatDate(dilemma.answered_at)}
               </span>
             </div>
-            <audio controls src={dilemma.mentor_audio_url} className="w-full h-9 rounded-lg" />
+            <audio controls src={resolveApiUrl(dilemma.mentor_audio_url)} className="w-full h-9 rounded-lg" />
           </div>
 
           {/* Mentor Written Takeaway Box (Gold/Indigo Accent) */}

@@ -84,9 +84,13 @@ function serveAudio(req, res) {
   };
 
   const contentType = mimeTypes[ext] || 'application/octet-stream';
-  res.setHeader('Content-Type', contentType);
-  res.setHeader('Accept-Ranges', 'bytes');
-  return res.sendFile(filePath);
+  const headers = {
+    'Content-Type': contentType,
+    'Accept-Ranges': 'bytes',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+    'Access-Control-Allow-Origin': '*',
+  };
+  return res.sendFile(filePath, { headers });
 }
 
 module.exports = {

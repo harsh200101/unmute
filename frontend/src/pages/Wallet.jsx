@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { Plus, ArrowDownLeft, ArrowUpRight, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { wallet as walletApi, payments as paymentsApi, admin as adminApi } from '../api/endpoints.js';
@@ -180,10 +182,28 @@ export default function Wallet() {
         return; // busy is cleared by whichever callback fired
       }
 
-      // PhonePe: redirect to the gateway's hosted checkout page. If we're in a
-      // popup window (opened from the meeting room) this still navigates THIS
-      // window so the meeting page stays put.
-      window.location.href = `${r.redirect_url}`;
+      // PhonePe checkout: On native mobile (Capacitor), open in Chrome Custom Tab
+      // to bypass Android WebView WAF blocking ("Access Denied") and support UPI intents.
+      if (Capacitor.isNativePlatform()) {
+        const orderId = r.payment?.gateway_order_id;
+        setTopupBusy(false);
+        setTopupOpen(false);
+
+        const listener = await Browser.addListener('browserFinished', async () => {
+          try { await listener.remove(); } catch (_) {}
+          await reload();
+          if (orderId) {
+            setParams({ topup: orderId });
+          }
+        });
+
+        await Browser.open({
+          url: r.redirect_url,
+          presentationStyle: 'popover',
+        });
+      } else {
+        window.location.href = `${r.redirect_url}`;
+      }
     } catch (e) {
       setTopupErr(e.response?.data?.error || 'Top-up failed');
       setTopupBusy(false);
