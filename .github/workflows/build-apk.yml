@@ -28,10 +28,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install Android SDK 36
+      - name: Configure Android SDK & Licenses
         run: |
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
           yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" || true
 
       - name: Install Frontend Dependencies
         working-directory: frontend
@@ -53,16 +54,10 @@ jobs:
         working-directory: frontend/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-build.log
-
-      - name: Upload Build Log on Failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-build-log
-          path: frontend/gradle-build.log
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: unmute-debug-apk
