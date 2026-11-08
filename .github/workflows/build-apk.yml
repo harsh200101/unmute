@@ -28,9 +28,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: Accept Android Licenses
+      - name: Install Android SDK 36
         run: |
           yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Install Frontend Dependencies
         working-directory: frontend
@@ -52,7 +53,14 @@ jobs:
         working-directory: frontend/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-build.log
+
+      - name: Upload Build Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: frontend/gradle-build.log
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
