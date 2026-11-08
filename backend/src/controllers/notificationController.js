@@ -38,4 +38,19 @@ async function markAllRead(req, res, next) {
   } catch (e) { next(e); }
 }
 
-module.exports = { list, unreadCount, markRead, markAllRead };
+async function registerDeviceToken(req, res, next) {
+  try {
+    const { token, platform } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: 'Token is required' });
+    }
+    const result = await svc.registerDeviceToken({
+      user_id: req.user.id,
+      token,
+      platform: platform || 'android',
+    });
+    res.json(result);
+  } catch (e) { next(e); }
+}
+
+module.exports = { list, unreadCount, markRead, markAllRead, registerDeviceToken };

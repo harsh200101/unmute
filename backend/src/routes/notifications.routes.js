@@ -12,5 +12,6 @@ router.get('/',              general, c.list);
 router.get('/unread-count',  general, c.unreadCount);
 router.post('/:id/read',     general, c.markRead);
 router.post('/read-all',     general, c.markAllRead);
+router.post('/device-token', general, c.registerDeviceToken);
 
 module.exports = router;

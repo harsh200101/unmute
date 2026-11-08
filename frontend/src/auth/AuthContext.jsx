@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { setAccessToken, onAuthChange } from '../api/client.js';
 import { auth as authApi, me as meApi } from '../api/endpoints.js';
+import { initPushNotifications } from '../services/pushNotificationService.js';
 
 const AuthContext = createContext(null);
 
@@ -44,6 +45,12 @@ export function AuthProvider({ children }) {
     onAuthChange(() => clearSession());
     return () => { cancelled = true; };
   }, [clearSession]);
+
+  useEffect(() => {
+    if (user) {
+      initPushNotifications();
+    }
+  }, [user]);
 
   const login = useCallback(async (email, password) => {
     const r = await authApi.login({ email, password });

@@ -1,0 +1,13 @@
+{
+  "appId": "com.unmute.app",
+  "appName": "unmute",
+  "webDir": "build",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}

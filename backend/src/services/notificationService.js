@@ -4,6 +4,7 @@ const { query } = require('../config/db');
 const { notFound, forbidden } = require('../utils/errors');
 const env = require('../config/env');
 const emailService = require('./emailService');
+const pushService = require('./pushNotificationService');
 
 // Centralised notification creator. Other services call notify(...).
 // All inserts are best-effort: failures are logged but never bubble up
@@ -67,6 +68,12 @@ async function notify({
       console.error('[notify] email send failed:', err.message, { user_id, kind });
     }
   }
+
+  // Best-effort mobile push notification dispatch
+  pushService.sendPushToUser({ user_id, title, body, link_url, kind }).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[notify] push send failed:', err.message, { user_id, kind });
+  });
 
   return inserted;
 }
@@ -139,4 +146,11 @@ async function markAllRead(user_id) {
   return { ok: true, marked: r.rowCount };
 }
 
-module.exports = { notify, list, unreadCount, markRead, markAllRead };
+module.exports = {
+  notify,
+  list,
+  unreadCount,
+  markRead,
+  markAllRead,
+  registerDeviceToken: pushService.registerDeviceToken
+};
