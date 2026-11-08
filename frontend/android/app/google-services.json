@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "76789069254",
+    "project_id": "unmute-472015",
+    "storage_bucket": "unmute-472015.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:76789069254:android:49744ad670daf4fff92ec7",
+        "android_client_info": {
+          "package_name": "com.unmute.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "76789069254-3a9fp5o7ts8rb2q1jesl44cunace4mll.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVd6of2dTRvXqvEi29X575A9GF9m7-4UI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "76789069254-3a9fp5o7ts8rb2q1jesl44cunace4mll.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
