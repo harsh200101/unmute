@@ -4,6 +4,8 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { SignInAuthComponent } from '../components/ui/sign-in.jsx';
 import Logo from '../components/Logo.jsx';
 import { API_BASE_URL } from '../api/client.js';
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 
 /* -------------------------------------------------------------------------- */
 /* Sign-in screen.                                                            */

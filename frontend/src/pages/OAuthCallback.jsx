@@ -43,7 +43,7 @@ export default function OAuthCallback() {
         if (cancelled) return;
         setAccessToken(r.access_token);
         const m = await meApi.get();
-        applySession({ access_token: r.access_token, user: m.user });
+        applySession({ access_token: r.access_token, user: m.user, refresh_token: r.refresh_token });
         const next = params.get('next') || '/dashboard';
         navigate(next, { replace: true });
       } catch (e) {

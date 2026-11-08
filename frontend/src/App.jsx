@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
+import { App as CapApp } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import ProtectedRoute, { PublicOnly } from './components/ProtectedRoute.jsx';
@@ -40,7 +42,25 @@ export default function App() {
   const navigate = useNavigate();
   useEffect(() => {
     window.__unmuteNavigate = navigate;
-    return () => { window.__unmuteNavigate = null; };
+
+    // Listen for custom scheme deep links (e.g. com.unmute.app://oauth/callback?...)
+    let appUrlHandle = null;
+    CapApp.addListener('appUrlOpen', async ({ url }) => {
+      console.log('[CapApp] Deep link opened:', url);
+      try {
+        await Browser.close();
+      } catch (_) {}
+      if (url && (url.includes('oauth/callback') || url.includes('://oauth'))) {
+        const queryIndex = url.indexOf('?');
+        const query = queryIndex !== -1 ? url.slice(queryIndex + 1) : '';
+        navigate(`/oauth/callback?${query}`, { replace: true });
+      }
+    }).then((h) => { appUrlHandle = h; });
+
+    return () => {
+      window.__unmuteNavigate = null;
+      if (appUrlHandle) appUrlHandle.remove();
+    };
   }, [navigate]);
 
   return (
