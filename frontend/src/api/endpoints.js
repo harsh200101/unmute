@@ -43,6 +43,7 @@ export const availability = {
   addOverride: (body) => api.post('/availability/overrides', body).then((r) => r.data),
   deleteOverride: (id) => api.delete(`/availability/overrides/${id}`).then((r) => r.data),
   slots: (mentor_uuid, params) => api.get(`/availability/${mentor_uuid}/slots`, { params }).then((r) => r.data),
+  toggleAvailableNow: (body) => api.post('/availability/available-now', body).then((r) => r.data),
 };
 
 export const bookings = {
@@ -150,6 +151,8 @@ export const admin = {
   // Stats + recent activity
   stats:          () => api.get('/admin/stats').then((r) => r.data),
   recentActivity: (params) => api.get('/admin/recent-activity', { params }).then((r) => r.data),
+  creditUser: (id, body) => api.post(`/admin/users/${id}/credit`, body).then((r) => r.data),
+  creditSelf: (body) => api.post('/admin/credit-self', body).then((r) => r.data),
 };
 
 export const catalog = {

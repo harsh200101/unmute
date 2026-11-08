@@ -23,17 +23,41 @@ const TABS = [
 export default function Admin() {
   const [params, setParams] = useSearchParams();
   const active = params.get('tab') || 'overview';
+  const [creditingSelf, setCreditingSelf] = useState(false);
 
   function setTab(id) {
     const next = new URLSearchParams(params); next.set('tab', id);
     setParams(next, { replace: true });
   }
 
+  async function creditSelfMoney() {
+    setCreditingSelf(true);
+    try {
+      await adminApi.creditSelf({ amount_paise: 500000, reason: 'Admin quick test dummy money' });
+      toast.success('₹5,000 dummy money credited to your wallet!');
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to add test money');
+    } finally {
+      setCreditingSelf(false);
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">Admin</h1>
-        <p className="text-muted-foreground mt-1">Mentor & money operations.</p>
+      <header className="mb-6 flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Admin</h1>
+          <p className="text-muted-foreground mt-1">Mentor & money operations.</p>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={creditingSelf}
+          onClick={creditSelfMoney}
+          title="Add ₹5,000 dummy money to your admin wallet for testing"
+        >
+          💰 + ₹5,000 Dummy Money
+        </Button>
       </header>
 
       <div className="flex gap-1 border-b border-slate-200 overflow-x-auto">
@@ -591,6 +615,20 @@ function Users() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [startingMeetId, setStartingMeetId] = useState(null);
+  const [creditingUserId, setCreditingUserId] = useState(null);
+
+  async function creditMoney(u) {
+    setCreditingUserId(u.id);
+    try {
+      await adminApi.creditUser(u.id, { amount_paise: 500000, reason: 'Admin manual test credit' });
+      toast.success(`₹5,000 dummy money credited to ${u.full_name || u.email}!`);
+      reload();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to credit money');
+    } finally {
+      setCreditingUserId(null);
+    }
+  }
 
   async function startMeet(u) {
     if (!confirm(`Start an instant test video meeting with ${u.full_name || u.email}?`)) return;
@@ -668,6 +706,15 @@ function Users() {
                     </td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={creditingUserId === u.id}
+                          onClick={() => creditMoney(u)}
+                          title="Credit ₹5,000 dummy money to this user"
+                        >
+                          + ₹5k Money
+                        </Button>
                         <Button
                           size="sm"
                           variant="secondary"

@@ -142,7 +142,21 @@ async function startInstantMeeting(req, res, next) {
   } catch (e) { next(e); }
 }
 
+async function creditUserWallet(req, res, next) {
+  try {
+    const targetUserId = req.params.id ? Number(req.params.id) : req.user.id;
+    const result = await svc.creditUserWallet({
+      admin_user_id: req.user.id,
+      target_user_id: targetUserId,
+      amount_paise: req.body?.amount_paise,
+      reason: req.body?.reason,
+    });
+    res.json(result);
+  } catch (e) { next(e); }
+}
+
 module.exports = {
+  creditUserWallet,
   listUsers, patchUser,
   listMentorApplications, approveMentor, rejectMentor,
   listActiveMeetings, forceEndMeeting, startInstantMeeting,

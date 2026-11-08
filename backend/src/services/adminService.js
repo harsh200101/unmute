@@ -595,7 +595,47 @@ async function startInstantMeeting({ admin_user_id, target_user_id }) {
   });
 }
 
+async function creditUserWallet({ admin_user_id, target_user_id, amount_paise = 500000, reason = 'Admin testing dummy credit' }) {
+  const targetId = Number(target_user_id);
+  const amt = Number(amount_paise) || 500000;
+  if (amt <= 0 || amt > 100000000) throw bad('invalid_amount', 'Amount must be between 1 and 100000000 paise');
+
+  return withTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO wallets (user_id, kind, balance_paise) VALUES ($1, 'mentee', 0) ON CONFLICT (user_id, kind) DO NOTHING`,
+      [targetId]
+    );
+    const w = await client.query(`SELECT id, balance_paise FROM wallets WHERE user_id = $1 AND kind = 'mentee' FOR UPDATE`, [targetId]);
+    if (!w.rows[0]) throw notFound('wallet_not_found');
+
+    const walletId = w.rows[0].id;
+    const tx = await client.query(
+      `INSERT INTO wallet_transactions (wallet_id, direction, amount_paise, balance_after_paise, reason, description)
+       VALUES ($1, 'credit', $2, 0, 'admin_adjustment', $3)
+       RETURNING *`,
+      [walletId, amt, reason]
+    );
+
+    const updated = await client.query(`SELECT balance_paise FROM wallets WHERE id = $1`, [walletId]);
+
+    await client.query(
+      `INSERT INTO admin_audit_log
+         (admin_user_id, action, target_table, target_id, after_state, notes)
+       VALUES ($1, 'credit_user_wallet', 'wallets', $2, $3, $4)`,
+      [admin_user_id, walletId, { amount_paise: amt, new_balance_paise: updated.rows[0]?.balance_paise }, reason]
+    );
+
+    return {
+      success: true,
+      amount_credited_paise: amt,
+      balance_paise: updated.rows[0]?.balance_paise,
+      transaction: tx.rows[0],
+    };
+  });
+}
+
 module.exports = {
+  creditUserWallet,
   listUsers, patchUser,
   listMentorApplications, approveMentor, rejectMentor,
   listActiveMeetings, forceEndMeeting, startInstantMeeting,

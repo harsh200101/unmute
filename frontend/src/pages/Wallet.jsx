@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, ArrowDownLeft, ArrowUpRight, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { wallet as walletApi, payments as paymentsApi } from '../api/endpoints.js';
+import { wallet as walletApi, payments as paymentsApi, admin as adminApi } from '../api/endpoints.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Card, { CardBody, CardHeader } from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -31,6 +31,21 @@ export default function Wallet() {
   const [topupAmount, setTopupAmount] = useState(100000);
   const [topupBusy, setTopupBusy] = useState(false);
   const [topupErr, setTopupErr] = useState(null);
+  const [addingTestMoney, setAddingTestMoney] = useState(false);
+
+  async function addTestMoney() {
+    setAddingTestMoney(true);
+    try {
+      await adminApi.creditSelf({ amount_paise: 500000, reason: 'Admin testing dummy credit' });
+      toast.success('₹5,000 dummy money added to your wallet!');
+      await load();
+      if (topupOpen) setTopupOpen(false);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to add test money');
+    } finally {
+      setAddingTestMoney(false);
+    }
+  }
 
   // Returning from PhonePe. The backend builds the redirect as
   // /wallet?topup=<gateway_order_id> (phonepeService.js), so `topup` is the
@@ -209,9 +224,16 @@ export default function Wallet() {
             Top up to book sessions. We charge per minute while you're on the call.
           </p>
         </div>
-        <Button onClick={() => setTopupOpen(true)}>
-          <Plus size={16} /> Top up
-        </Button>
+        <div className="flex items-center gap-2">
+          {user.role === 'admin' && (
+            <Button variant="secondary" onClick={addTestMoney} loading={addingTestMoney}>
+              💰 Add ₹5,000 Test Money
+            </Button>
+          )}
+          <Button onClick={() => setTopupOpen(true)}>
+            <Plus size={16} /> Top up
+          </Button>
+        </div>
       </header>
 
       {polling && (
@@ -292,6 +314,14 @@ export default function Wallet() {
       </Card>
 
       <Modal open={topupOpen} onClose={() => setTopupOpen(false)} title="Top up wallet">
+        {user.role === 'admin' && (
+          <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-700 dark:text-amber-300 flex items-center justify-between gap-2">
+            <span>Admin Testing: Add instant dummy funds without a payment gateway.</span>
+            <Button size="sm" variant="secondary" onClick={addTestMoney} loading={addingTestMoney}>
+              + ₹5,000 Dummy
+            </Button>
+          </div>
+        )}
         <p className="text-sm text-muted-foreground">
           {GATEWAY_LABEL === 'Razorpay'
             ? "You'll complete the payment in a secure Razorpay window."
