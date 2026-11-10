@@ -249,8 +249,9 @@ function updateStructuralStats(symbol, setup, outcome, pnlPct = 0) {
   state.setupStats.set(setupKey, setCur);
 }
 
-function computeQuantAndLearnedScore({ symbol, setup, candles, orderbook }) {
+function computeQuantAndLearnedScore({ symbol, action = 'buy', setup, candles, orderbook }) {
   let score = 7.0;
+  const isShort = action === 'sell';
   const symStat = state.symbolStats.get(normalizeSymbol(symbol));
   const setStat = state.setupStats.get(setup);
 
@@ -263,8 +264,14 @@ function computeQuantAndLearnedScore({ symbol, setup, candles, orderbook }) {
 
   if (orderbook) {
     const imb = Number(orderbook.imbalance || 1);
-    if (imb >= 1.2) score += 0.6;
-    else if (imb < 0.8) score -= 0.6;
+    if (!isShort) {
+      if (imb >= 1.2) score += 0.6;
+      else if (imb < 0.8) score -= 0.6;
+    } else {
+      // Short setups benefit from Ask-heavy orderbooks (imb <= 0.85)
+      if (imb <= 0.85) score += 0.6;
+      else if (imb > 1.2) score -= 0.6;
+    }
   }
 
   if (candles && candles[0]) {
@@ -274,9 +281,15 @@ function computeQuantAndLearnedScore({ symbol, setup, candles, orderbook }) {
     const l = Number(candles[0].l || candles[0].low);
     const range = h - l;
     if (range > 0) {
-      const upperWickRatio = (h - Math.max(c, o)) / range;
-      if (upperWickRatio > 0.45) score -= 0.9;
-      else if ((c - o) / range > 0.55) score += 0.5;
+      if (!isShort) {
+        const upperWickRatio = (h - Math.max(c, o)) / range;
+        if (upperWickRatio > 0.45) score -= 0.9;
+        else if ((c - o) / range > 0.55) score += 0.5;
+      } else {
+        const lowerWickRatio = (Math.min(c, o) - l) / range;
+        if (lowerWickRatio > 0.45) score -= 0.9;
+        else if ((o - c) / range > 0.55) score += 0.5;
+      }
     }
   }
 
@@ -586,21 +599,63 @@ async function cancelOpenOrdersForSymbol(symbol) {
  * Uses direct Market Orders ($100 USD notional slice = ₹250 INR @ 35x leverage) so Alpaca never blocks
  * additional entries with bracket child order locks, while our 30s AI Monitor manages Breakeven, TP & SL!
  */
-async function placeAlpacaPaperOrder({ symbol, side }) {
+async function placeAlpacaPaperOrder({ symbol, side, entryPrice }) {
   const cleanSym = resolveAlpacaSymbol(symbol);
   const cleanSide = side.toLowerCase();
   const isCrypto = cleanSym.includes('/');
+  const normSym = normalizeSymbol(cleanSym);
 
-  // Clear any conflicting open opposite orders on this symbol first
+  // Clear any conflicting open orders on this symbol first
   await cancelOpenOrdersForSymbol(cleanSym);
 
-  const payload = {
-    symbol: cleanSym,
-    notional: String(state.paperSliceUSD), // $100 USD notional = ₹250 INR margin × 35x leverage!
-    side: cleanSide,
-    type: 'market',
-    time_in_force: isCrypto ? 'gtc' : 'day',
-  };
+  // Check if an opposite position is currently open on Alpaca
+  const openPositions = await getAlpacaPositions();
+  const existingPos = (openPositions || []).find((p) => normalizeSymbol(p.symbol) === normSym);
+
+  // Handle Crypto SHORT (SELL): Alpaca Crypto is Spot-only (cannot short 0 balance on /v2/orders)
+  if (isCrypto && cleanSide === 'sell') {
+    if (existingPos && Number(existingPos.qty) > 0) {
+      await closeAlpacaPosition(normSym);
+    }
+    const fillPrice = entryPrice || (await getAlpacaLatestTrade(cleanSym)) || 1;
+    const synthId = `ALPACA-SHORT-${normSym}-${Date.now().toString().slice(-6)}`;
+    state.activeCryptoTrades.set(cleanSym, {
+      id: synthId,
+      symbol: cleanSym,
+      side: 'sell',
+      entryPrice: Number(fillPrice),
+      notionalUSD: state.paperSliceUSD,
+      trailed: false,
+      openedAt: new Date(),
+    });
+    return { id: synthId, symbol: cleanSym, side: 'sell', status: 'filled_paper_short' };
+  }
+
+  // Handle Stock Flip (e.g. Shorting a stock that is currently Long, or Buying a stock that is currently Short)
+  if (!isCrypto && existingPos) {
+    const posIsLong = Number(existingPos.qty) > 0 && existingPos.side !== 'short';
+    if ((cleanSide === 'sell' && posIsLong) || (cleanSide === 'buy' && !posIsLong)) {
+      await closeAlpacaPosition(normSym);
+    }
+  }
+
+  // Note: Alpaca supports fractional `notional` on BUY orders, and whole-share `qty: "1"` on Stock SHORT (sell) orders
+  const payload =
+    !isCrypto && cleanSide === 'sell'
+      ? {
+          symbol: cleanSym,
+          qty: '1',
+          side: 'sell',
+          type: 'market',
+          time_in_force: 'day',
+        }
+      : {
+          symbol: cleanSym,
+          notional: String(state.paperSliceUSD), // $100 USD notional = ₹250 INR margin × 35x leverage!
+          side: cleanSide,
+          type: 'market',
+          time_in_force: isCrypto ? 'gtc' : 'day',
+        };
 
   const res = await fetch(`${APCA_BASE_URL}/v2/orders`, {
     method: 'POST',
@@ -686,122 +741,216 @@ async function getCoinDCXBalances() {
 }
 
 /**
- * 24/7 UNIFIED ALPACA PAPER POSITION MONITOR & SELF-LEARNING TRIGGER
+ * 24/7 UNIFIED ALPACA PAPER POSITION MONITOR & SELF-LEARNING TRIGGER (Supports both LONG & SHORT!)
  */
 async function monitorOngoingTrades() {
   try {
     const positions = await getAlpacaPositions();
-    if (!Array.isArray(positions) || positions.length === 0) return;
+    if (Array.isArray(positions)) {
+      for (const pos of positions) {
+        const normSym = normalizeSymbol(pos.symbol);
+        const unrealizedPlPercent = Number(pos.unrealized_plpc) * 100;
+        const currentPrice = Number(pos.current_price);
+        const entryPrice = Number(pos.avg_entry_price);
+        const profitUSD = Number(pos.unrealized_pl);
+        const profitINR = Math.round(profitUSD * USD_TO_INR);
+        const sideLabel = pos.side === 'short' || Number(pos.qty) < 0 ? 'SHORT' : 'LONG';
+        const meta = state.activeTradeMeta.get(normSym) || {
+          symbol: pos.symbol,
+          market: pos.asset_class === 'crypto' ? 'crypto' : 'stock',
+          setup: `1m Alpaca Paper Scalp (${sideLabel})`,
+        };
 
-    for (const pos of positions) {
-      const normSym = normalizeSymbol(pos.symbol);
-      const unrealizedPlPercent = Number(pos.unrealized_plpc) * 100;
-      const currentPrice = Number(pos.current_price);
-      const entryPrice = Number(pos.avg_entry_price);
-      const profitUSD = Number(pos.unrealized_pl);
+        // 1. Lock Breakeven at +0.8% gain (~+28% ROI on ₹250 @ 35x slice!)
+        if (unrealizedPlPercent >= 0.8 && !state.trailedPositions.has(normSym)) {
+          state.trailedPositions.add(normSym);
+          await broadcastTelegram(
+            `🎯 *BREAKEVEN LOCKED ON ALPACA [${sideLabel}] — ZERO RISK*\n\n` +
+            `• *Asset:* \`${pos.symbol}\`\n` +
+            `• *Move:* +${unrealizedPlPercent.toFixed(2)}% (+$${profitUSD.toFixed(2)} / +₹${profitINR} on ₹250 slice)\n` +
+            `• *Entry:* $${formatPrice(entryPrice)} | *Live:* $${formatPrice(currentPrice)}\n` +
+            `🛡️ *AI Adjustment:* Stop trailed to entry ($${formatPrice(entryPrice)}).`
+          );
+        }
+
+        // 2. Take Profit at +2.0% gain (~+70% ROI on ₹250 @ 35x slice!)
+        if (unrealizedPlPercent >= 2.0 && !state.bookedPositions.has(normSym)) {
+          state.bookedPositions.add(normSym);
+          const closed = await closeAlpacaPosition(normSym);
+          if (closed) {
+            state.trailedPositions.delete(normSym);
+            state.bookedPositions.delete(normSym);
+            state.realizedPnlUSD += profitUSD;
+            state.realizedPnlINR = Math.round(state.realizedPnlUSD * USD_TO_INR);
+            const currentLifelineINR = state.lifelineBaseINR + state.realizedPnlINR;
+            await broadcastTelegram(
+              `💰 *ALPACA SCALP PROFIT BANKED [${sideLabel}]! (+${unrealizedPlPercent.toFixed(2)}%)*\n\n` +
+              `• *Asset:* \`${pos.symbol}\`\n` +
+              `• *Profit Realized:* +$${profitUSD.toFixed(2)} (*+₹${profitINR}* on ₹250 slice)\n` +
+              `• *₹6,000 Strategy Balance:* *₹${currentLifelineINR.toLocaleString()}* / ₹${state.overallGoalINR.toLocaleString()}`
+            );
+            await recordTradeAndLearn({
+              symbol: meta.symbol || pos.symbol,
+              market: meta.market,
+              setup: meta.setup,
+              entryPrice,
+              exitPrice: currentPrice,
+              pnlPct: unrealizedPlPercent,
+              outcome: 'WIN',
+              candles: meta.candles,
+              orderbook: meta.orderbook,
+            });
+          } else {
+            state.bookedPositions.delete(normSym);
+          }
+        } else if (state.trailedPositions.has(normSym) && unrealizedPlPercent <= 0.05 && !state.bookedPositions.has(normSym)) {
+          // 3. Breakeven Stop Hit
+          state.bookedPositions.add(normSym);
+          const closed = await closeAlpacaPosition(normSym);
+          if (closed) {
+            state.trailedPositions.delete(normSym);
+            state.bookedPositions.delete(normSym);
+            await broadcastTelegram(
+              `🛡️ *ALPACA BREAKEVEN EXIT [${sideLabel}]: \`${pos.symbol}\`*\n\n` +
+              `• *Exit Price:* $${formatPrice(currentPrice)} (${unrealizedPlPercent.toFixed(2)}%)\n` +
+              `• *Impact:* ₹0 (Protected by AI Breakeven Lock!)`
+            );
+            await recordTradeAndLearn({
+              symbol: meta.symbol || pos.symbol,
+              market: meta.market,
+              setup: meta.setup,
+              entryPrice,
+              exitPrice: currentPrice,
+              pnlPct: unrealizedPlPercent,
+              outcome: 'BREAKEVEN',
+              candles: meta.candles,
+              orderbook: meta.orderbook,
+            });
+          } else {
+            state.bookedPositions.delete(normSym);
+          }
+        } else if (unrealizedPlPercent <= -1.2 && !state.bookedPositions.has(normSym)) {
+          // 4. Hard Stop Loss Hit (-1.2%)
+          state.bookedPositions.add(normSym);
+          const closed = await closeAlpacaPosition(normSym);
+          if (closed) {
+            state.trailedPositions.delete(normSym);
+            state.bookedPositions.delete(normSym);
+            state.realizedPnlUSD += profitUSD;
+            state.realizedPnlINR = Math.round(state.realizedPnlUSD * USD_TO_INR);
+            await broadcastTelegram(
+              `🛡️ *ALPACA STOP-LOSS TRIGGERED [${sideLabel}]: \`${pos.symbol}\`*\n\n` +
+              `• *Exit Price:* $${formatPrice(currentPrice)} (${unrealizedPlPercent.toFixed(2)}%)\n` +
+              `• *Impact on ₹250 Slice:* $${profitUSD.toFixed(2)} (~₹${profitINR})`
+            );
+            await recordTradeAndLearn({
+              symbol: meta.symbol || pos.symbol,
+              market: meta.market,
+              setup: meta.setup,
+              entryPrice,
+              exitPrice: currentPrice,
+              pnlPct: unrealizedPlPercent,
+              outcome: 'LOSS',
+              candles: meta.candles,
+              orderbook: meta.orderbook,
+            });
+          } else {
+            state.bookedPositions.delete(normSym);
+          }
+        }
+      }
+    }
+
+    // Also Monitor Active Crypto SHORT Paper Positions (Tracked Live Against Alpaca Crypto Prices)
+    for (const [sym, shortPos] of state.activeCryptoTrades.entries()) {
+      const livePrice = await getAlpacaLatestTrade(sym);
+      if (!livePrice || !shortPos.entryPrice) continue;
+      // For a SHORT position, profit % is positive when livePrice < entryPrice
+      const shortPnlPct = ((shortPos.entryPrice - livePrice) / shortPos.entryPrice) * 100;
+      const profitUSD = (shortPnlPct / 100) * (shortPos.notionalUSD || state.paperSliceUSD);
       const profitINR = Math.round(profitUSD * USD_TO_INR);
+      shortPos.livePrice = livePrice;
+      shortPos.unrealizedPlPct = shortPnlPct;
+      shortPos.unrealizedPlUSD = profitUSD;
+
+      const normSym = normalizeSymbol(sym);
       const meta = state.activeTradeMeta.get(normSym) || {
-        symbol: pos.symbol,
-        market: pos.asset_class === 'crypto' ? 'crypto' : 'stock',
-        setup: '1m Alpaca Paper Scalp',
+        symbol: sym,
+        market: 'crypto',
+        setup: '1m Crypto Short Scalp (SHORT)',
       };
 
-      // 1. Lock Breakeven at +0.8% gain (~+28% ROI on ₹250 @ 35x slice!)
-      if (unrealizedPlPercent >= 0.8 && !state.trailedPositions.has(normSym)) {
-        state.trailedPositions.add(normSym);
+      if (shortPnlPct >= 0.8 && !shortPos.trailed) {
+        shortPos.trailed = true;
         await broadcastTelegram(
-          `🎯 *BREAKEVEN LOCKED ON ALPACA — ZERO RISK*\n\n` +
-          `• *Asset:* \`${pos.symbol}\`\n` +
-          `• *Move:* +${unrealizedPlPercent.toFixed(2)}% (+$${profitUSD.toFixed(2)} / +₹${profitINR} on ₹250 slice)\n` +
-          `• *Entry:* $${formatPrice(entryPrice)} | *Live:* $${formatPrice(currentPrice)}\n` +
-          `🛡️ *AI Adjustment:* Stop trailed to entry ($${formatPrice(entryPrice)}).`
+          `🎯 *BREAKEVEN LOCKED ON ALPACA [SHORT] — ZERO RISK*\n\n` +
+          `• *Asset:* \`${sym}\` (SHORT)\n` +
+          `• *Move:* +${shortPnlPct.toFixed(2)}% (+$${profitUSD.toFixed(2)} / +₹${profitINR} on ₹250 slice)\n` +
+          `• *Entry:* $${formatPrice(shortPos.entryPrice)} | *Live:* $${formatPrice(livePrice)}\n` +
+          `🛡️ *AI Adjustment:* Short Stop trailed to entry ($${formatPrice(shortPos.entryPrice)}).`
         );
       }
 
-      // 2. Take Profit at +2.0% gain (~+70% ROI on ₹250 @ 35x slice!)
-      if (unrealizedPlPercent >= 2.0 && !state.bookedPositions.has(normSym)) {
-        state.bookedPositions.add(normSym);
-        const closed = await closeAlpacaPosition(normSym);
-        if (closed) {
-          state.trailedPositions.delete(normSym);
-          state.bookedPositions.delete(normSym);
-          state.realizedPnlUSD += profitUSD;
-          state.realizedPnlINR = Math.round(state.realizedPnlUSD * USD_TO_INR);
-          const currentLifelineINR = state.lifelineBaseINR + state.realizedPnlINR;
-          await broadcastTelegram(
-            `💰 *ALPACA SCALP PROFIT BANKED! (+${unrealizedPlPercent.toFixed(2)}%)*\n\n` +
-            `• *Asset:* \`${pos.symbol}\`\n` +
-            `• *Profit Realized:* +$${profitUSD.toFixed(2)} (*+₹${profitINR}* on ₹250 slice)\n` +
-            `• *₹6,000 Strategy Balance:* *₹${currentLifelineINR.toLocaleString()}* / ₹${state.overallGoalINR.toLocaleString()}`
-          );
-          await recordTradeAndLearn({
-            symbol: meta.symbol || pos.symbol,
-            market: meta.market,
-            setup: meta.setup,
-            entryPrice,
-            exitPrice: currentPrice,
-            pnlPct: unrealizedPlPercent,
-            outcome: 'WIN',
-            candles: meta.candles,
-            orderbook: meta.orderbook,
-          });
-        } else {
-          state.bookedPositions.delete(normSym);
-        }
-      } else if (state.trailedPositions.has(normSym) && unrealizedPlPercent <= 0.05 && !state.bookedPositions.has(normSym)) {
-        // 3. Breakeven Stop Hit
-        state.bookedPositions.add(normSym);
-        const closed = await closeAlpacaPosition(normSym);
-        if (closed) {
-          state.trailedPositions.delete(normSym);
-          state.bookedPositions.delete(normSym);
-          await broadcastTelegram(
-            `🛡️ *ALPACA BREAKEVEN EXIT: \`${pos.symbol}\`*\n\n` +
-            `• *Exit Price:* $${formatPrice(currentPrice)} (${unrealizedPlPercent.toFixed(2)}%)\n` +
-            `• *Impact:* ₹0 (Protected by AI Breakeven Lock!)`
-          );
-          await recordTradeAndLearn({
-            symbol: meta.symbol || pos.symbol,
-            market: meta.market,
-            setup: meta.setup,
-            entryPrice,
-            exitPrice: currentPrice,
-            pnlPct: unrealizedPlPercent,
-            outcome: 'BREAKEVEN',
-            candles: meta.candles,
-            orderbook: meta.orderbook,
-          });
-        } else {
-          state.bookedPositions.delete(normSym);
-        }
-      } else if (unrealizedPlPercent <= -1.2 && !state.bookedPositions.has(normSym)) {
-        // 4. Hard Stop Loss Hit (-1.2%)
-        state.bookedPositions.add(normSym);
-        const closed = await closeAlpacaPosition(normSym);
-        if (closed) {
-          state.trailedPositions.delete(normSym);
-          state.bookedPositions.delete(normSym);
-          state.realizedPnlUSD += profitUSD;
-          state.realizedPnlINR = Math.round(state.realizedPnlUSD * USD_TO_INR);
-          await broadcastTelegram(
-            `🛡️ *ALPACA STOP-LOSS TRIGGERED: \`${pos.symbol}\`*\n\n` +
-            `• *Exit Price:* $${formatPrice(currentPrice)} (${unrealizedPlPercent.toFixed(2)}%)\n` +
-            `• *Impact on ₹250 Slice:* $${profitUSD.toFixed(2)} (~₹${profitINR})`
-          );
-          await recordTradeAndLearn({
-            symbol: meta.symbol || pos.symbol,
-            market: meta.market,
-            setup: meta.setup,
-            entryPrice,
-            exitPrice: currentPrice,
-            pnlPct: unrealizedPlPercent,
-            outcome: 'LOSS',
-            candles: meta.candles,
-            orderbook: meta.orderbook,
-          });
-        } else {
-          state.bookedPositions.delete(normSym);
-        }
+      if (shortPnlPct >= 2.0) {
+        state.activeCryptoTrades.delete(sym);
+        state.realizedPnlUSD += profitUSD;
+        state.realizedPnlINR = Math.round(state.realizedPnlUSD * USD_TO_INR);
+        const currentLifelineINR = state.lifelineBaseINR + state.realizedPnlINR;
+        await broadcastTelegram(
+          `💰 *ALPACA SHORT SCALP PROFIT BANKED! (+${shortPnlPct.toFixed(2)}%)*\n\n` +
+          `• *Asset:* \`${sym}\` (SHORT)\n` +
+          `• *Profit Realized:* +$${profitUSD.toFixed(2)} (*+₹${profitINR}* on ₹250 slice)\n` +
+          `• *₹6,000 Strategy Balance:* *₹${currentLifelineINR.toLocaleString()}* / ₹${state.overallGoalINR.toLocaleString()}`
+        );
+        await recordTradeAndLearn({
+          symbol: sym,
+          market: 'crypto',
+          setup: meta.setup,
+          entryPrice: shortPos.entryPrice,
+          exitPrice: livePrice,
+          pnlPct: shortPnlPct,
+          outcome: 'WIN',
+          candles: meta.candles,
+          orderbook: meta.orderbook,
+        });
+      } else if (shortPos.trailed && shortPnlPct <= 0.05) {
+        state.activeCryptoTrades.delete(sym);
+        await broadcastTelegram(
+          `🛡️ *ALPACA SHORT BREAKEVEN EXIT: \`${sym}\`*\n\n` +
+          `• *Exit Price:* $${formatPrice(livePrice)} (${shortPnlPct.toFixed(2)}%)\n` +
+          `• *Impact:* ₹0 (Protected by AI Breakeven Lock!)`
+        );
+        await recordTradeAndLearn({
+          symbol: sym,
+          market: 'crypto',
+          setup: meta.setup,
+          entryPrice: shortPos.entryPrice,
+          exitPrice: livePrice,
+          pnlPct: shortPnlPct,
+          outcome: 'BREAKEVEN',
+          candles: meta.candles,
+          orderbook: meta.orderbook,
+        });
+      } else if (shortPnlPct <= -1.2) {
+        state.activeCryptoTrades.delete(sym);
+        state.realizedPnlUSD += profitUSD;
+        state.realizedPnlINR = Math.round(state.realizedPnlUSD * USD_TO_INR);
+        await broadcastTelegram(
+          `🛡️ *ALPACA SHORT STOP-LOSS TRIGGERED: \`${sym}\`*\n\n` +
+          `• *Exit Price:* $${formatPrice(livePrice)} (${shortPnlPct.toFixed(2)}%)\n` +
+          `• *Impact on ₹250 Slice:* $${profitUSD.toFixed(2)} (~₹${profitINR})`
+        );
+        await recordTradeAndLearn({
+          symbol: sym,
+          market: 'crypto',
+          setup: meta.setup,
+          entryPrice: shortPos.entryPrice,
+          exitPrice: livePrice,
+          pnlPct: shortPnlPct,
+          outcome: 'LOSS',
+          candles: meta.candles,
+          orderbook: meta.orderbook,
+        });
       }
     }
   } catch (err) {
@@ -865,17 +1014,18 @@ async function batchAuditCandidatesWithGemini(candidates) {
   const lessonsCompact =
     state.learnedLessons.length > 0
       ? state.learnedLessons.slice(0, 4).map((l) => `${l.symbol}:${l.lesson}`).join(' | ')
-      : 'Require full candle body & bid support';
+      : 'Require full candle body & orderbook confirmation';
 
   const batchSummary = uncached.map((c) => ({
     symbol: c.symbol,
+    side: c.action === 'sell' ? 'SHORT' : 'LONG',
     setup: c.setup,
     price: c.entryPrice,
     quantScore: fallbackMap.get(c.symbol).score,
     ob: c.orderbook || 'IEX',
   }));
 
-  const prompt = `11-Agent Day-Trader-Skill + Autonomous-Trader Batch Audit (₹6,000 -> ₹50,000 Strategy on Alpaca Paper: ₹250 slice @ 35x = $100 notional).
+  const prompt = `11-Agent Bi-Directional (LONG + SHORT) Day-Trader-Skill + Autonomous-Trader Batch Audit (₹6,000 -> ₹50,000 Strategy on Alpaca Paper: ₹250 slice @ 35x = $100 notional).
 Record: ${state.totalWins}W/${state.totalLosses}L. Learned Rules: ${lessonsCompact}.
 Candidates: ${JSON.stringify(batchSummary)}
 Return JSON object mapping each symbol to {"approved":true,"score":8.2,"timemachineOdds":"70% Target-First","thesis":"Max 16 words"}`;
@@ -931,7 +1081,7 @@ Return JSON object mapping each symbol to {"approved":true,"score":8.2,"timemach
 }
 
 /**
- * 1-MINUTE UNIFIED ALPACA PAPER SCANNER (Pushes ALL Qualifying Setups for Maximum Compounding!)
+ * 1-MINUTE UNIFIED BI-DIRECTIONAL (LONG + SHORT) ALPACA PAPER SCANNER
  */
 async function runMarketScan(isManual = false) {
   state.lastScanTime = new Date();
@@ -943,7 +1093,7 @@ async function runMarketScan(isManual = false) {
 
   await monitorOngoingTrades();
 
-  // 1. Scan All 14 US Equities on Alpaca IEX via Snapshots
+  // 1. Scan All 14 US Equities on Alpaca IEX via Snapshots (Both LONG & SHORT!)
   const clock = await getAlpacaClock();
   const isMarketOpen = clock ? clock.is_open : false;
 
@@ -959,34 +1109,62 @@ async function runMarketScan(isManual = false) {
       if (!minBar || !liveTradePrice) continue;
 
       const bodyPct = minBar.o > 0 ? (minBar.c - minBar.o) / minBar.o : 0;
-      const isBreakout = dailyBar && liveTradePrice >= dailyBar.vw && minBar.c >= minBar.o;
-      const isBounce = dailyBar && minBar.l <= dailyBar.vw && minBar.c > minBar.o;
-      const isImpulse = bodyPct >= 0.0005;
 
-      if (isBreakout || isBounce || isImpulse) {
-        const setupName = isBreakout
-          ? '1m Real-Time IEX Breakout'
-          : isBounce
-          ? '1m Real-Time Support Bounce'
-          : '1m IEX Momentum Impulse';
+      // Bullish (LONG) conditions
+      const isBreakoutLong = dailyBar && liveTradePrice >= dailyBar.vw && minBar.c > minBar.o;
+      const isBounceLong = dailyBar && minBar.l <= dailyBar.vw && minBar.c > minBar.o;
+      const isImpulseLong = bodyPct >= 0.0005;
+
+      // Bearish (SHORT) conditions
+      const isBreakdownShort = dailyBar && liveTradePrice < dailyBar.vw && minBar.c < minBar.o;
+      const isRejectionShort = dailyBar && minBar.h >= dailyBar.vw && minBar.c < minBar.o;
+      const isDumpShort = bodyPct <= -0.0005;
+
+      if (isBreakoutLong || isBounceLong || isImpulseLong) {
+        const setupName = isBreakoutLong
+          ? '1m IEX VWAP Breakout (LONG)'
+          : isBounceLong
+          ? '1m IEX Support Bounce (LONG)'
+          : '1m IEX Bullish Impulse (LONG)';
         const learnedBonus = (state.setupStats.get(setupName)?.weightBonus || 0) * 0.001;
 
         candidates.push({
           market: 'stock',
           symbol: sym,
+          action: 'buy',
           entryPrice: liveTradePrice,
           stopLoss: liveTradePrice * 0.988,
           takeProfit: liveTradePrice * 1.022,
           qty: 1,
           setup: setupName,
           candles: [minBar, dailyBar].filter(Boolean),
-          strength: bodyPct + learnedBonus,
+          strength: Math.abs(bodyPct) + learnedBonus,
+        });
+      } else if (isBreakdownShort || isRejectionShort || isDumpShort) {
+        const setupName = isBreakdownShort
+          ? '1m IEX VWAP Breakdown (SHORT)'
+          : isRejectionShort
+          ? '1m IEX Resistance Rejection (SHORT)'
+          : '1m IEX Bearish Dump Scalp (SHORT)';
+        const learnedBonus = (state.setupStats.get(setupName)?.weightBonus || 0) * 0.001;
+
+        candidates.push({
+          market: 'stock',
+          symbol: sym,
+          action: 'sell',
+          entryPrice: liveTradePrice,
+          stopLoss: liveTradePrice * 1.012,
+          takeProfit: liveTradePrice * 0.978,
+          qty: 1,
+          setup: setupName,
+          candles: [minBar, dailyBar].filter(Boolean),
+          strength: Math.abs(bodyPct) + learnedBonus,
         });
       }
     }
   }
 
-  // 2. Scan All 20 Alpaca 24/7 Crypto Pairs via Snapshots + L2 Orderbooks
+  // 2. Scan All 20 Alpaca 24/7 Crypto Pairs via Snapshots + L2 Orderbooks (Both LONG & SHORT!)
   try {
     const { snapshots: cryptoSnaps, orderbooks: cryptoBooksMap } = await getAlpacaCryptoSnapshotsAndBooks(
       ALPACA_CRYPTO_WATCHLIST
@@ -1012,39 +1190,65 @@ async function runMarketScan(isManual = false) {
       const ob = cryptoBooksMap[pair] || null;
       const imb = Number(ob?.imbalance || 1);
 
-      const isBreakout = dailyBar && close >= dailyBar.vw && close >= open;
-      const isWickBounce = imb >= 1.15 && close >= open;
-      const isImpulse = bodyPct >= 0.0004;
+      // Bullish (LONG) conditions
+      const isBreakoutLong = dailyBar && close >= dailyBar.vw && close > open;
+      const isWickBounceLong = imb >= 1.15 && close >= open;
+      const isImpulseLong = bodyPct >= 0.0004;
 
-      const setupName = isBreakout
-        ? '1m Micro-Scalp Breakout'
-        : isWickBounce
-        ? '1m Support Wick Bounce'
-        : '1m Momentum Impulse Scalp';
+      // Bearish (SHORT) conditions
+      const isBreakdownShort = dailyBar && close < dailyBar.vw && close < open;
+      const isRejectionShort = imb <= 0.88 && close <= open;
+      const isDumpShort = bodyPct <= -0.0004;
+
+      const decideShort =
+        (isBreakdownShort || isRejectionShort || isDumpShort) &&
+        (bodyPct < 0 || imb < 0.95);
+
+      const action = decideShort ? 'sell' : 'buy';
+      const setupName = decideShort
+        ? isBreakdownShort
+          ? '1m VWAP Breakdown (SHORT)'
+          : isRejectionShort
+          ? '1m Ask-Wall Rejection (SHORT)'
+          : '1m Bearish Momentum Scalp (SHORT)'
+        : isBreakoutLong
+        ? '1m Micro-Scalp Breakout (LONG)'
+        : isWickBounceLong
+        ? '1m Support Wick Bounce (LONG)'
+        : '1m Bullish Impulse Scalp (LONG)';
 
       const learnedBonus = (state.setupStats.get(setupName)?.weightBonus || 0) * 0.001;
+      const obEdge = decideShort ? Math.max(0, 1 - imb) * 0.001 : Math.max(0, imb - 1) * 0.001;
 
       const item = {
         market: 'crypto',
         symbol: pair,
+        action,
         entryPrice: close,
-        stopLoss: close * 0.988,
-        takeProfit: close * 1.022,
+        stopLoss: decideShort ? close * 1.012 : close * 0.988,
+        takeProfit: decideShort ? close * 0.978 : close * 1.022,
         qty: 1,
         setup: setupName,
         candles: [minBar, dailyBar].filter(Boolean),
         orderbook: ob,
-        strength: bodyPct + (imb - 1) * 0.001 + learnedBonus,
+        strength: Math.abs(bodyPct) + obEdge + learnedBonus,
       };
 
-      if (isBreakout || isWickBounce || isImpulse) {
+      if (
+        isBreakoutLong ||
+        isWickBounceLong ||
+        isImpulseLong ||
+        isBreakdownShort ||
+        isRejectionShort ||
+        isDumpShort
+      ) {
         candidates.push(item);
       } else {
         fallbackCandidates.push(item);
       }
     }
 
-    moverList.sort((a, b) => b.move5m - a.move5m);
+    moverList.sort((a, b) => Math.abs(b.move5m) - Math.abs(a.move5m));
     for (const m of moverList.slice(0, 4)) {
       topMoversPreview.push(`${m.pair.replace('/USD', '')} (${m.move5m >= 0 ? '+' : ''}${m.move5m.toFixed(1)}%)`);
     }
@@ -1054,7 +1258,7 @@ async function runMarketScan(isManual = false) {
       for (const fb of fallbackCandidates.slice(0, 3 - candidates.length)) {
         candidates.push({
           ...fb,
-          setup: '1m Relative Strength Scalp',
+          setup: fb.action === 'sell' ? '1m Relative Weakness Short (SHORT)' : '1m Relative Strength Scalp (LONG)',
         });
       }
     }
@@ -1074,7 +1278,7 @@ async function runMarketScan(isManual = false) {
     const signal = {
       market: cand.market,
       symbol: cand.symbol,
-      action: 'buy',
+      action: cand.action || 'buy',
       entryPrice: cand.entryPrice,
       stopLoss: cand.stopLoss,
       takeProfit: cand.takeProfit,
@@ -1101,20 +1305,31 @@ async function runMarketScan(isManual = false) {
   // 3. Send Every-1-Minute Unified Alpaca Paper & ₹6,000 Strategy Update to Telegram
   if (state.sendEveryScanReport && state.subscribedChatIds.size > 0) {
     const alpacaPositions = await getAlpacaPositions();
-    const totalOpen = alpacaPositions?.length || 0;
+    const totalAlpacaOpen = alpacaPositions?.length || 0;
+    const totalCryptoShorts = state.activeCryptoTrades.size;
+    const totalOpen = totalAlpacaOpen + totalCryptoShorts;
     let unrealizedTotalUSD = 0;
 
     let posSummary = '• *Alpaca Open Positions:* 0 active\n';
     if (totalOpen > 0) {
       posSummary = `*Alpaca Paper Open Positions (${totalOpen}):*\n`;
-      for (const p of alpacaPositions) {
+      for (const p of alpacaPositions || []) {
         const norm = normalizeSymbol(p.symbol);
         const plUsd = Number(p.unrealized_pl);
         unrealizedTotalUSD += plUsd;
         const plPct = (Number(p.unrealized_plpc) * 100).toFixed(2);
         const plInr = Math.round(plUsd * USD_TO_INR);
+        const dirTag = p.side === 'short' || Number(p.qty) < 0 ? '🔴SHORT' : '🟢LONG';
         const tag = state.trailedPositions.has(norm) ? '🛡️ [Breakeven]' : '👁️ [Live]';
-        posSummary += `• \`${p.symbol}\`: ${plPct}% ($${plUsd.toFixed(2)} / ₹${plInr >= 0 ? '+' : ''}${plInr}) ${tag}\n`;
+        posSummary += `• \`${p.symbol}\` (${dirTag}): ${plPct}% ($${plUsd.toFixed(2)} / ₹${plInr >= 0 ? '+' : ''}${plInr}) ${tag}\n`;
+      }
+      for (const [sym, sp] of state.activeCryptoTrades.entries()) {
+        const plUsd = Number(sp.unrealizedPlUSD || 0);
+        unrealizedTotalUSD += plUsd;
+        const plPct = Number(sp.unrealizedPlPct || 0).toFixed(2);
+        const plInr = Math.round(plUsd * USD_TO_INR);
+        const tag = sp.trailed ? '🛡️ [Breakeven]' : '👁️ [Live]';
+        posSummary += `• \`${sym}\` (🔴SHORT): ${plPct}% ($${plUsd.toFixed(2)} / ₹${plInr >= 0 ? '+' : ''}${plInr}) ${tag}\n`;
       }
     }
 
@@ -1153,6 +1368,9 @@ function formatPrice(val) {
 }
 
 async function notifyTradeOpportunity(signal) {
+  const isShort = signal.action === 'sell';
+  const sideBadge = isShort ? '🔴 SHORT (SELL)' : '🟢 LONG (BUY)';
+  const sideCode = isShort ? 's' : 'b';
   const entryStr = formatPrice(signal.entryPrice);
   const stopStr = formatPrice(signal.stopLoss);
   const targetStr = formatPrice(signal.takeProfit);
@@ -1161,19 +1379,20 @@ async function notifyTradeOpportunity(signal) {
     : '';
 
   const card =
-    `⚡ *ALPACA PAPER SCALP: \`${signal.symbol}\`*\n\n` +
+    `⚡ *ALPACA PAPER SCALP [${sideBadge}]: \`${signal.symbol}\`*\n\n` +
     `🧠 *Self-Learning AI Audit (${signal.aiScore}/10):*\n` +
     `"${signal.aiThesis}"\n\n` +
+    `• *Direction:* *${sideBadge}*\n` +
     `• *Time Machine Odds:* ${signal.timemachineOdds}\n` +
     `• *Setup:* ${signal.setup}\n` +
     `${obLine}` +
     `• *Alpaca Live Price:* $${entryStr}\n` +
     `• *₹6,000 Strategy Slice:* ₹${signal.sliceMarginINR} Margin @ 35x = *$${state.paperSliceUSD} Alpaca Order*\n` +
-    `• *Stop Loss:* $${stopStr} (-1.2% | Risk: -₹${signal.riskINR})\n` +
-    `• *Take Profit:* $${targetStr} (+2.2% | Gain: +₹${signal.rewardINR})\n\n` +
-    `🛡️ *Multi-Trade Ready:* Click Approve on as many setups as you want — executes immediately on Alpaca Paper!`;
+    `• *Stop Loss:* $${stopStr} (${isShort ? '+1.2% above' : '-1.2% below'} | Risk: -₹${signal.riskINR})\n` +
+    `• *Take Profit:* $${targetStr} (${isShort ? '-2.2% drop' : '+2.2% gain'} | Gain: +₹${signal.rewardINR})\n\n` +
+    `🛡️ *Bi-Directional Ready:* Click Approve on as many LONG or SHORT setups as you want!`;
 
-  const cbData = `ex:${signal.symbol}:b:${signal.qty}:${stopStr}:${targetStr}:${entryStr}`.slice(0, 64);
+  const cbData = `ex:${signal.symbol}:${sideCode}:${signal.qty}:${stopStr}:${targetStr}:${entryStr}`.slice(0, 64);
 
   const keyboard = {
     inline_keyboard: [
@@ -1226,19 +1445,19 @@ async function handleTelegramUpdate(update) {
       const symbol = resolveAlpacaSymbol(rawSymbol);
       const rawSide = parts[2] || 'buy';
       const side = rawSide === 'b' ? 'buy' : rawSide === 's' ? 'sell' : rawSide;
+      const isShort = side === 'sell';
+      const sideBadge = isShort ? '🔴 SHORT (SELL)' : '🟢 LONG (BUY)';
       const qty = parts[3] || '1';
-      const stopPrice = parts[4];
-      const targetPrice = parts[5];
       const originalEntryPrice = parts[6];
 
       await sendTelegram('answerCallbackQuery', {
         callback_query_id: cq.id,
-        text: `Executing ${symbol} on Alpaca Paper...`,
+        text: `Executing ${sideBadge} ${symbol} on Alpaca Paper...`,
       });
 
       const livePrice = (await getAlpacaLatestTrade(symbol)) || Number(originalEntryPrice);
-      const activeStop = livePrice * 0.988;
-      const activeTarget = livePrice * 1.022;
+      const activeStop = isShort ? livePrice * 1.012 : livePrice * 0.988;
+      const activeTarget = isShort ? livePrice * 0.978 : livePrice * 1.022;
 
       try {
         const matchingSignal = state.recentSignals.find((s) => s.symbol === symbol || s.symbol === rawSymbol);
@@ -1246,6 +1465,7 @@ async function handleTelegramUpdate(update) {
           symbol,
           qty,
           side,
+          entryPrice: livePrice,
           stopPrice: activeStop,
           targetPrice: activeTarget,
         });
@@ -1255,7 +1475,7 @@ async function handleTelegramUpdate(update) {
         state.activeTradeMeta.set(norm, {
           symbol,
           market: symbol.includes('/') ? 'crypto' : 'stock',
-          setup: matchingSignal?.setup || '1m Alpaca Paper Scalp',
+          setup: matchingSignal?.setup || `1m Alpaca Paper Scalp (${isShort ? 'SHORT' : 'LONG'})`,
           candles: matchingSignal?.candles || [],
           orderbook: matchingSignal?.orderbook || null,
         });
@@ -1265,13 +1485,13 @@ async function handleTelegramUpdate(update) {
           message_id: messageId,
           text:
             `✅ *APPROVED — EXECUTED ON ALPACA PAPER*\n\n` +
-            `• *Asset:* \`${symbol}\`\n` +
+            `• *Asset:* \`${symbol}\` (*${sideBadge}*)\n` +
             `• *Order Size:* $${state.paperSliceUSD} Notional (₹${state.sliceMarginINR} Slice @ 35x)\n` +
             `• *Live Fill Price:* ~$${formatPrice(livePrice)}\n` +
-            `• *AI Stop Loss:* $${formatPrice(activeStop)} (-1.2% / -₹${state.maxRiskPerTradeINR})\n` +
-            `• *AI Take Profit:* $${formatPrice(activeTarget)} (+2.2% / +₹${state.targetScalpProfitINR})\n` +
+            `• *AI Stop Loss:* $${formatPrice(activeStop)} (${isShort ? '+1.2%' : '-1.2%'} / -₹${state.maxRiskPerTradeINR})\n` +
+            `• *AI Take Profit:* $${formatPrice(activeTarget)} (${isShort ? '-2.2%' : '+2.2%'} / +₹${state.targetScalpProfitINR})\n` +
             `• *Alpaca Order ID:* \`${order.id}\`\n\n` +
-            `🧠 *30s AI Position Monitor Active:* Automatically locks Breakeven at +0.8%, closes on target/stop on Alpaca, and logs post-mortem learning!`,
+            `🧠 *30s AI Position Monitor Active:* Automatically locks Breakeven at +0.8%, closes on target/stop, and logs post-mortem learning!`,
           parse_mode: 'Markdown',
         });
       } catch (err) {
