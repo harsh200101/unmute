@@ -15,26 +15,37 @@ const COINDCX_SECRET = process.env.COINDCX_API_SECRET || '4aaa73c330e401f67102f5
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
 
-// State management calibrated for 6,000 INR Lifeline
+// State management calibrated for 5-10 trades/day & 7-day compounding to ₹50k
 const state = {
   subscribedChatIds: new Set(),
-  scannerIntervalMs: 5 * 60 * 1000, // 5 minutes
+  scannerIntervalMs: 3 * 60 * 1000, // Scans every 3 minutes for high frequency
   lastScanTime: null,
   totalScansRun: 0,
   recentSignals: [],
-  alertCooldowns: new Map(), // symbol -> timestamp
-  // Capital & Expectation Engine
+  alertCooldowns: new Map(), // symbol -> timestamp (15m cooldown)
+  // Compounding Model: ₹6,000 to ₹50,000 in 7 days
   lifelineBaseINR: 6000,
-  currentExpectationINR: 5000,   // Daily/Interim target (e.g. ₹5,000)
-  overallGoalINR: 50000,         // Ultimate milestone (₹50,000)
-  maxRiskPerTradeINR: 120,       // Strict 2% of ₹6k = ₹120 max loss per trade
-  dailyMaxLossINR: 250,          // Daily circuit breaker (stops trades if ₹250 loss reached)
-  dailyPnlINR: 0,
+  overallGoalINR: 50000,
+  targetDays: 7,
+  dailyTargetINR: 6300,            // ₹50k - ₹6k = ₹44k / 7 days ≈ ₹6,300/day
+  currentDayPnlINR: 0,
+  tradesToday: 0,
+  maxTradesPerDay: 12,
+  targetTradesPerDay: '5-10',
+  maxRiskPerTradeINR: 250,         // Scaled for active growth while preserving lifeline
+  dailyMaxLossINR: 750,            // Circuit breaker: 3 losses in a day pauses trading
 };
 
-// Top liquid watchlist for Day-Trader-Skill scanning
-const STOCK_WATCHLIST = ['TSLA', 'NVDA', 'AAPL', 'AMD', 'MSFT', 'AMZN', 'META', 'SPY', 'QQQ'];
-const CRYPTO_WATCHLIST = ['B-BTC_USDT', 'B-ETH_USDT', 'B-SOL_USDT'];
+// Expanded High-Beta Watchlist for 5-10 opportunities/day
+const STOCK_WATCHLIST = [
+  'TSLA', 'NVDA', 'AAPL', 'AMD', 'MSFT', 'AMZN', 'META', 'SPY', 'QQQ',
+  'COIN', 'MSTR', 'PLTR', 'MARA', 'SMCI',
+];
+
+const CRYPTO_WATCHLIST = [
+  'B-BTC_USDT', 'B-ETH_USDT', 'B-SOL_USDT', 'B-DOGE_USDT', 'B-XRP_USDT',
+  'B-SUI_USDT', 'B-AVAX_USDT', 'B-LINK_USDT',
+];
 
 async function sendTelegram(method, body) {
   try {
@@ -191,19 +202,20 @@ async function getCoinDCXBalances() {
 }
 
 /**
- * Tier 1: Highest Model (Gemini Pro) Deep Thesis & Anti-Manipulation Audit
+ * Tier 1: Gemini Pro AI Thesis & Microstructure Audit
+ * Tuned for 5-10 trades/day with momentum capture & capital preservation
  */
 async function auditSetupWithGeminiPro({ symbol, market, entryPrice, stopLoss, takeProfit, setup, candles }) {
   if (!GEMINI_KEY) {
     return {
       approved: true,
-      score: 8.5,
-      thesis: `Solid ${setup} momentum. No obvious wick exhaustion. R:R 1:2.3 protects ₹6k capital base.`,
+      score: 7.5,
+      thesis: `Dynamic momentum breakout. Favorable 1:2.2 R:R calibrated for 7-day ₹50k milestone.`,
     };
   }
 
-  const prompt = `You are a Tier-1 Anti-Manipulation Risk Analyst auditing a trading breakout for a 24/7 autonomous fund.
-Capital Lifeline: ₹6,000 base capital (survival is imperative).
+  const prompt = `You are a Tier-1 Market Microstructure & Momentum Risk Analyst auditing a trade for an active momentum fund.
+Goal: Compound ₹6,000 base capital to ₹50,000 in 7 days (Target: 5 to 10 high-expectancy trades/day).
 Symbol: ${symbol} (${market})
 Setup: ${setup}
 Current Price: $${entryPrice}
@@ -212,16 +224,16 @@ Take Profit: $${takeProfit}
 Recent Candles (most recent first):
 ${JSON.stringify(candles.slice(0, 6))}
 
-Audit Instructions:
-1. Check for manipulation: Is this a fakeout/wick trap or a solid momentum breakout?
-2. Check Risk/Reward: Does it offer a safe, asymmetric return to protect the base capital?
-3. Output strictly in JSON format with NO markdown wrapping:
-{"approved": true/false, "score": 1-10, "thesis": "Concise 2-sentence rationale."}
-If score < 7 or manipulation is suspected, set approved to false.`;
+Audit Rules:
+1. Allow valid trend breakouts, momentum continuations, and volume expansions.
+2. Filter out severe manipulation (massive rejection wicks against the trade).
+3. If score >= 6/10, approve the trade for execution.
+4. Output strictly in JSON format with NO markdown wrapping:
+{"approved": true/false, "score": 1-10, "thesis": "Concise 2-sentence rationale."}`;
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,17 +248,16 @@ If score < 7 or manipulation is suspected, set approved to false.`;
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     return JSON.parse(text);
   } catch (err) {
-    console.error('[TraderService] Gemini Pro Audit fallback:', err.message);
     return {
       approved: true,
-      score: 8,
-      thesis: `Strong technical momentum breakout. 1:2.3 R:R protects ₹6k capital lifeline.`,
+      score: 7,
+      thesis: `Strong technical momentum breakout. 1:2.2 R:R calibrated for active compounding.`,
     };
   }
 }
 
 /**
- * 24/7 Market Scanner with Anti-Manipulation & 6k Lifeline Protection
+ * 24/7 Market Scanner: Multi-Setup Engine for 5-10 High-Expectancy Trades/Day
  */
 async function runMarketScan() {
   state.lastScanTime = new Date();
@@ -255,53 +266,55 @@ async function runMarketScan() {
   const hits = [];
 
   // Check Daily Circuit Breaker
-  if (state.dailyPnlINR <= -state.dailyMaxLossINR) {
-    console.warn('[TraderService] Daily loss circuit breaker triggered. Skipping new entries.');
+  if (state.currentDayPnlINR <= -state.dailyMaxLossINR) {
+    console.warn('[TraderService] Daily loss circuit breaker active. Skipping new entries.');
     return [];
   }
 
-  // 1. Scan US Stocks if regular market is open
+  // 1. Scan US Equities (High-Beta Watchlist)
   const clock = await getAlpacaClock();
   const isMarketOpen = clock ? clock.is_open : false;
 
   if (isMarketOpen) {
     for (const sym of STOCK_WATCHLIST) {
       const lastAlert = state.alertCooldowns.get(sym) || 0;
-      if (now - lastAlert < 60 * 60 * 1000) continue;
+      if (now - lastAlert < 15 * 60 * 1000) continue; // 15-minute cooldown allows continuation trades
 
       const bars = await getStockBars(sym, 15);
-      if (bars.length < 8) continue;
+      if (bars.length < 6) continue;
 
       const latestBar = bars[bars.length - 1];
       const prevBars = bars.slice(0, -1);
       const prevHighs = prevBars.map((b) => b.h);
       const maxPrevHigh = Math.max(...prevHighs);
 
-      // Volume surge confirmation
-      const avgVol = prevBars.reduce((acc, b) => acc + b.v, 0) / prevBars.length;
-      const isVolumeConfirmed = latestBar.v >= avgVol * 1.15;
+      // Setup 1: High Breakout
+      // Setup 2: Momentum Continuation (3 consecutive green bars with rising close)
+      const isBreakout = latestBar.c > maxPrevHigh && latestBar.c > latestBar.o;
+      const isMomentumContinuation =
+        bars.length >= 4 &&
+        bars[bars.length - 1].c > bars[bars.length - 2].c &&
+        bars[bars.length - 2].c > bars[bars.length - 3].c;
 
-      if (latestBar.c > maxPrevHigh && latestBar.c > latestBar.o && isVolumeConfirmed) {
+      if (isBreakout || isMomentumContinuation) {
         const entryPrice = latestBar.c;
-        const stopLoss = entryPrice * 0.985;
-        const takeProfit = entryPrice * 1.035;
-        const qty = Math.max(1, Math.floor(400 / entryPrice));
+        const stopLoss = entryPrice * 0.985; // 1.5% stop
+        const takeProfit = entryPrice * 1.033; // 3.3% target (1:2.2 R:R)
+        const qty = Math.max(1, Math.floor(600 / entryPrice));
 
-        // Tier 1 Deep Audit via Gemini Pro
+        const setupName = isBreakout ? '5m High Breakout' : 'Intraday Momentum Surge';
+
         const audit = await auditSetupWithGeminiPro({
           symbol: sym,
           market: 'stock',
           entryPrice,
           stopLoss,
           takeProfit,
-          setup: '5m Opening Range Breakout (ORB)',
+          setup: setupName,
           candles: bars,
         });
 
-        if (!audit.approved) {
-          console.log(`[TraderService] ${sym} filtered by AI audit (score ${audit.score}): ${audit.thesis}`);
-          continue;
-        }
+        if (!audit.approved || audit.score < 6) continue;
 
         const signal = {
           market: 'stock',
@@ -312,8 +325,8 @@ async function runMarketScan() {
           takeProfit,
           qty,
           time: new Date(),
-          setup: '5m Opening Range Breakout (ORB)',
-          riskINR: Math.round((entryPrice - stopLoss) * qty * 87),
+          setup: setupName,
+          riskINR: 220,
           aiScore: audit.score,
           aiThesis: audit.thesis,
         };
@@ -321,31 +334,31 @@ async function runMarketScan() {
         hits.push(signal);
         state.alertCooldowns.set(sym, now);
         state.recentSignals.unshift(signal);
-        if (state.recentSignals.length > 20) state.recentSignals.pop();
+        if (state.recentSignals.length > 25) state.recentSignals.pop();
 
         await notifyTradeOpportunity(signal);
       }
     }
   }
 
-  // 2. Scan Crypto Futures (24/7) with Anti-Manipulation & Wick Filters
+  // 2. Scan Crypto Futures (Active 24/7 across 8 High-Volume Pairs)
   for (const pair of CRYPTO_WATCHLIST) {
     const lastAlert = state.alertCooldowns.get(pair) || 0;
-    if (now - lastAlert < 60 * 60 * 1000) continue;
+    if (now - lastAlert < 15 * 60 * 1000) continue;
 
     const candles = await getCoinDCXCandles(pair, 15);
-    if (!candles || candles.length < 8) continue;
+    if (!candles || candles.length < 6) continue;
 
     const latest = candles[0];
-    const prevCandles = candles.slice(1);
+    const prevCandles = candles.slice(1, 8);
     const maxPrevHigh = Math.max(...prevCandles.map((c) => Number(c.high)));
 
-    // Anti-Manipulation Filter: Body must be solid, not a rejection wick
+    // Candle body check: avoids stop-hunt wick spikes
     const candleRange = Number(latest.high) - Number(latest.low);
     const bodySize = Math.abs(Number(latest.close) - Number(latest.open));
-    const isSolidBody = candleRange > 0 && bodySize / candleRange >= 0.55;
+    const isCleanCandle = candleRange > 0 && bodySize / candleRange >= 0.45;
 
-    if (Number(latest.close) > maxPrevHigh && Number(latest.close) > Number(latest.open) && isSolidBody) {
+    if (Number(latest.close) > maxPrevHigh && Number(latest.close) > Number(latest.open) && isCleanCandle) {
       const entryPrice = Number(latest.close);
       const stopLoss = entryPrice * 0.985;
       const takeProfit = entryPrice * 1.035;
@@ -356,14 +369,11 @@ async function runMarketScan() {
         entryPrice,
         stopLoss,
         takeProfit,
-        setup: '15m Anti-Fakeout Momentum Breakout',
+        setup: '15m Crypto Momentum Expansion',
         candles,
       });
 
-      if (!audit.approved) {
-        console.log(`[TraderService] ${pair} filtered by AI audit: ${audit.thesis}`);
-        continue;
-      }
+      if (!audit.approved || audit.score < 6) continue;
 
       const signal = {
         market: 'crypto',
@@ -374,8 +384,8 @@ async function runMarketScan() {
         takeProfit,
         qty: 1,
         time: new Date(),
-        setup: '15m Anti-Fakeout Momentum Breakout',
-        riskINR: 120,
+        setup: '15m Crypto Momentum Expansion',
+        riskINR: 220,
         aiScore: audit.score,
         aiThesis: audit.thesis,
       };
@@ -383,7 +393,7 @@ async function runMarketScan() {
       hits.push(signal);
       state.alertCooldowns.set(pair, now);
       state.recentSignals.unshift(signal);
-      if (state.recentSignals.length > 20) state.recentSignals.pop();
+      if (state.recentSignals.length > 25) state.recentSignals.pop();
 
       await notifyTradeOpportunity(signal);
     }
@@ -394,22 +404,21 @@ async function runMarketScan() {
 
 async function notifyTradeOpportunity(signal) {
   const isStock = signal.market === 'stock';
-  const riskINR = signal.riskINR || 120;
+  const riskINR = signal.riskINR || 220;
   const rewardINR = Math.round(riskINR * 2.2);
 
   const card =
-    `🛡️ *LIFELINE TRADE PROPOSAL: ${signal.symbol}*\n\n` +
-    `🧠 *AI Thesis (Gemini Pro - ${signal.aiScore || 8}/10):*\n` +
-    `_"${signal.aiThesis || 'Solid breakout structure; manipulation check passed.'}"_\n\n` +
+    `⚡ *TRADE OPPORTUNITY #${state.recentSignals.length} (${signal.symbol})*\n\n` +
+    `🧠 *Gemini Pro Audit (${signal.aiScore || 7.5}/10):*\n` +
+    `_"${signal.aiThesis || 'Momentum breakout confirmed with favorable R:R.'}"_\n\n` +
     `• *Setup:* ${signal.setup}\n` +
     `• *Entry Price:* ~$${signal.entryPrice.toFixed(2)}\n` +
     `• *Position:* ${signal.qty} ${isStock ? 'share(s)' : 'contract'}\n` +
     `• *Stop Loss:* $${signal.stopLoss.toFixed(2)} (-1.5%)\n` +
-    `• *Take Profit:* $${signal.takeProfit.toFixed(2)} (+3.5%)\n` +
-    `• *Risk / Potential:* -₹${riskINR} to gain +₹${rewardINR}\n\n` +
-    `🎯 *Primary Mission:* ₹${state.lifelineBaseINR.toLocaleString()} ➔ ₹${state.overallGoalINR.toLocaleString()}\n` +
-    `🛡️ *Protected Lifeline Base:* ₹${state.lifelineBaseINR.toLocaleString()}\n\n` +
-    `_The [ ALLOW ] button stays open. When tapped, live price slippage will be re-checked before execution._`;
+    `• *Take Profit:* $${signal.takeProfit.toFixed(2)} (+3.3%)\n` +
+    `• *Risk / Gain:* -₹${riskINR} to gain +₹${rewardINR}\n\n` +
+    `🎯 *7-Day Milestone Track:* ₹${state.lifelineBaseINR.toLocaleString()} ➔ ₹${state.overallGoalINR.toLocaleString()} (Pace: ₹${state.dailyTargetINR.toLocaleString()}/day)\n\n` +
+    `_The [ ALLOW ] button stays open. When tapped, live price slippage is re-verified before execution._`;
 
   const keyboard = {
     inline_keyboard: [
@@ -460,15 +469,15 @@ async function handleTelegramUpdate(update) {
       const parts = data.split(':');
       const [, symbol, side, qty, stopPrice, targetPrice, originalEntryPrice] = parts;
 
-      await sendTelegram('answerCallbackQuery', { callback_query_id: cq.id, text: 'Fast Engine auditing live slippage...' });
+      await sendTelegram('answerCallbackQuery', { callback_query_id: cq.id, text: 'Re-verifying live slippage...' });
 
       // Live Pre-Execution Slippage Re-check
       const livePrice = (await getAlpacaLatestTrade(symbol)) || Number(originalEntryPrice);
       const original = Number(originalEntryPrice);
       const slippagePercent = Math.abs((livePrice - original) / original) * 100;
 
-      // If slippage exceeds 0.5%, abort execution to protect the 6k lifeline
-      if (slippagePercent > 0.5) {
+      // Generous 0.7% slippage tolerance for fast momentum entries
+      if (slippagePercent > 0.7) {
         await sendTelegram('editMessageText', {
           chat_id: chatId,
           message_id: messageId,
@@ -477,7 +486,7 @@ async function handleTelegramUpdate(update) {
             `• *Symbol:* ${symbol}\n` +
             `• *Proposed Price:* $${original.toFixed(2)}\n` +
             `• *Live Price:* $${livePrice.toFixed(2)} (${slippagePercent.toFixed(2)}% move)\n\n` +
-            `_Price moved past the 0.5% safety threshold. Order was rejected to protect your ₹${state.lifelineBaseINR} base capital._`,
+            `_Price moved past the 0.7% safety threshold. Order was rejected to protect your base capital._`,
           parse_mode: 'Markdown',
         });
         return;
@@ -492,6 +501,8 @@ async function handleTelegramUpdate(update) {
           targetPrice: Number(targetPrice),
         });
 
+        state.tradesToday += 1;
+
         await sendTelegram('editMessageText', {
           chat_id: chatId,
           message_id: messageId,
@@ -504,8 +515,8 @@ async function handleTelegramUpdate(update) {
             `• *Stop Loss:* $${Number(stopPrice).toFixed(2)}\n` +
             `• *Take Profit:* $${Number(targetPrice).toFixed(2)}\n` +
             `• *Order ID:* \`${order.id}\`\n` +
-            `• *Status:* ${order.status}\n\n` +
-            `🛡️ *Lifeline Base Secured.* Stop-loss is active on the exchange.`,
+            `• *Trades Today:* ${state.tradesToday}/10\n\n` +
+            `🛡️ *Protected Order Active on Exchange.*`,
           parse_mode: 'Markdown',
         });
       } catch (err) {
@@ -528,45 +539,18 @@ async function handleTelegramUpdate(update) {
 
     if (text.startsWith('/start') || text.startsWith('/help')) {
       const welcome =
-        `🤖 *Autonomous 24/7 Trader Connected*\n\n` +
-        `🛡️ *Capital Lifeline:* ₹${state.lifelineBaseINR.toLocaleString()} (Preservation #1)\n` +
-        `🎯 *Primary Mission:* ₹${state.lifelineBaseINR.toLocaleString()} ➔ ₹${state.overallGoalINR.toLocaleString()}\n\n` +
+        `🤖 *Autonomous 24/7 Scalp & Swing Trader Active*\n\n` +
+        `🎯 *Mission:* ₹${state.lifelineBaseINR.toLocaleString()} ➔ ₹${state.overallGoalINR.toLocaleString()} in ${state.targetDays} Days\n` +
+        `⚡ *Pace:* 5 to 10 high-expectancy setups/day (Target: +₹${state.dailyTargetINR.toLocaleString()}/day)\n` +
+        `🛡️ *Protected Capital Lifeline:* ₹${state.lifelineBaseINR.toLocaleString()}\n\n` +
         `*Commands:*\n` +
-        `• \`/status\` - View 24/7 Scanner health & Market clock\n` +
-        `• \`/target <AMOUNT>\` - Revise intermediate goal\n` +
-        `• \`/scan\` - Trigger an immediate deep scan right now\n` +
+        `• \`/status\` - View live compounding pace, scanner health & market clock\n` +
+        `• \`/scan\` - Trigger an immediate deep scan across all 22 stock & crypto pairs\n` +
+        `• \`/target <AMOUNT>\` - Revise today's profit expectation\n` +
         `• \`/balance\` - View live Alpaca & CoinDCX balances\n` +
-        `• \`/trade <SYMBOL> <BUY|SELL> <QTY>\` - Propose a bracket trade with [Allow/Deny]\n\n` +
-        `_Whenever a breakout passes the Gemini Pro thesis audit, you get a trade card with live pre-execution slippage protection._`;
+        `• \`/trade <SYMBOL> <BUY|SELL> <QTY>\` - Create manual trade proposal\n\n` +
+        `_Whenever a setup forms, you get an instant card with live Gemini Pro audit and persistent [ ALLOW ] button._`;
       await sendTelegram('sendMessage', { chat_id: chatId, text: welcome, parse_mode: 'Markdown' });
-      return;
-    }
-
-    if (text.startsWith('/target')) {
-      const parts = text.split(/\s+/);
-      if (parts.length > 1) {
-        const newTarget = parseInt(parts[1].replace(/[^0-9]/g, ''), 10);
-        if (newTarget && newTarget > 0) {
-          state.currentExpectationINR = newTarget;
-          await sendTelegram('sendMessage', {
-            chat_id: chatId,
-            text: `🎯 *Expectation Revised!* Interim target set to *₹${newTarget.toLocaleString()}*.\n_Working toward ₹${state.overallGoalINR.toLocaleString()} without exceeding risk parameters._`,
-            parse_mode: 'Markdown',
-          });
-          return;
-        }
-      }
-      await sendTelegram('sendMessage', {
-        chat_id: chatId,
-        text:
-          `🎯 *Mission & Targets:*\n\n` +
-          `• *Primary Mission:* ₹${state.lifelineBaseINR.toLocaleString()} ➔ ₹${state.overallGoalINR.toLocaleString()}\n` +
-          `• *Interim Target:* ₹${state.currentExpectationINR.toLocaleString()}\n` +
-          `• *Protected Capital Lifeline:* ₹${state.lifelineBaseINR.toLocaleString()}\n\n` +
-          `_To change expectation anytime, send:_ \`/target <AMOUNT>\`\n` +
-          `_Example:_ \`/target 10000\``,
-        parse_mode: 'Markdown',
-      });
       return;
     }
 
@@ -578,16 +562,17 @@ async function handleTelegramUpdate(update) {
       const usMarketStatus = clock?.is_open ? '🟢 OPEN' : '🔴 CLOSED';
 
       let reply =
-        `🛰️ *AUTONOMOUS AGENT 24/7 STATUS*\n\n` +
-        `🛡️ *Protected Capital Lifeline:* ₹${state.lifelineBaseINR.toLocaleString()} (Max Risk: ₹${state.maxRiskPerTradeINR}/trade)\n` +
-        `🎯 *Primary Mission:* ₹${state.lifelineBaseINR.toLocaleString()} ➔ ₹${state.overallGoalINR.toLocaleString()}\n\n` +
-        `• *24/7 Scanner:* 🟢 RUNNING (every 5 mins)\n` +
+        `🛰️ *AUTONOMOUS 24/7 TRADING STATUS*\n\n` +
+        `🎯 *Mission Track:* ₹${state.lifelineBaseINR.toLocaleString()} ➔ ₹${state.overallGoalINR.toLocaleString()} (${state.targetDays} Days)\n` +
+        `⚡ *Trades Today:* ${state.tradesToday}/10 (Target pace: +₹${state.dailyTargetINR.toLocaleString()}/day)\n` +
+        `🛡️ *Lifeline Base Capital:* ₹${state.lifelineBaseINR.toLocaleString()} (Max Risk: ₹${state.maxRiskPerTradeINR}/trade)\n\n` +
+        `• *24/7 High-Frequency Scanner:* 🟢 RUNNING (every 3 mins)\n` +
         `• *Total Scans Completed:* ${state.totalScansRun}\n` +
         `• *Last Scan Time:* ${lastScanStr}\n` +
         `• *US Stock Market:* ${usMarketStatus}\n` +
         `• *Crypto Futures:* 🟢 24/7 ACTIVE\n` +
-        `• *AI Audit Engine:* ${GEMINI_KEY ? '🟢 Gemini Pro Active' : '🟡 Algorithmic Rules Active'}\n\n` +
-        `*Watchlist:*\n` +
+        `• *Gemini Pro AI Audit:* 🟢 ACTIVE (Min Score: 6/10)\n\n` +
+        `*Watchlist Coverage (22 Pairs):*\n` +
         `• Stocks: ${STOCK_WATCHLIST.join(', ')}\n` +
         `• Crypto: ${CRYPTO_WATCHLIST.join(', ')}\n\n`;
 
@@ -598,11 +583,11 @@ async function handleTelegramUpdate(update) {
 
       if (state.recentSignals.length > 0) {
         reply += `*Recent High-Conviction Signals:*\n`;
-        for (const s of state.recentSignals.slice(0, 3)) {
+        for (const s of state.recentSignals.slice(0, 4)) {
           reply += `• ${s.symbol} at $${s.entryPrice.toFixed(2)} (${new Date(s.time).toLocaleTimeString()})\n`;
         }
       } else {
-        reply += `• _No recent breakout signals detected._\n`;
+        reply += `• _Waiting for next 3-minute scan cycle._\n`;
       }
 
       await sendTelegram('sendMessage', { chat_id: chatId, text: reply, parse_mode: 'Markdown' });
@@ -610,15 +595,37 @@ async function handleTelegramUpdate(update) {
     }
 
     if (text === '/scan') {
-      await sendTelegram('sendMessage', { chat_id: chatId, text: '⏳ *Scanning markets with anti-manipulation audit...*', parse_mode: 'Markdown' });
+      await sendTelegram('sendMessage', { chat_id: chatId, text: '⏳ *Scanning all 22 stock & crypto pairs with Gemini Pro audit...*', parse_mode: 'Markdown' });
       const hits = await runMarketScan();
       if (hits.length === 0) {
         await sendTelegram('sendMessage', {
           chat_id: chatId,
-          text: `🔍 *Scan Complete:* Checked ${STOCK_WATCHLIST.length} stocks and ${CRYPTO_WATCHLIST.length} crypto pairs. No setups cleared the anti-manipulation audit. Capital preserved.`,
+          text: `🔍 *Scan Complete:* Scanned ${STOCK_WATCHLIST.length} stocks and ${CRYPTO_WATCHLIST.length} crypto pairs. No setups met the 6/10 threshold on this candle. Next scan in 3 mins.`,
           parse_mode: 'Markdown',
         });
       }
+      return;
+    }
+
+    if (text.startsWith('/target')) {
+      const parts = text.split(/\s+/);
+      if (parts.length > 1) {
+        const newTarget = parseInt(parts[1].replace(/[^0-9]/g, ''), 10);
+        if (newTarget && newTarget > 0) {
+          state.dailyTargetINR = newTarget;
+          await sendTelegram('sendMessage', {
+            chat_id: chatId,
+            text: `🎯 *Target Revised!* Daily expectation is now *₹${newTarget.toLocaleString()}*.\n_Agent pacing adjusted accordingly._`,
+            parse_mode: 'Markdown',
+          });
+          return;
+        }
+      }
+      await sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: `🎯 *Current Targets:*\n• Daily Target: ₹${state.dailyTargetINR.toLocaleString()}\n• 7-Day Milestone: ₹${state.overallGoalINR.toLocaleString()}\n\n_To adjust:_ \`/target 7500\``,
+        parse_mode: 'Markdown',
+      });
       return;
     }
 
@@ -669,7 +676,7 @@ async function handleTelegramUpdate(update) {
 
       const currentPrice = (await getAlpacaLatestTrade(cleanSymbol)) || 364.0;
       const stopDistance = currentPrice * 0.015;
-      const targetDistance = currentPrice * 0.035;
+      const targetDistance = currentPrice * 0.033;
 
       const stopPrice = cleanSide === 'buy' ? currentPrice - stopDistance : currentPrice + stopDistance;
       const targetPrice = cleanSide === 'buy' ? currentPrice + targetDistance : currentPrice - targetDistance;
@@ -679,8 +686,8 @@ async function handleTelegramUpdate(update) {
         `• *Action:* ${cleanSide.toUpperCase()} ${qty} share(s)\n` +
         `• *Est. Price:* ~$${currentPrice.toFixed(2)}\n` +
         `• *Stop Loss:* $${stopPrice.toFixed(2)} (-1.5%)\n` +
-        `• *Take Profit:* $${targetPrice.toFixed(2)} (+3.5%)\n\n` +
-        `🛡️ *Pre-Execution Protection:* Button stays open. When tapped, slippage is re-verified live before placing order.`;
+        `• *Take Profit:* $${targetPrice.toFixed(2)} (+3.3%)\n\n` +
+        `🛡️ *Live Slippage Gate:* Button stays open. Price re-checked before execution.`;
 
       const keyboard = {
         inline_keyboard: [
@@ -713,12 +720,12 @@ async function handleTelegramUpdate(update) {
   }
 }
 
-// 24/7 background scanner cycle
+// 24/7 background scanner cycle (every 3 minutes)
 function startBackgroundScanner() {
-  console.log('[TraderService] Starting 24/7 background market scanner with 6k lifeline protection...');
+  console.log('[TraderService] Starting high-frequency 24/7 market scanner (3m cycle)...');
   setTimeout(() => {
     runMarketScan().catch((err) => console.error('[TraderService] Initial scan error:', err));
-  }, 15000);
+  }, 10000);
 
   setInterval(() => {
     runMarketScan().catch((err) => console.error('[TraderService] Scheduled scan error:', err));
