@@ -9,7 +9,6 @@ const traderService = require('../services/traderService');
  * Telegram sends updates (messages, button clicks) here.
  */
 router.post('/webhook', async (req, res) => {
-  // Acknowledge Telegram immediately with 200 OK
   res.status(200).json({ ok: true });
 
   try {
@@ -22,19 +21,39 @@ router.post('/webhook', async (req, res) => {
 });
 
 /**
- * Health check & diagnostic endpoint
+ * Health check & scanner status endpoint
  */
 router.get('/status', async (_req, res) => {
   try {
     const alpaca = await traderService.getAlpacaAccount();
     res.json({
       ok: true,
-      service: 'trader-bot-v1',
+      service: 'trader-bot-v2',
+      scanner: {
+        active: true,
+        intervalMinutes: 5,
+        totalScansRun: traderService.state.totalScansRun,
+        lastScanTime: traderService.state.lastScanTime,
+        subscribedUsers: traderService.state.subscribedChatIds.size,
+        recentSignalsCount: traderService.state.recentSignals.length,
+      },
       telegramConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN),
       alpacaStatus: alpaca ? alpaca.status : 'disconnected',
       alpacaBuyingPower: alpaca ? alpaca.buying_power : null,
       coindcxConfigured: Boolean(process.env.COINDCX_API_KEY),
     });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * Trigger manual scan via HTTP
+ */
+router.post('/scan', async (_req, res) => {
+  try {
+    const hits = await traderService.runMarketScan();
+    res.json({ ok: true, hitsFound: hits.length, hits });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
