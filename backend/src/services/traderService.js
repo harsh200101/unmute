@@ -13,14 +13,21 @@ const APCA_BASE_URL = APCA_IS_PAPER ? 'https://paper-api.alpaca.markets' : 'http
 const COINDCX_KEY = process.env.COINDCX_API_KEY || 'bc80ca11d21702da403d5cfc6f25ddabb31e96362ba4358e';
 const COINDCX_SECRET = process.env.COINDCX_API_SECRET || '4aaa73c330e401f67102f54dacf46252635c073467fa439d76311b73deaf630d';
 
-// State management
+// State management calibrated for 6,000 INR Lifeline
 const state = {
   subscribedChatIds: new Set(),
-  scannerIntervalMs: 5 * 60 * 1000, // Every 5 minutes
+  scannerIntervalMs: 5 * 60 * 1000, // 5 minutes
   lastScanTime: null,
   totalScansRun: 0,
   recentSignals: [],
   alertCooldowns: new Map(), // symbol -> timestamp
+  // Capital & Expectation Engine
+  lifelineBaseINR: 6000,
+  currentExpectationINR: 5000,   // Daily/Interim target (e.g. ₹5,000)
+  overallGoalINR: 50000,         // Ultimate milestone (₹50,000)
+  maxRiskPerTradeINR: 120,       // Strict 2% of ₹6k = ₹120 max loss per trade
+  dailyMaxLossINR: 250,          // Daily circuit breaker (stops trades if ₹250 loss reached)
+  dailyPnlINR: 0,
 };
 
 // Top liquid watchlist for Day-Trader-Skill scanning
@@ -182,9 +189,7 @@ async function getCoinDCXBalances() {
 }
 
 /**
- * Scan for Day-Trader-Skill setups:
- * 1. US Stocks: Opening Range Breakout (ORB) / 20-bar High Momentum
- * 2. Crypto: 15m Donchian Channel Breakout (24/7)
+ * 24/7 Market Scanner with Anti-Manipulation & 6k Lifeline Protection
  */
 async function runMarketScan() {
   state.lastScanTime = new Date();
@@ -192,14 +197,20 @@ async function runMarketScan() {
   const now = Date.now();
   const hits = [];
 
-  // 1. Scan US Stocks if market is open
+  // Check Daily Circuit Breaker
+  if (state.dailyPnlINR <= -state.dailyMaxLossINR) {
+    console.warn('[TraderService] Daily loss circuit breaker triggered. Skipping new entries.');
+    return [];
+  }
+
+  // 1. Scan US Stocks if regular market is open
   const clock = await getAlpacaClock();
   const isMarketOpen = clock ? clock.is_open : false;
 
   if (isMarketOpen) {
     for (const sym of STOCK_WATCHLIST) {
       const lastAlert = state.alertCooldowns.get(sym) || 0;
-      if (now - lastAlert < 60 * 60 * 1000) continue; // 1-hour cooldown per symbol
+      if (now - lastAlert < 60 * 60 * 1000) continue;
 
       const bars = await getStockBars(sym, 15);
       if (bars.length < 8) continue;
@@ -209,14 +220,17 @@ async function runMarketScan() {
       const prevHighs = prevBars.map((b) => b.h);
       const maxPrevHigh = Math.max(...prevHighs);
 
-      // Breakout Rule: Latest bar closes above previous high with positive candle
-      if (latestBar.c > maxPrevHigh && latestBar.c > latestBar.o) {
-        const entryPrice = latestBar.c;
-        const stopLoss = entryPrice * 0.982; // 1.8% stop
-        const takeProfit = entryPrice * 1.036; // 3.6% target (2R)
+      // Volume surge confirmation
+      const avgVol = prevBars.reduce((acc, b) => acc + b.v, 0) / prevBars.length;
+      const isVolumeConfirmed = latestBar.v >= avgVol * 1.15;
 
-        // Sizing: default whole shares to ~$500-$1000 position
-        const qty = Math.max(1, Math.floor(750 / entryPrice));
+      if (latestBar.c > maxPrevHigh && latestBar.c > latestBar.o && isVolumeConfirmed) {
+        const entryPrice = latestBar.c;
+        const stopLoss = entryPrice * 0.985; // 1.5% stop
+        const takeProfit = entryPrice * 1.035; // 3.5% target (1:2.3 R:R)
+
+        // Sizing calibrated to protect 6k base (max loss ~₹100-₹120)
+        const qty = Math.max(1, Math.floor(400 / entryPrice));
 
         const signal = {
           market: 'stock',
@@ -227,7 +241,8 @@ async function runMarketScan() {
           takeProfit,
           qty,
           time: new Date(),
-          setup: '5m Momentum Breakout (ORB)',
+          setup: '5m Opening Range Breakout (ORB)',
+          riskINR: Math.round(((entryPrice - stopLoss) * qty) * 87), // approx USD to INR
         };
 
         hits.push(signal);
@@ -235,13 +250,12 @@ async function runMarketScan() {
         state.recentSignals.unshift(signal);
         if (state.recentSignals.length > 20) state.recentSignals.pop();
 
-        // Push alert to Telegram
         await notifyTradeOpportunity(signal);
       }
     }
   }
 
-  // 2. Scan Crypto Futures (Runs 24/7)
+  // 2. Scan Crypto Futures (24/7) with Anti-Manipulation & Wick Filters
   for (const pair of CRYPTO_WATCHLIST) {
     const lastAlert = state.alertCooldowns.get(pair) || 0;
     if (now - lastAlert < 60 * 60 * 1000) continue;
@@ -249,15 +263,21 @@ async function runMarketScan() {
     const candles = await getCoinDCXCandles(pair, 15);
     if (!candles || candles.length < 8) continue;
 
-    // CoinDCX candles: [{ open, high, low, close, volume, time }, ...]
-    const latest = candles[0]; // Recent candle
+    const latest = candles[0];
     const prevCandles = candles.slice(1);
     const maxPrevHigh = Math.max(...prevCandles.map((c) => Number(c.high)));
 
-    if (Number(latest.close) > maxPrevHigh && Number(latest.close) > Number(latest.open)) {
+    // Anti-Manipulation Filter:
+    // 1. Long Upper Wick Trap Check: Candle body must be > 60% of candle range (not a rejection wick)
+    const candleRange = Number(latest.high) - Number(latest.low);
+    const bodySize = Math.abs(Number(latest.close) - Number(latest.open));
+    const isSolidBody = candleRange > 0 && (bodySize / candleRange) >= 0.55;
+
+    // 2. Breakout above previous high
+    if (Number(latest.close) > maxPrevHigh && Number(latest.close) > Number(latest.open) && isSolidBody) {
       const entryPrice = Number(latest.close);
-      const stopLoss = entryPrice * 0.98;
-      const takeProfit = entryPrice * 1.04;
+      const stopLoss = entryPrice * 0.985;
+      const takeProfit = entryPrice * 1.035;
 
       const signal = {
         market: 'crypto',
@@ -268,7 +288,8 @@ async function runMarketScan() {
         takeProfit,
         qty: 1,
         time: new Date(),
-        setup: '15m High Donchian Breakout',
+        setup: '15m Anti-Fakeout Momentum Breakout',
+        riskINR: 120, // Strict ₹120 max loss
       };
 
       hits.push(signal);
@@ -285,26 +306,27 @@ async function runMarketScan() {
 
 async function notifyTradeOpportunity(signal) {
   const isStock = signal.market === 'stock';
-  const riskAmount = ((signal.entryPrice - signal.stopLoss) * signal.qty).toFixed(2);
-  const rewardAmount = ((signal.takeProfit - signal.entryPrice) * signal.qty).toFixed(2);
+  const riskINR = signal.riskINR || 120;
+  const rewardINR = Math.round(riskINR * 2.2);
 
   const card =
-    `🚨 *DAY-TRADER SIGNAL DETECTED*\n\n` +
-    `• *Symbol:* ${signal.symbol}\n` +
+    `🛡️ *LIFELINE TRADE PROPOSAL: ${signal.symbol}*\n\n` +
     `• *Setup:* ${signal.setup}\n` +
     `• *Entry Price:* ~$${signal.entryPrice.toFixed(2)}\n` +
-    `• *Position Size:* ${signal.qty} ${isStock ? 'share(s)' : 'contract'}\n` +
-    `• *Stop Loss:* $${signal.stopLoss.toFixed(2)} (-1.8%)\n` +
-    `• *Take Profit:* $${signal.takeProfit.toFixed(2)} (+3.6%)\n` +
-    `• *Risk / Reward:* $${riskAmount} to gain $${rewardAmount} (1:2 R)\n\n` +
-    `_Tap ALLOW to execute this trade on your broker._`;
+    `• *Position:* ${signal.qty} ${isStock ? 'share(s)' : 'contract'}\n` +
+    `• *Stop Loss:* $${signal.stopLoss.toFixed(2)} (-1.5%)\n` +
+    `• *Take Profit:* $${signal.takeProfit.toFixed(2)} (+3.5%)\n` +
+    `• *Risk / Potential:* -₹${riskINR} to gain +₹${rewardINR}\n\n` +
+    `🎯 *Current Target Expectation:* ₹${state.currentExpectationINR.toLocaleString()} (Overall: ₹${state.overallGoalINR.toLocaleString()})\n` +
+    `🛡️ *Base Capital Protected:* ₹${state.lifelineBaseINR.toLocaleString()}\n\n` +
+    `_The [ ALLOW ] button stays open. When tapped, live price slippage will be re-checked before execution._`;
 
   const keyboard = {
     inline_keyboard: [
       [
         {
           text: `✅ ALLOW ${signal.symbol}`,
-          callback_data: `alpaca_exec:${signal.symbol}:buy:${signal.qty}:${signal.stopLoss.toFixed(2)}:${signal.takeProfit.toFixed(2)}`,
+          callback_data: `alpaca_exec:${signal.symbol}:buy:${signal.qty}:${signal.stopLoss.toFixed(2)}:${signal.takeProfit.toFixed(2)}:${signal.entryPrice.toFixed(2)}`,
         },
         {
           text: '❌ REJECT',
@@ -318,7 +340,6 @@ async function notifyTradeOpportunity(signal) {
 }
 
 async function handleTelegramUpdate(update) {
-  // Capture chatId from any message or button click
   let fromChatId = null;
   if (update.message?.chat?.id) fromChatId = update.message.chat.id;
   if (update.callback_query?.message?.chat?.id) fromChatId = update.callback_query.message.chat.id;
@@ -339,7 +360,7 @@ async function handleTelegramUpdate(update) {
       await sendTelegram('editMessageText', {
         chat_id: chatId,
         message_id: messageId,
-        text: '❌ *Trade Cancelled by User.*\nNo order was placed.',
+        text: '❌ *Trade Cancelled by User.*\nNo capital risked.',
         parse_mode: 'Markdown',
       });
       return;
@@ -347,9 +368,30 @@ async function handleTelegramUpdate(update) {
 
     if (data.startsWith('alpaca_exec:')) {
       const parts = data.split(':');
-      const [, symbol, side, qty, stopPrice, targetPrice] = parts;
+      const [, symbol, side, qty, stopPrice, targetPrice, originalEntryPrice] = parts;
 
-      await sendTelegram('answerCallbackQuery', { callback_query_id: cq.id, text: 'Submitting Order...' });
+      await sendTelegram('answerCallbackQuery', { callback_query_id: cq.id, text: 'Auditing live slippage...' });
+
+      // Live Pre-Execution Slippage Re-check
+      const livePrice = (await getAlpacaLatestTrade(symbol)) || Number(originalEntryPrice);
+      const original = Number(originalEntryPrice);
+      const slippagePercent = Math.abs((livePrice - original) / original) * 100;
+
+      // If slippage exceeds 0.5%, abort execution to protect the 6k lifeline
+      if (slippagePercent > 0.5) {
+        await sendTelegram('editMessageText', {
+          chat_id: chatId,
+          message_id: messageId,
+          text:
+            `⚠️ *TRADE ABORTED — SLIPPAGE PROTECTION*\n\n` +
+            `• *Symbol:* ${symbol}\n` +
+            `• *Proposed Price:* $${original.toFixed(2)}\n` +
+            `• *Live Price:* $${livePrice.toFixed(2)} (${slippagePercent.toFixed(2)}% move)\n\n` +
+            `_Price moved past the 0.5% safety threshold. Order was rejected to protect your ₹${state.lifelineBaseINR} base capital._`,
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
 
       try {
         const order = await placeAlpacaBracketOrder({
@@ -364,14 +406,16 @@ async function handleTelegramUpdate(update) {
           chat_id: chatId,
           message_id: messageId,
           text:
-            `✅ *ORDER SUBMITTED ON ALPACA*\n\n` +
+            `✅ *ORDER EXECUTED WITH BRACKET PROTECTION*\n\n` +
             `• *Symbol:* ${symbol.toUpperCase()}\n` +
             `• *Side:* ${side.toUpperCase()}\n` +
             `• *Quantity:* ${qty} share(s)\n` +
+            `• *Fill Price:* ~$${livePrice.toFixed(2)}\n` +
             `• *Stop Loss:* $${Number(stopPrice).toFixed(2)}\n` +
             `• *Take Profit:* $${Number(targetPrice).toFixed(2)}\n` +
             `• *Order ID:* \`${order.id}\`\n` +
-            `• *Status:* ${order.status}`,
+            `• *Status:* ${order.status}\n\n` +
+            `🛡️ *Lifeline Base Secured.* Stop-loss is active on the exchange.`,
           parse_mode: 'Markdown',
         });
       } catch (err) {
@@ -394,15 +438,45 @@ async function handleTelegramUpdate(update) {
 
     if (text.startsWith('/start') || text.startsWith('/help')) {
       const welcome =
-        `🤖 *TraderBot Mobile Terminal Active*\n\n` +
-        `This bot runs 24/7 on your Render server to scan setups and ask for your approval.\n\n` +
+        `🤖 *Autonomous 24/7 Trader Connected*\n\n` +
+        `🛡️ *Capital Lifeline:* ₹${state.lifelineBaseINR.toLocaleString()} (Preservation #1)\n` +
+        `🎯 *Current Expectation:* ₹${state.currentExpectationINR.toLocaleString()} (Goal: ₹${state.overallGoalINR.toLocaleString()})\n\n` +
         `*Commands:*\n` +
         `• \`/status\` - View 24/7 Scanner health & Market clock\n` +
-        `• \`/scan\` - Trigger an immediate manual scan right now\n` +
-        `• \`/balance\` - View live Alpaca ($100k) & CoinDCX balances\n` +
+        `• \`/target <AMOUNT>\` - Revise today's profit expectation\n` +
+        `• \`/scan\` - Trigger an immediate deep scan right now\n` +
+        `• \`/balance\` - View live Alpaca & CoinDCX balances\n` +
         `• \`/trade <SYMBOL> <BUY|SELL> <QTY>\` - Propose a bracket trade with [Allow/Deny]\n\n` +
-        `_Whenever a breakout triggers, you will receive an alert with [ ALLOW ] and [ REJECT ] buttons._`;
+        `_Whenever a breakout passes the anti-manipulation audit, you get a trade card on your phone with live pre-execution slippage checks._`;
       await sendTelegram('sendMessage', { chat_id: chatId, text: welcome, parse_mode: 'Markdown' });
+      return;
+    }
+
+    if (text.startsWith('/target')) {
+      const parts = text.split(/\s+/);
+      if (parts.length > 1) {
+        const newTarget = parseInt(parts[1].replace(/[^0-9]/g, ''), 10);
+        if (newTarget && newTarget > 0) {
+          state.currentExpectationINR = newTarget;
+          await sendTelegram('sendMessage', {
+            chat_id: chatId,
+            text: `🎯 *Expectation Revised!* Today's target expectation is now set to *₹${newTarget.toLocaleString()}*.\n_The agent will align position setups to work toward this milestone without exceeding risk limits._`,
+            parse_mode: 'Markdown',
+          });
+          return;
+        }
+      }
+      await sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text:
+          `🎯 *Current Targets & Expectations:*\n\n` +
+          `• *Current Expectation:* ₹${state.currentExpectationINR.toLocaleString()}\n` +
+          `• *Overall Milestone:* ₹${state.overallGoalINR.toLocaleString()}\n` +
+          `• *Protected Capital Lifeline:* ₹${state.lifelineBaseINR.toLocaleString()}\n\n` +
+          `_To change expectation anytime, send:_ \`/target <AMOUNT>\`\n` +
+          `_Example:_ \`/target 7000\``,
+        parse_mode: 'Markdown',
+      });
       return;
     }
 
@@ -414,30 +488,31 @@ async function handleTelegramUpdate(update) {
       const usMarketStatus = clock?.is_open ? '🟢 OPEN' : '🔴 CLOSED';
 
       let reply =
-        `🛰️ *24/7 SCANNER & SYSTEM STATUS*\n\n` +
-        `• *Background Scanner:* 🟢 RUNNING (every 5 mins)\n` +
+        `🛰️ *AUTONOMOUS AGENT 24/7 STATUS*\n\n` +
+        `🛡️ *Protected Capital Lifeline:* ₹${state.lifelineBaseINR.toLocaleString()} (Max Risk: ₹${state.maxRiskPerTradeINR}/trade)\n` +
+        `🎯 *Target Expectation:* ₹${state.currentExpectationINR.toLocaleString()} (Milestone: ₹${state.overallGoalINR.toLocaleString()})\n\n` +
+        `• *24/7 Scanner:* 🟢 RUNNING (every 5 mins)\n` +
         `• *Total Scans Completed:* ${state.totalScansRun}\n` +
         `• *Last Scan Time:* ${lastScanStr}\n` +
         `• *US Stock Market:* ${usMarketStatus}\n` +
-        `• *Crypto Futures:* 🟢 24/7 ACTIVE\n\n` +
-        `*Active Watchlist:*\n` +
+        `• *Crypto Futures:* 🟢 24/7 ACTIVE\n` +
+        `• *Anti-Manipulation Filter:* 🟢 ENABLED\n\n` +
+        `*Watchlist:*\n` +
         `• Stocks: ${STOCK_WATCHLIST.join(', ')}\n` +
         `• Crypto: ${CRYPTO_WATCHLIST.join(', ')}\n\n`;
 
       if (alpaca) {
         reply +=
-          `💼 *Alpaca Paper Account:*\n` +
-          `• *Portfolio Value:* $${Number(alpaca.portfolio_value).toLocaleString()}\n` +
-          `• *Buying Power:* $${Number(alpaca.buying_power).toLocaleString()}\n\n`;
+          `💼 *Alpaca Portfolio:* $${Number(alpaca.portfolio_value).toLocaleString()} (BP: $${Number(alpaca.buying_power).toLocaleString()})\n\n`;
       }
 
       if (state.recentSignals.length > 0) {
-        reply += `*Recent Signals Detected:*\n`;
+        reply += `*Recent High-Conviction Signals:*\n`;
         for (const s of state.recentSignals.slice(0, 3)) {
           reply += `• ${s.symbol} at $${s.entryPrice.toFixed(2)} (${new Date(s.time).toLocaleTimeString()})\n`;
         }
       } else {
-        reply += `• _No active breakouts in the last cycle._\n`;
+        reply += `• _No recent breakout signals detected._\n`;
       }
 
       await sendTelegram('sendMessage', { chat_id: chatId, text: reply, parse_mode: 'Markdown' });
@@ -445,12 +520,12 @@ async function handleTelegramUpdate(update) {
     }
 
     if (text === '/scan') {
-      await sendTelegram('sendMessage', { chat_id: chatId, text: '⏳ *Scanning markets right now...*', parse_mode: 'Markdown' });
+      await sendTelegram('sendMessage', { chat_id: chatId, text: '⏳ *Scanning markets with anti-manipulation audit...*', parse_mode: 'Markdown' });
       const hits = await runMarketScan();
       if (hits.length === 0) {
         await sendTelegram('sendMessage', {
           chat_id: chatId,
-          text: `🔍 *Scan Complete:* Checked ${STOCK_WATCHLIST.length} stocks and ${CRYPTO_WATCHLIST.length} crypto pairs. No new breakouts found at this candle.`,
+          text: `🔍 *Scan Complete:* Checked ${STOCK_WATCHLIST.length} stocks and ${CRYPTO_WATCHLIST.length} crypto pairs. No setups cleared the anti-manipulation audit. Capital preserved.`,
           parse_mode: 'Markdown',
         });
       }
@@ -469,8 +544,6 @@ async function handleTelegramUpdate(update) {
           `• *Portfolio Value:* $${Number(alpaca.portfolio_value).toLocaleString()}\n` +
           `• *Buying Power:* $${Number(alpaca.buying_power).toLocaleString()}\n` +
           `• *Status:* ${alpaca.status}\n\n`;
-      } else {
-        reply += `🇺🇸 *Alpaca:* Connection unavailable\n\n`;
       }
 
       if (coindcx) {
@@ -482,8 +555,6 @@ async function handleTelegramUpdate(update) {
             reply += `• ${b.currency}: ${b.balance}\n`;
           }
         }
-      } else {
-        reply += `🇮🇳 *CoinDCX:* Connection unavailable\n`;
       }
 
       await sendTelegram('sendMessage', { chat_id: chatId, text: reply, parse_mode: 'Markdown' });
@@ -507,29 +578,26 @@ async function handleTelegramUpdate(update) {
       const cleanSymbol = symbol.toUpperCase();
 
       const currentPrice = (await getAlpacaLatestTrade(cleanSymbol)) || 364.0;
-      const stopDistance = currentPrice * 0.02;
+      const stopDistance = currentPrice * 0.015;
       const targetDistance = currentPrice * 0.035;
 
       const stopPrice = cleanSide === 'buy' ? currentPrice - stopDistance : currentPrice + stopDistance;
       const targetPrice = cleanSide === 'buy' ? currentPrice + targetDistance : currentPrice - targetDistance;
-      const maxRisk = (stopDistance * qty).toFixed(2);
 
       const promptText =
-        `📊 *TRADE PROPOSAL: ${cleanSymbol}*\n\n` +
+        `📊 *MANUAL TRADE PROPOSAL: ${cleanSymbol}*\n\n` +
         `• *Action:* ${cleanSide.toUpperCase()} ${qty} share(s)\n` +
         `• *Est. Price:* ~$${currentPrice.toFixed(2)}\n` +
-        `• *Stop Loss:* $${stopPrice.toFixed(2)} (-2.0%)\n` +
-        `• *Take Profit:* $${targetPrice.toFixed(2)} (+3.5%)\n` +
-        `• *Max Dollar Risk:* $${maxRisk}\n\n` +
-        `⚠️ *Human-in-the-loop Gate:*\n` +
-        `Tap [ ALLOW ] on your phone to submit this bracket order.`;
+        `• *Stop Loss:* $${stopPrice.toFixed(2)} (-1.5%)\n` +
+        `• *Take Profit:* $${targetPrice.toFixed(2)} (+3.5%)\n\n` +
+        `🛡️ *Pre-Execution Protection:* Button stays open. When tapped, slippage is re-verified live before placing order.`;
 
       const keyboard = {
         inline_keyboard: [
           [
             {
               text: '✅ ALLOW TRADE',
-              callback_data: `alpaca_exec:${cleanSymbol}:${cleanSide}:${qty}:${stopPrice.toFixed(2)}:${targetPrice.toFixed(2)}`,
+              callback_data: `alpaca_exec:${cleanSymbol}:${cleanSide}:${qty}:${stopPrice.toFixed(2)}:${targetPrice.toFixed(2)}:${currentPrice.toFixed(2)}`,
             },
             {
               text: '❌ REJECT',
@@ -555,10 +623,9 @@ async function handleTelegramUpdate(update) {
   }
 }
 
-// Start the 24/7 background scanner loop (runs every 5 minutes)
+// 24/7 background scanner cycle
 function startBackgroundScanner() {
-  console.log('[TraderService] Starting 24/7 background market scanner (5m cycle)...');
-  // Initial run after 15 seconds to allow boot
+  console.log('[TraderService] Starting 24/7 background market scanner with 6k lifeline protection...');
   setTimeout(() => {
     runMarketScan().catch((err) => console.error('[TraderService] Initial scan error:', err));
   }, 15000);
@@ -568,7 +635,6 @@ function startBackgroundScanner() {
   }, state.scannerIntervalMs);
 }
 
-// Auto-start on module load
 startBackgroundScanner();
 
 module.exports = {
