@@ -14,21 +14,67 @@ const APCA_BASE_URL = APCA_IS_PAPER ? 'https://paper-api.alpaca.markets' : 'http
 const COINDCX_KEY = process.env.COINDCX_API_KEY || 'bc80ca11d21702da403d5cfc6f25ddabb31e96362ba4358e';
 const COINDCX_SECRET = process.env.COINDCX_API_SECRET || '4aaa73c330e401f67102f54dacf46252635c073467fa439d76311b73deaf630d';
 
-// Multi-Key Gemini Rotation Pool (4 keys for unlimited 1-minute scanning & post-mortem learning)
+// Multi-Key & Multi-Model Rotation Pool (Stays strictly within RPM, TPM, and RPD limits)
 const GEMINI_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '')
   .split(',')
   .map((k) => k.trim())
   .filter(Boolean);
-let geminiKeyIdx = 0;
 
-function getNextGeminiKey() {
-  if (GEMINI_KEYS.length === 0) return '';
-  const key = GEMINI_KEYS[geminiKeyIdx % GEMINI_KEYS.length];
-  geminiKeyIdx += 1;
-  return key;
+// Each model variation has its own separate RPM/RPD quota bucket in Google AI Studio
+const GEMINI_MODEL_BUCKETS = [
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite-preview',
+];
+
+let geminiKeyIdx = 0;
+let geminiModelIdx = 0;
+
+// Rate-Limit Governor (RPM, TPM, RPD tracking & protection)
+const rateLimiter = {
+  rpmLimit: 10,             // Conservative self-imposed ceiling per minute (well below 15-20 RPM limit)
+  tpmLimit: 15000,          // Max 15k tokens per minute
+  rpdLimit: 1200,           // Max 1,200 requests per day across buckets
+  requestsThisMinute: 0,
+  tokensThisMinute: 0,
+  requestsToday: 0,
+  lastMinuteReset: Date.now(),
+  lastDayReset: Date.now(),
+  cooldownUntil: 0,         // Timestamp if a 429 is ever encountered
+  auditCache: new Map(),    // symbol -> { audit, timestamp } (3m cache prevents duplicate RPD burn)
+};
+
+function checkAndConsumeQuota(estimatedTokens = 450) {
+  const now = Date.now();
+  if (now - rateLimiter.lastMinuteReset >= 60 * 1000) {
+    rateLimiter.requestsThisMinute = 0;
+    rateLimiter.tokensThisMinute = 0;
+    rateLimiter.lastMinuteReset = now;
+  }
+  if (now - rateLimiter.lastDayReset >= 24 * 60 * 60 * 1000) {
+    rateLimiter.requestsToday = 0;
+    rateLimiter.lastDayReset = now;
+  }
+  if (now < rateLimiter.cooldownUntil) return false;
+  if (rateLimiter.requestsThisMinute >= rateLimiter.rpmLimit) return false;
+  if (rateLimiter.tokensThisMinute + estimatedTokens > rateLimiter.tpmLimit) return false;
+  if (rateLimiter.requestsToday >= rateLimiter.rpdLimit) return false;
+
+  rateLimiter.requestsThisMinute += 1;
+  rateLimiter.tokensThisMinute += estimatedTokens;
+  rateLimiter.requestsToday += 1;
+  return true;
 }
 
-// State management for 1-Minute Auto-Push Scalping, 30s AI Position Management & Self-Learning
+function getNextKeyAndModel() {
+  const key = GEMINI_KEYS.length > 0 ? GEMINI_KEYS[geminiKeyIdx % GEMINI_KEYS.length] : '';
+  const model = GEMINI_MODEL_BUCKETS[geminiModelIdx % GEMINI_MODEL_BUCKETS.length];
+  geminiKeyIdx += 1;
+  geminiModelIdx += 1;
+  return { key, model };
+}
+
+// State management for 1-Minute Auto-Push Scalping, 30s AI Position Management & Structural Self-Learning
 const state = {
   subscribedChatIds: new Set(),
   scannerIntervalMs: 60 * 1000,   // Automatic scan & Telegram update every 1 minute (60s)
@@ -41,11 +87,12 @@ const state = {
   alertCooldowns: new Map(),      // symbol -> timestamp (3m cooldown per symbol)
   trailedPositions: new Set(),    // symbol already trailed to breakeven
   bookedPositions: new Set(),     // symbol already took profit
-  activeStockEntryMeta: new Map(),// symbol -> { setup, entryPrice, stopPrice, targetPrice, candles, orderbook, thesis }
+  activeStockEntryMeta: new Map(),// symbol -> { setup, entryPrice, candles, orderbook }
   activeCryptoTrades: new Map(),  // symbol -> { symbol, side, entryPrice, stopPrice, targetPrice, setup, candles, orderbook, status }
-  // Self-Learning Memory Cache (Synced with PostgreSQL)
+  // Structural Self-Learning Memory (Synced with PostgreSQL)
   learnedLessons: [],             // Array of { id, symbol, setup, outcome, lesson, created_at }
-  symbolStats: new Map(),         // symbol -> { wins, losses, breakevens, consecutiveLosses }
+  symbolStats: new Map(),         // symbol -> { wins, losses, breakevens, consecutiveLosses, avgPnl }
+  setupStats: new Map(),          // setup -> { wins, losses, breakevens, winRate, weightBonus }
   totalWins: 0,
   totalLosses: 0,
   totalBreakevens: 0,
@@ -76,7 +123,7 @@ const DEFAULT_CRYPTO_PAIRS = [
 ];
 
 /**
- * Initialize PostgreSQL tables for Subscribers, Trade Journal, and Self-Learning Lessons
+ * Initialize PostgreSQL tables for Subscribers, Structural Trade Journal, and Self-Learning Lessons
  */
 async function initDbAndMemory() {
   try {
@@ -112,18 +159,19 @@ async function initDbAndMemory() {
       if (r.chat_id) state.subscribedChatIds.add(Number(r.chat_id));
     }
 
-    const journalRes = await pool.query('SELECT symbol, outcome FROM trader_journal ORDER BY id ASC');
+    const journalRes = await pool.query('SELECT symbol, setup, outcome, pnl_pct FROM trader_journal ORDER BY id ASC');
     state.totalWins = 0;
     state.totalLosses = 0;
     state.totalBreakevens = 0;
     state.symbolStats.clear();
+    state.setupStats.clear();
 
     for (const row of journalRes.rows) {
-      updateInMemoryStats(row.symbol, row.outcome);
+      updateStructuralStats(row.symbol, row.setup, row.outcome, Number(row.pnl_pct || 0));
     }
 
     const lessonsRes = await pool.query(
-      'SELECT id, symbol, setup, outcome, lesson, created_at FROM trader_lessons ORDER BY id DESC LIMIT 15'
+      'SELECT id, symbol, setup, outcome, lesson, created_at FROM trader_lessons ORDER BY id DESC LIMIT 12'
     );
     state.learnedLessons = lessonsRes.rows;
 
@@ -136,21 +184,83 @@ async function initDbAndMemory() {
   }
 }
 
-function updateInMemoryStats(symbol, outcome) {
-  const cur = state.symbolStats.get(symbol) || { wins: 0, losses: 0, breakevens: 0, consecutiveLosses: 0 };
+/**
+ * Updates both Symbol-level and Setup-level Bayesian Expectancy Weights
+ */
+function updateStructuralStats(symbol, setup, outcome, pnlPct = 0) {
+  // 1. Symbol stats
+  const symCur = state.symbolStats.get(symbol) || { wins: 0, losses: 0, breakevens: 0, consecutiveLosses: 0, totalPnl: 0 };
+  symCur.totalPnl += pnlPct;
   if (outcome === 'WIN') {
-    cur.wins += 1;
-    cur.consecutiveLosses = 0;
+    symCur.wins += 1;
+    symCur.consecutiveLosses = 0;
     state.totalWins += 1;
   } else if (outcome === 'LOSS') {
-    cur.losses += 1;
-    cur.consecutiveLosses += 1;
+    symCur.losses += 1;
+    symCur.consecutiveLosses += 1;
     state.totalLosses += 1;
   } else {
-    cur.breakevens += 1;
+    symCur.breakevens += 1;
     state.totalBreakevens += 1;
   }
-  state.symbolStats.set(symbol, cur);
+  state.symbolStats.set(symbol, symCur);
+
+  // 2. Setup pattern stats (Bayesian score adjustment)
+  const setupKey = setup || '1m Micro-Scalp';
+  const setCur = state.setupStats.get(setupKey) || { wins: 0, losses: 0, breakevens: 0, winRate: 65, weightBonus: 0 };
+  if (outcome === 'WIN') setCur.wins += 1;
+  else if (outcome === 'LOSS') setCur.losses += 1;
+  else setCur.breakevens += 1;
+
+  const decided = setCur.wins + setCur.losses;
+  if (decided > 0) {
+    setCur.winRate = Math.round((setCur.wins / decided) * 100);
+    // Boost high-win-rate setups (+1.2 max), penalize losing setups (-1.5 max)
+    setCur.weightBonus = Number((((setCur.winRate - 55) / 45) * 1.2).toFixed(2));
+  }
+  state.setupStats.set(setupKey, setCur);
+}
+
+/**
+ * Computes deterministic quantitative score + structural self-learning bonus
+ * Runs at 0 token cost before calling Gemini!
+ */
+function computeQuantAndLearnedScore({ symbol, setup, candles, orderbook }) {
+  let score = 7.0;
+  const symStat = state.symbolStats.get(symbol);
+  const setStat = state.setupStats.get(setup);
+
+  // Apply learned setup weight bonus
+  if (setStat) score += setStat.weightBonus;
+
+  // Apply symbol track record adjustment
+  if (symStat) {
+    if (symStat.consecutiveLosses >= 2) score -= 1.8;
+    else if (symStat.wins > symStat.losses) score += 0.5;
+  }
+
+  // Microstructure orderbook check
+  if (orderbook) {
+    const imb = Number(orderbook.imbalance || 1);
+    if (imb >= 1.25) score += 0.6;
+    else if (imb < 0.8) score -= 0.7;
+  }
+
+  // Candle body vs upper wick anti-fakeout check
+  if (candles && candles[0]) {
+    const c = Number(candles[0].close || candles[0].c);
+    const o = Number(candles[0].open || candles[0].o);
+    const h = Number(candles[0].high || candles[0].h);
+    const l = Number(candles[0].low || candles[0].l);
+    const range = h - l;
+    if (range > 0) {
+      const upperWickRatio = (h - Math.max(c, o)) / range;
+      if (upperWickRatio > 0.45) score -= 1.0; // Reject heavy upper rejection wick
+      else if ((c - o) / range > 0.6) score += 0.5; // Strong full-body candle
+    }
+  }
+
+  return Number(Math.min(9.8, Math.max(1.0, score)).toFixed(1));
 }
 
 async function saveSubscriber(chatId) {
@@ -167,61 +277,49 @@ async function saveSubscriber(chatId) {
 }
 
 /**
- * SELF-LEARNING POST-MORTEM ENGINE
- * Runs whenever a trade closes (WIN, LOSS, or BREAKEVEN).
- * Calls Gemini to analyze WHY the trade succeeded or failed and saves a permanent rule in PostgreSQL.
+ * SELF-LEARNING POST-MORTEM ENGINE (Rate-Limit Safe)
+ * Updates structural Bayesian weights in PostgreSQL and extracts a permanent rule.
  */
 async function recordTradeAndLearn({ symbol, market, setup, entryPrice, exitPrice, pnlPct, outcome, candles, orderbook }) {
-  updateInMemoryStats(symbol, outcome);
+  updateStructuralStats(symbol, setup, outcome, pnlPct);
 
+  const obImb = orderbook?.imbalance ? `imbalance ${orderbook.imbalance}x` : 'thin volume';
   let learnedRule =
     outcome === 'LOSS'
-      ? `Avoid ${setup} on ${symbol} when momentum stalls without follow-through volume; require stronger candle body confirmation.`
-      : `Replicate ${setup} on ${symbol} when 1m impulse aligns with tight spread and positive bid support.`;
+      ? `Filter out ${setup} on ${symbol} when ${obImb} fails to hold breakout; demand stronger body-to-wick ratio.`
+      : `Prioritize ${setup} on ${symbol} when ${obImb} confirms buyer absorption and low spread.`;
 
-  const apiKey = getNextGeminiKey();
-  if (apiKey) {
-    try {
-      const prompt = `You are the Post-Mortem Self-Learning Module of a quantitative trading desk.
-Analyze this completed paper trade and extract ONE concise, actionable rule (max 22 words) so the trading agent improves its accuracy and never repeats mistakes.
-
-Trade Details:
-• Symbol: ${symbol} (${market})
-• Setup: ${setup}
-• Entry Price: $${entryPrice}
-• Exit Price: $${exitPrice}
-• PnL: ${pnlPct.toFixed(2)}%
-• Outcome: ${outcome}
-• Orderbook at Entry: ${JSON.stringify(orderbook || {})}
-• Candles at Entry: ${JSON.stringify((candles || []).slice(0, 3))}
-
-Return strictly valid JSON:
-{
-  "lesson": "Specific actionable rule under 22 words (no markdown symbols)."
-}`;
-
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: 'application/json' },
-          }),
-          signal: AbortSignal.timeout(4000),
+  // Only call Gemini for post-mortem if within RPM/TPM/RPD budget
+  if (checkAndConsumeQuota(280)) {
+    const { key, model } = getNextKeyAndModel();
+    if (key) {
+      try {
+        const prompt = `Post-Mortem Quant Analyzer: Trade ${symbol} (${setup}) Entry $${entryPrice} -> Exit $${exitPrice} (${pnlPct.toFixed(2)}%, ${outcome}). Orderbook: ${JSON.stringify(orderbook || {})}. Return JSON {"lesson": "1 rule under 18 words to improve accuracy"}.`;
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 60 },
+            }),
+            signal: AbortSignal.timeout(3500),
+          }
+        );
+        if (res.status === 429) {
+          rateLimiter.cooldownUntil = Date.now() + 30 * 1000;
+        } else if (res.ok) {
+          const data = await res.json();
+          const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+          const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+          if (parsed.lesson) {
+            learnedRule = parsed.lesson.replace(/[*_`]/g, '').trim();
+          }
         }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
-        if (parsed.lesson) {
-          learnedRule = parsed.lesson.replace(/[*_`]/g, '').trim();
-        }
+      } catch (err) {
+        // deterministic fallback rule already set
       }
-    } catch (err) {
-      // use fallback rule
     }
   }
 
@@ -238,7 +336,7 @@ Return strictly valid JSON:
     );
     if (ins.rows[0]) {
       state.learnedLessons.unshift(ins.rows[0]);
-      if (state.learnedLessons.length > 15) state.learnedLessons.pop();
+      if (state.learnedLessons.length > 12) state.learnedLessons.pop();
     }
   } catch (err) {
     console.warn('[TraderService] Failed to persist lesson:', err.message);
@@ -246,18 +344,19 @@ Return strictly valid JSON:
 
   const totalDecided = state.totalWins + state.totalLosses;
   const winRate = totalDecided > 0 ? ((state.totalWins / totalDecided) * 100).toFixed(1) : '100.0';
+  const setupStat = state.setupStats.get(setup);
 
   await broadcastTelegram(
-    `🧠 *AI POST-MORTEM & SELF-LEARNING UPDATE*\n\n` +
-    `• *Trade Closed:* \`${symbol}\` (${outcome}: ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)\n` +
-    `• *New Rule Added to Gemini Memory:*\n"${learnedRule}"\n\n` +
-    `📊 *7-Day Paper Accuracy:* ${state.totalWins}W - ${state.totalLosses}L - ${state.totalBreakevens}BE (*${winRate}% Win Rate*)`
+    `🧠 *AI STRUCTURAL LEARNING UPDATE*\n\n` +
+    `• *Closed:* \`${symbol}\` (${outcome}: ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)\n` +
+    `• *Setup Weight Adjusted:* \`${setup}\` Win Rate: ${setupStat ? setupStat.winRate : 65}% (Weight Bonus: ${setupStat?.weightBonus >= 0 ? '+' : ''}${setupStat?.weightBonus || 0})\n` +
+    `• *Rule Learned:* "${learnedRule}"\n\n` +
+    `📊 *Global Paper Accuracy:* ${state.totalWins}W - ${state.totalLosses}L - ${state.totalBreakevens}BE (*${winRate}%*)`
   );
 }
 
 /**
- * Bulletproof Telegram sender:
- * Automatically retries in plain-text if Markdown entity parsing fails.
+ * Bulletproof Telegram sender with automatic plain-text fallback
  */
 async function sendTelegram(method, body) {
   try {
@@ -356,9 +455,6 @@ async function getAlpacaLatestTrade(symbol) {
   }
 }
 
-/**
- * Real-time IEX 1-minute bars sorted newest-first (bars[0] is current minute!)
- */
 async function getStockBars(symbol, limit = 12) {
   try {
     const sym = symbol.toUpperCase();
@@ -424,9 +520,6 @@ async function getCoinDCXOrderbook(pair) {
   }
 }
 
-/**
- * Places Alpaca Paper Bracket Order; falls back to Market Order if bracket legs hit broker validation limits.
- */
 async function placeAlpacaBracketOrder({ symbol, qty, side, stopPrice, targetPrice }) {
   const cleanSym = symbol.toUpperCase();
   const cleanSide = side.toLowerCase();
@@ -520,15 +613,10 @@ async function getCoinDCXBalances() {
 }
 
 /**
- * 24/7 ACTIVE POSITION MONITOR, TRAILING STOP & SELF-LEARNING POST-MORTEM TRIGGER
- * Runs every 30 seconds:
- * 1. Monitors Alpaca Paper Stock positions & Paper Crypto positions.
- * 2. Trails stops to Breakeven at +0.8% / +1.0%.
- * 3. Closes on target or stop and triggers `recordTradeAndLearn` so Gemini learns from every outcome!
+ * 24/7 ACTIVE POSITION MONITOR, TRAILING STOP & SELF-LEARNING TRIGGER
  */
 async function monitorOngoingTrades() {
   try {
-    // A. Monitor Alpaca Paper Positions
     const positions = await getAlpacaPositions();
     if (Array.isArray(positions)) {
       for (const pos of positions) {
@@ -537,7 +625,7 @@ async function monitorOngoingTrades() {
         const currentPrice = Number(pos.current_price);
         const entryPrice = Number(pos.avg_entry_price);
         const profitUSD = Number(pos.unrealized_pl).toFixed(2);
-        const meta = state.activeStockEntryMeta.get(symbol) || { setup: '1m IEX Scalp' };
+        const meta = state.activeStockEntryMeta.get(symbol) || { setup: '1m Real-Time IEX Scalp' };
 
         if (unrealizedPlPercent >= 1.0 && !state.trailedPositions.has(symbol)) {
           state.trailedPositions.add(symbol);
@@ -588,7 +676,6 @@ async function monitorOngoingTrades() {
       }
     }
 
-    // B. Monitor Active Paper Crypto Scalp Positions
     for (const [pair, trade] of state.activeCryptoTrades.entries()) {
       const candles = await getCoinDCXCandles(pair, 2, '1m');
       if (!candles || candles.length === 0) continue;
@@ -599,7 +686,6 @@ async function monitorOngoingTrades() {
       const movePct = ((livePrice - trade.entryPrice) / trade.entryPrice) * 100;
       trade.pnlPct = movePct;
 
-      // 1. Breakeven Lock at +0.8% move
       if (movePct >= 0.8 && trade.status !== 'BREAKEVEN_LOCKED') {
         trade.status = 'BREAKEVEN_LOCKED';
         trade.stopPrice = trade.entryPrice;
@@ -611,7 +697,6 @@ async function monitorOngoingTrades() {
         );
       }
 
-      // 2. Profit Target Hit at +2.0% move
       if (movePct >= 2.0 || livePrice >= trade.targetPrice) {
         state.activeCryptoTrades.delete(pair);
         state.realizedPnlINR += state.targetScalpProfitINR;
@@ -633,7 +718,6 @@ async function monitorOngoingTrades() {
           orderbook: trade.orderbook,
         });
       } else if (livePrice <= trade.stopPrice) {
-        // 3. Stop Hit -> Trigger Post-Mortem Learning!
         state.activeCryptoTrades.delete(pair);
         const isBreakeven = trade.status === 'BREAKEVEN_LOCKED';
         const lossINR = isBreakeven ? 0 : state.maxRiskPerTradeINR;
@@ -662,102 +746,93 @@ async function monitorOngoingTrades() {
 }
 
 /**
- * GEMINI MULTI-KEY AI AUDIT WITH CLOSED-LOOP SELF-LEARNING MEMORY
- * Injects:
- * 1. All 11 Day-Trader-Skill modules + Autonomous-Trader skill
- * 2. Symbol-specific historical Win/Loss record
- * 3. Top Learned Rules from past mistakes (`state.learnedLessons`)
+ * RATE-LIMIT-SAFE AI AUDIT (Uses 3-min Cache + Multi-Model Rotation + Compact Token Footprint)
+ * Ensures RPM <= 10, TPM <= 15k, and RPD stays well inside daily quota!
  */
-async function auditWithDayTraderSkill({ symbol, market, entryPrice, stopLoss, takeProfit, setup, candles, orderbook }) {
-  const symRecord = state.symbolStats.get(symbol) || { wins: 0, losses: 0, breakevens: 0, consecutiveLosses: 0 };
-  const minRequiredScore = symRecord.consecutiveLosses >= 2 ? 8.2 : 6.2;
+async function auditWithDayTraderSkill(candidate) {
+  const { symbol, market, entryPrice, setup, candles, orderbook } = candidate;
+  const now = Date.now();
 
-  const apiKey = getNextGeminiKey();
-  if (!apiKey) {
-    return {
-      approved: true,
-      score: 7.8,
-      timemachineOdds: '68% Target-First',
-      thesis: `${setup} confirmed with positive volume delta. Isolated ₹250 slice caps risk at ₹150 while targeting +₹350 scalp profit.`,
-    };
+  // 1. Check 3-minute AI Audit Cache first (0 RPM / 0 RPD cost!)
+  const cached = rateLimiter.auditCache.get(symbol);
+  if (cached && now - cached.timestamp < 3 * 60 * 1000) {
+    return cached.audit;
   }
 
+  // 2. Compute structural Bayesian & Quantitative score first
+  const quantScore = computeQuantAndLearnedScore({ symbol, setup, candles, orderbook });
+  const symRecord = state.symbolStats.get(symbol) || { wins: 0, losses: 0, consecutiveLosses: 0 };
+  const minRequiredScore = symRecord.consecutiveLosses >= 2 ? 8.2 : 6.2;
+
   const obText = orderbook
-    ? `Top Bid: $${orderbook.topBid}, Top Ask: $${orderbook.topAsk}, Spread: ${orderbook.spreadPct}%, Bid/Ask Imbalance: ${orderbook.imbalance}x`
+    ? `Spread ${orderbook.spreadPct}%, Bid/Ask Imbalance ${orderbook.imbalance}x`
     : 'Liquid IEX book';
 
-  const lessonsText =
+  const fallbackResult = {
+    approved: quantScore >= minRequiredScore,
+    score: quantScore,
+    timemachineOdds: `${Math.min(78, Math.round(52 + quantScore * 2.2))}% Target-First`,
+    thesis: `${setup} confirmed (${obText}). Structural self-learning score ${quantScore}/10 protects ₹6,000 lifeline.`,
+  };
+
+  // 3. Check Rate-Limit Governor before calling Gemini API
+  if (!checkAndConsumeQuota(380)) {
+    return fallbackResult;
+  }
+
+  const { key, model } = getNextKeyAndModel();
+  if (!key) return fallbackResult;
+
+  const lessonsCompact =
     state.learnedLessons.length > 0
-      ? state.learnedLessons
-          .slice(0, 8)
-          .map((l, idx) => `${idx + 1}. [${l.symbol} ${l.outcome}]: ${l.lesson}`)
-          .join('\n')
-      : 'No past mistakes logged yet — enforce strict anti-wick & volume confirmation.';
+      ? state.learnedLessons.slice(0, 4).map((l) => `${l.symbol}:${l.lesson}`).join(' | ')
+      : 'Require full candle body & bid support';
 
-  const systemPrompt = `You are the Self-Learning 11-Agent Day-Trader-Skill + Autonomous-Trader Quantitative Desk.
-MODE: 7-Day Paper Trading Accuracy Calibration & Compounding Trial (₹6,000 -> ₹50,000).
-STRATEGY:
-1. Isolated Micro-Margin Slicing: ₹250 isolated slice per trade at 25x-50x leverage.
-2. Tight -1.2% Stop Loss (max -₹150 risk), +2.5% Take Profit (+₹350 target), Auto-Breakeven at +0.8%.
-3. Check candle wicks, volume expansion, and orderbook bid/ask imbalance.
-
-PAST SELF-LEARNING MEMORY (DO NOT REPEAT PAST MISTAKES):
-• Global Track Record: ${state.totalWins} Wins / ${state.totalLosses} Losses / ${state.totalBreakevens} Breakeven
-• This Asset (${symbol}) Track Record: ${symRecord.wins}W / ${symRecord.losses}L (Consecutive Losses: ${symRecord.consecutiveLosses})
-• Minimum Required Score for ${symbol}: ${minRequiredScore}/10
-• Learned Rules from Past Trades:
-${lessonsText}
-
-Candidate Trade Context:
-• Asset: ${symbol} (${market})
-• Setup: ${setup}
-• Live Entry Price: $${entryPrice}
-• Stop Loss: $${stopLoss} (-1.2%)
-• Take Profit: $${takeProfit} (+2.5%)
-• Microstructure: ${obText}
-• Last 5 1-Minute Candles (newest first):
-${JSON.stringify(candles.slice(0, 5))}
-
-Respond with strictly valid JSON only:
-{
-  "approved": true,
-  "score": 8.2,
-  "timemachineOdds": "69% Target-First",
-  "thesis": "2-sentence institutional rationale citing candle action, orderbook, and learned rules."
-}`;
+  // Compact prompt (< 350 tokens) to protect TPM limits
+  const compactPrompt = `11-Agent Day-Trader-Skill + Autonomous-Trader Audit.
+Goal: ₹6k->₹50k (7d Paper Calibration, ₹250 isolated slice, -1.2% SL, +2.5% TP).
+Track Record: Global ${state.totalWins}W/${state.totalLosses}L | ${symbol}: ${symRecord.wins}W/${symRecord.losses}L | QuantScore: ${quantScore}.
+Learned Rules: ${lessonsCompact}
+Candidate: ${symbol} (${market}) | ${setup} | Entry $${entryPrice} | ${obText} | Candles: ${JSON.stringify(candles.slice(0, 3))}
+Return JSON only: {"approved":true,"score":8.1,"timemachineOdds":"69% Target-First","thesis":"Max 20 words citing candle, orderbook & learned rules."}`;
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: systemPrompt }] }],
-          generationConfig: { responseMimeType: 'application/json' },
+          contents: [{ parts: [{ text: compactPrompt }] }],
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 90 },
         }),
-        signal: AbortSignal.timeout(4500),
+        signal: AbortSignal.timeout(4000),
       }
     );
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+
+    if (res.status === 429) {
+      rateLimiter.cooldownUntil = Date.now() + 30 * 1000;
+      return fallbackResult;
+    }
+    if (!res.ok) return fallbackResult;
+
     const data = await res.json();
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    const cleaned = rawText.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(cleaned);
-    const score = Number(parsed.score) || 7.8;
-    return {
-      approved: parsed.approved !== false && score >= minRequiredScore,
-      score,
-      timemachineOdds: parsed.timemachineOdds || '68% Target-First',
-      thesis: (parsed.thesis || `${setup} verified against ${state.learnedLessons.length} learned rules.`).replace(/[*_`]/g, ''),
+    const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+    // Blend AI score with structural Bayesian score
+    const blendedScore = Number((((Number(parsed.score) || quantScore) + quantScore) / 2).toFixed(1));
+
+    const result = {
+      approved: parsed.approved !== false && blendedScore >= minRequiredScore,
+      score: blendedScore,
+      timemachineOdds: parsed.timemachineOdds || fallbackResult.timemachineOdds,
+      thesis: (parsed.thesis || fallbackResult.thesis).replace(/[*_`]/g, ''),
     };
+
+    rateLimiter.auditCache.set(symbol, { audit: result, timestamp: now });
+    return result;
   } catch (err) {
-    return {
-      approved: symRecord.consecutiveLosses < 2,
-      score: 7.7,
-      timemachineOdds: '67% Target-First',
-      thesis: `${setup} verified with ${obText}. Isolated ₹250 slice protects ₹6,000 lifeline.`,
-    };
+    return fallbackResult;
   }
 }
 
@@ -771,7 +846,6 @@ async function runMarketScan(isManual = false) {
   const candidates = [];
   let topMoversPreview = [];
 
-  // 0. Check & trail ongoing trades first
   await monitorOngoingTrades();
 
   // 1. Scan US Equities (Real-Time IEX 1m bars + Live Trade Price)
@@ -860,6 +934,15 @@ async function runMarketScan(isManual = false) {
       const isWickBounce = low <= minPrevLow * 1.0015 && close > open;
       const isImpulse = bodyPct >= 0.001;
 
+      const setupName = isBreakout
+        ? '1m Micro-Scalp Breakout'
+        : isWickBounce
+        ? '1m Support Wick Bounce'
+        : '1m Momentum Impulse Scalp';
+
+      // Factor in learned setup weight bonus when ranking candidates!
+      const learnedBonus = (state.setupStats.get(setupName)?.weightBonus || 0) * 0.001;
+
       const item = {
         market: 'crypto',
         symbol: pair,
@@ -867,13 +950,9 @@ async function runMarketScan(isManual = false) {
         stopLoss: close * 0.988,
         takeProfit: close * 1.025,
         qty: 1,
-        setup: isBreakout
-          ? '1m Micro-Scalp Breakout'
-          : isWickBounce
-          ? '1m Support Wick Bounce'
-          : '1m Momentum Impulse Scalp',
+        setup: setupName,
         candles,
-        strength: bodyPct,
+        strength: bodyPct + learnedBonus,
       };
 
       if (isBreakout || isWickBounce || isImpulse) {
@@ -894,9 +973,9 @@ async function runMarketScan(isManual = false) {
     console.error('[TraderService] Crypto scan error:', err.message);
   }
 
-  // Pick top 1-2 setups per minute and enrich with live Orderbook + Gemini Self-Learning Audit
+  // Pick top 1 setup per minute (saves 50% RPD quota while delivering highest-conviction trade every minute!)
   candidates.sort((a, b) => b.strength - a.strength);
-  const topCandidates = candidates.slice(0, 2);
+  const topCandidates = candidates.slice(0, 1);
   const hits = [];
 
   for (const cand of topCandidates) {
@@ -931,7 +1010,7 @@ async function runMarketScan(isManual = false) {
     if (state.recentSignals.length > 30) state.recentSignals.pop();
   }
 
-  // 3. Send Every-1-Minute Live Desk, Accuracy & Ongoing Trade Update to Telegram
+  // 3. Send Every-1-Minute Live Desk, Rate-Limit Budget & Accuracy Update to Telegram
   if (state.sendEveryScanReport && state.subscribedChatIds.size > 0) {
     const alpacaPositions = await getAlpacaPositions();
     const cryptoPositions = Array.from(state.activeCryptoTrades.values());
@@ -963,13 +1042,14 @@ async function runMarketScan(isManual = false) {
       `⏱️ *1-MIN AI DESK UPDATE #${state.totalScansRun} (PAPER MODE)*\n\n` +
       `${moversText}` +
       `${posSummary}` +
-      `🧠 *Model Accuracy:* ${state.totalWins}W-${state.totalLosses}L (${winRateStr}) | *Rules Learned:* ${state.learnedLessons.length}\n` +
+      `🧠 *Accuracy:* ${state.totalWins}W-${state.totalLosses}L (${winRateStr}) | *Rules:* ${state.learnedLessons.length}\n` +
+      `🔋 *API Quota:* ${rateLimiter.requestsThisMinute}/${rateLimiter.rpmLimit} RPM | ${rateLimiter.requestsToday}/${rateLimiter.rpdLimit} RPD\n` +
       `⚡ *New Setups:* ${hits.length} | 💰 *Paper PnL:* ₹${state.realizedPnlINR}`;
 
     await broadcastTelegram(pulseMsg);
   }
 
-  // 4. Push the Interactive Trade Proposal Cards
+  // 4. Push the Interactive Trade Proposal Cards (Buttons: Approve / Decline)
   for (const signal of hits) {
     await notifyTradeOpportunity(signal);
   }
@@ -1003,7 +1083,7 @@ async function notifyTradeOpportunity(signal) {
     `• *Isolated Slice:* ₹${signal.sliceMarginINR} (${signal.leverage})\n` +
     `• *Stop Loss:* $${stopStr} (-1.2% | Max Risk: -₹${signal.riskINR})\n` +
     `• *Take Profit:* $${targetStr} (+2.5% | Target: +₹${signal.rewardINR})\n\n` +
-    `🛡️ *Closed-Loop Learning:* Auto-trails at +0.8%, books at +2.0%, and logs post-mortem lesson to DB!`;
+    `🛡️ *Closed-Loop Learning:* Auto-trails at +0.8%, books at +2.0%, and updates setup weights in DB!`;
 
   const cbData = `ex:${signal.symbol}:b:${signal.qty}:${stopStr}:${targetStr}:${entryStr}`.slice(0, 64);
 
@@ -1011,11 +1091,11 @@ async function notifyTradeOpportunity(signal) {
     inline_keyboard: [
       [
         {
-          text: `✅ ALLOW PAPER TRADE`,
+          text: 'Approve',
           callback_data: cbData,
         },
         {
-          text: '❌ REJECT',
+          text: 'Decline',
           callback_data: 'cancel',
         },
       ],
@@ -1034,7 +1114,7 @@ async function handleTelegramUpdate(update) {
     await saveSubscriber(fromChatId);
   }
 
-  // 1. Handle Inline Button Clicks
+  // 1. Handle Inline Button Clicks (Approve / Decline)
   if (update.callback_query) {
     const cq = update.callback_query;
     const chatId = cq.message.chat.id;
@@ -1042,11 +1122,11 @@ async function handleTelegramUpdate(update) {
     const data = cq.data || '';
 
     if (data === 'cancel') {
-      await sendTelegram('answerCallbackQuery', { callback_query_id: cq.id, text: 'Scalp Rejected' });
+      await sendTelegram('answerCallbackQuery', { callback_query_id: cq.id, text: 'Declined' });
       await sendTelegram('editMessageText', {
         chat_id: chatId,
         message_id: messageId,
-        text: '❌ *Scalp Proposal Rejected.*\nNo paper capital risked.',
+        text: '❌ *Trade Declined.*\nNo paper capital risked.',
         parse_mode: 'Markdown',
       });
       return;
@@ -1064,7 +1144,7 @@ async function handleTelegramUpdate(update) {
 
       await sendTelegram('answerCallbackQuery', {
         callback_query_id: cq.id,
-        text: `Opening paper trade on ${symbol}...`,
+        text: `Approving paper trade on ${symbol}...`,
       });
 
       const isCrypto = symbol.startsWith('B-');
@@ -1123,7 +1203,7 @@ async function handleTelegramUpdate(update) {
             chat_id: chatId,
             message_id: messageId,
             text:
-              `✅ *PAPER CRYPTO SCALP ACTIVE & MONITORED*\n\n` +
+              `✅ *APPROVED — PAPER CRYPTO SCALP ACTIVE*\n\n` +
               `• *Pair:* \`${symbol}\`\n` +
               `• *Action:* ${side.toUpperCase()} (${state.defaultLeverage} Paper)\n` +
               `• *Isolated Slice:* ₹${state.sliceMarginINR}\n` +
@@ -1136,7 +1216,6 @@ async function handleTelegramUpdate(update) {
           return;
         }
 
-        // US Stock -> Execute on Alpaca Paper Account
         const order = await placeAlpacaBracketOrder({
           symbol,
           qty,
@@ -1155,7 +1234,7 @@ async function handleTelegramUpdate(update) {
           chat_id: chatId,
           message_id: messageId,
           text:
-            `✅ *ALPACA PAPER TRADE EXECUTED*\n\n` +
+            `✅ *APPROVED — ALPACA PAPER TRADE EXECUTED*\n\n` +
             `• *Symbol:* \`${symbol.toUpperCase()}\`\n` +
             `• *Side:* ${side.toUpperCase()} (${qty} share)\n` +
             `• *Live Fill Price:* ~$${Number(livePrice).toFixed(2)}\n` +
@@ -1186,11 +1265,11 @@ async function handleTelegramUpdate(update) {
       const welcome =
         `🤖 *Self-Learning 1-Minute AI Paper Trading Desk*\n\n` +
         `🎯 *7-Day Calibration:* Alpaca Paper Sandbox + Crypto Paper Ledger\n` +
-        `🧠 *Closed-Loop AI:* Every closed trade runs a Gemini Post-Mortem Autopsy and saves lessons to PostgreSQL so mistakes are never repeated!\n` +
-        `🔑 *AI Engine:* 4-Key Gemini Pool (1-Minute Scans)\n\n` +
+        `🧠 *Structural Self-Learning:* Tracks Bayesian Win-Rates per Setup & Symbol + Gemini Post-Mortem Rules in PostgreSQL!\n` +
+        `🔋 *Rate-Limit Governor:* Multi-Key + Multi-Model Rotation (Strict RPM/TPM/RPD Protection)\n\n` +
         `*Commands:*\n` +
-        `• \`/status\` - View open paper trades, Win Rate % & PnL\n` +
-        `• \`/brain\` or \`/learn\` - View AI Learned Rules & Post-Mortem Memory\n` +
+        `• \`/status\` - View open paper trades, Win Rate % & Rate-Limit Quota\n` +
+        `• \`/brain\` or \`/learn\` - View Learned Setup Weights & Post-Mortem Rules\n` +
         `• \`/scan\` - Force immediate 1-minute scan right now\n` +
         `• \`/balance\` - View Alpaca Paper & CoinDCX balances\n` +
         `• \`/mute\` / \`/unmute\` - Toggle 1-minute heartbeat summaries`;
@@ -1202,20 +1281,28 @@ async function handleTelegramUpdate(update) {
       const totalDecided = state.totalWins + state.totalLosses;
       const winRate = totalDecided > 0 ? ((state.totalWins / totalDecided) * 100).toFixed(1) : '100.0';
 
-      let lessonsList = '_No closed trades yet. Approve a paper trade with [ ALLOW ] and the AI will extract its first post-mortem rule upon close!_\n';
+      let setupWeightsText = '_Calibrating setup weights as trades close..._\n';
+      if (state.setupStats.size > 0) {
+        setupWeightsText = '';
+        for (const [sName, st] of state.setupStats.entries()) {
+          setupWeightsText += `• \`${sName}\`: ${st.wins}W/${st.losses}L (${st.winRate}%) | Weight: ${st.weightBonus >= 0 ? '+' : ''}${st.weightBonus}\n`;
+        }
+      }
+
+      let lessonsList = '_Approve a paper trade to log the first closed-loop post-mortem rule!_\n';
       if (state.learnedLessons.length > 0) {
         lessonsList = state.learnedLessons
-          .slice(0, 10)
-          .map((l, i) => `${i + 1}. \`[${l.symbol} - ${l.outcome}]\` ${l.lesson}`)
+          .slice(0, 8)
+          .map((l, i) => `${i + 1}. \`[${l.symbol} ${l.outcome}]\` ${l.lesson}`)
           .join('\n');
       }
 
       const reply =
-        `🧠 *AI SELF-LEARNING MEMORY & ACCURACY SCOREBOARD*\n\n` +
-        `📊 *Paper Record:* ${state.totalWins} Wins | ${state.totalLosses} Losses | ${state.totalBreakevens} Breakeven\n` +
-        `🎯 *Model Win Rate:* *${winRate}%*\n` +
-        `💰 *Simulated Compounding PnL:* ₹${state.realizedPnlINR}\n\n` +
-        `*Permanent Rules Injected Into Every 1m Scan:*\n${lessonsList}`;
+        `🧠 *STRUCTURAL SELF-LEARNING & RATE-LIMIT GOVERNOR*\n\n` +
+        `📊 *Paper Record:* ${state.totalWins}W | ${state.totalLosses}L | ${state.totalBreakevens}BE (*${winRate}% Win Rate*)\n` +
+        `🔋 *API Quota Usage:* ${rateLimiter.requestsThisMinute}/${rateLimiter.rpmLimit} RPM | ${rateLimiter.tokensThisMinute}/${rateLimiter.tpmLimit} TPM | ${rateLimiter.requestsToday}/${rateLimiter.rpdLimit} RPD\n\n` +
+        `*1. Bayesian Setup Expectancy Matrix:*\n${setupWeightsText}\n` +
+        `*2. Permanent Post-Mortem Rules:*\n${lessonsList}`;
 
       await sendTelegram('sendMessage', { chat_id: chatId, text: reply, parse_mode: 'Markdown' });
       return;
@@ -1225,7 +1312,7 @@ async function handleTelegramUpdate(update) {
       state.sendEveryScanReport = false;
       await sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '🔕 *1-Minute Heartbeat Summaries Muted.* You will still receive actionable `[ ALLOW ]` trade cards and Post-Mortem learning alerts.',
+        text: '🔕 *1-Minute Heartbeat Summaries Muted.* You will still receive actionable `Approve` / `Decline` trade cards.',
         parse_mode: 'Markdown',
       });
       return;
@@ -1256,9 +1343,8 @@ async function handleTelegramUpdate(update) {
         `🛰️ *1-MINUTE SELF-LEARNING PAPER DESK STATUS*\n\n` +
         `🎯 *7-Day Paper Calibration:* ₹${state.lifelineBaseINR.toLocaleString()} ➔ ₹${state.overallGoalINR.toLocaleString()}\n` +
         `🧠 *Model Accuracy:* ${state.totalWins}W - ${state.totalLosses}L - ${state.totalBreakevens}BE (*${winRate}%*)\n` +
-        `📚 *Learned Rules in Memory:* ${state.learnedLessons.length} (type \`/brain\` to view)\n` +
-        `💰 *Paper Profit Banked:* ₹${state.realizedPnlINR}\n` +
-        `🔑 *Gemini Key Pool:* ${GEMINI_KEYS.length} Keys Rotating\n\n` +
+        `🔋 *Quota Governor:* ${rateLimiter.requestsThisMinute}/${rateLimiter.rpmLimit} RPM | ${rateLimiter.requestsToday}/${rateLimiter.rpdLimit} RPD\n` +
+        `💰 *Paper Profit Banked:* ₹${state.realizedPnlINR}\n\n` +
         `• *1-Min Auto-Scanner:* 🟢 RUNNING (Scan #${state.totalScansRun})\n` +
         `• *30s AI Trade Monitor:* 🟢 ACTIVE\n` +
         `• *Last Scan Time:* ${lastScanStr}\n` +
@@ -1361,11 +1447,11 @@ async function handleTelegramUpdate(update) {
         inline_keyboard: [
           [
             {
-              text: `✅ ALLOW PAPER TRADE`,
+              text: 'Approve',
               callback_data: cbData,
             },
             {
-              text: '❌ REJECT',
+              text: 'Decline',
               callback_data: 'cancel',
             },
           ],
