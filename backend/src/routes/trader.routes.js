@@ -31,7 +31,8 @@ router.get('/status', async (_req, res) => {
       service: 'trader-bot-v2',
       scanner: {
         active: true,
-        intervalMinutes: 5,
+        intervalSeconds: Math.round(traderService.state.scannerIntervalMs / 1000),
+        monitorSeconds: Math.round(traderService.state.monitorIntervalMs / 1000),
         totalScansRun: traderService.state.totalScansRun,
         lastScanTime: traderService.state.lastScanTime,
         subscribedUsers: traderService.state.subscribedChatIds.size,
