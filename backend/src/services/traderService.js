@@ -491,11 +491,11 @@ async function getAlpacaLatestTrade(symbol) {
   }
 }
 
-async function getMultiStockBars(symbols, limit = 8) {
+async function getMultiStockSnapshots(symbols) {
   try {
     const joined = symbols.map((s) => s.toUpperCase()).join(',');
     const res = await fetch(
-      `https://data.alpaca.markets/v2/stocks/bars?symbols=${joined}&timeframe=1Min&limit=${limit}&sort=desc&feed=iex`,
+      `https://data.alpaca.markets/v2/stocks/snapshots?symbols=${joined}&feed=iex`,
       {
         headers: {
           'APCA-API-KEY-ID': APCA_KEY,
@@ -504,26 +504,25 @@ async function getMultiStockBars(symbols, limit = 8) {
       }
     );
     if (!res.ok) return {};
-    const data = await res.json();
-    return data?.bars || {};
+    return (await res.json()) || {};
   } catch (err) {
     return {};
   }
 }
 
-async function getAlpacaCryptoBarsAndBooks(symbols, limit = 8) {
+async function getAlpacaCryptoSnapshotsAndBooks(symbols) {
   const joined = symbols.map((s) => encodeURIComponent(s)).join(',');
   const headers = {
     'APCA-API-KEY-ID': APCA_KEY,
     'APCA-API-SECRET-KEY': APCA_SECRET,
   };
   try {
-    const [barsRes, obRes] = await Promise.all([
-      fetch(`https://data.alpaca.markets/v1beta3/crypto/us/bars?symbols=${joined}&timeframe=1Min&limit=${limit}&sort=desc`, { headers }),
+    const [snapRes, obRes] = await Promise.all([
+      fetch(`https://data.alpaca.markets/v1beta3/crypto/us/snapshots?symbols=${joined}`, { headers }),
       fetch(`https://data.alpaca.markets/v1beta3/crypto/us/latest/orderbooks?symbols=${joined}`, { headers }),
     ]);
 
-    const barsData = barsRes.ok ? await barsRes.json() : {};
+    const snapData = snapRes.ok ? await snapRes.json() : {};
     const obData = obRes.ok ? await obRes.json() : {};
 
     const parsedBooks = {};
@@ -543,11 +542,11 @@ async function getAlpacaCryptoBarsAndBooks(symbols, limit = 8) {
     }
 
     return {
-      bars: barsData?.bars || {},
+      snapshots: snapData?.snapshots || {},
       orderbooks: parsedBooks,
     };
   } catch (err) {
-    return { bars: {}, orderbooks: {} };
+    return { snapshots: {}, orderbooks: {} };
   }
 }
 
@@ -944,29 +943,27 @@ async function runMarketScan(isManual = false) {
 
   await monitorOngoingTrades();
 
-  // 1. Scan US Equities on Alpaca IEX
+  // 1. Scan All 14 US Equities on Alpaca IEX via Snapshots
   const clock = await getAlpacaClock();
   const isMarketOpen = clock ? clock.is_open : false;
 
   if (isMarketOpen) {
-    const multiStockBars = await getMultiStockBars(STOCK_WATCHLIST, 6);
-    for (const [sym, bars] of Object.entries(multiStockBars)) {
+    const stockSnaps = await getMultiStockSnapshots(STOCK_WATCHLIST);
+    for (const [sym, snap] of Object.entries(stockSnaps)) {
       const lastAlert = state.alertCooldowns.get(sym) || 0;
       if (!isManual && now - lastAlert < 2 * 60 * 1000) continue;
-      if (!bars || bars.length < 3) continue;
 
-      const latestBar = bars[0];
-      const prevBars = bars.slice(1, 5);
-      const maxPrevHigh = Math.max(...prevBars.map((b) => b.h));
-      const minPrevLow = Math.min(...prevBars.map((b) => b.l));
+      const minBar = snap?.minuteBar;
+      const dailyBar = snap?.dailyBar;
+      const liveTradePrice = snap?.latestTrade?.p || minBar?.c;
+      if (!minBar || !liveTradePrice) continue;
 
-      const bodyPct = (latestBar.c - latestBar.o) / latestBar.o;
-      const isBreakout = latestBar.c >= maxPrevHigh * 0.9985 && latestBar.c >= latestBar.o;
-      const isBounce = latestBar.l <= minPrevLow * 1.0015 && latestBar.c > latestBar.o;
-      const isImpulse = bodyPct >= 0.0008;
+      const bodyPct = minBar.o > 0 ? (minBar.c - minBar.o) / minBar.o : 0;
+      const isBreakout = dailyBar && liveTradePrice >= dailyBar.vw && minBar.c >= minBar.o;
+      const isBounce = dailyBar && minBar.l <= dailyBar.vw && minBar.c > minBar.o;
+      const isImpulse = bodyPct >= 0.0005;
 
       if (isBreakout || isBounce || isImpulse) {
-        const liveTradePrice = (await getAlpacaLatestTrade(sym)) || latestBar.c;
         const setupName = isBreakout
           ? '1m Real-Time IEX Breakout'
           : isBounce
@@ -980,46 +977,44 @@ async function runMarketScan(isManual = false) {
           entryPrice: liveTradePrice,
           stopLoss: liveTradePrice * 0.988,
           takeProfit: liveTradePrice * 1.022,
-          qty: Math.max(1, Math.floor(state.paperSliceUSD / liveTradePrice)),
+          qty: 1,
           setup: setupName,
-          candles: bars,
+          candles: [minBar, dailyBar].filter(Boolean),
           strength: bodyPct + learnedBonus,
         });
       }
     }
   }
 
-  // 2. Scan All 20 Alpaca 24/7 Crypto Pairs
+  // 2. Scan All 20 Alpaca 24/7 Crypto Pairs via Snapshots + L2 Orderbooks
   try {
-    const { bars: cryptoBarsMap, orderbooks: cryptoBooksMap } = await getAlpacaCryptoBarsAndBooks(
-      ALPACA_CRYPTO_WATCHLIST,
-      6
+    const { snapshots: cryptoSnaps, orderbooks: cryptoBooksMap } = await getAlpacaCryptoSnapshotsAndBooks(
+      ALPACA_CRYPTO_WATCHLIST
     );
 
     const moverList = [];
-    for (const [pair, bars] of Object.entries(cryptoBarsMap)) {
-      if (!bars || bars.length < 3) continue;
-      const latest = bars[0];
-      const oldest = bars[bars.length - 1];
-      const move5m = oldest.o > 0 ? ((latest.c - oldest.o) / oldest.o) * 100 : 0;
-      moverList.push({ pair, move5m });
+    for (const [pair, snap] of Object.entries(cryptoSnaps)) {
+      const minBar = snap?.minuteBar;
+      const dailyBar = snap?.dailyBar;
+      const prevDaily = snap?.prevDailyBar;
+      const close = snap?.latestTrade?.p || minBar?.c;
+      if (!minBar || !close) continue;
+
+      const refOpen = dailyBar?.o || prevDaily?.c || minBar.o;
+      const movePct = refOpen > 0 ? ((close - refOpen) / refOpen) * 100 : 0;
+      moverList.push({ pair, move5m: movePct });
 
       const lastAlert = state.alertCooldowns.get(pair) || 0;
       if (!isManual && now - lastAlert < 2 * 60 * 1000) continue;
 
-      const prevBars = bars.slice(1, 5);
-      const maxPrevHigh = Math.max(...prevBars.map((b) => Number(b.h)));
-      const minPrevLow = Math.min(...prevBars.map((b) => Number(b.l)));
+      const open = Number(minBar.o || close);
+      const bodyPct = open > 0 ? (close - open) / open : 0;
+      const ob = cryptoBooksMap[pair] || null;
+      const imb = Number(ob?.imbalance || 1);
 
-      const close = Number(latest.c);
-      const open = Number(latest.o);
-      const low = Number(latest.l);
-      if (!close || !open) continue;
-
-      const bodyPct = (close - open) / open;
-      const isBreakout = close >= maxPrevHigh * 0.9985 && close >= open;
-      const isWickBounce = low <= minPrevLow * 1.0015 && close > open;
-      const isImpulse = bodyPct >= 0.0006;
+      const isBreakout = dailyBar && close >= dailyBar.vw && close >= open;
+      const isWickBounce = imb >= 1.15 && close >= open;
+      const isImpulse = bodyPct >= 0.0004;
 
       const setupName = isBreakout
         ? '1m Micro-Scalp Breakout'
@@ -1028,7 +1023,6 @@ async function runMarketScan(isManual = false) {
         : '1m Momentum Impulse Scalp';
 
       const learnedBonus = (state.setupStats.get(setupName)?.weightBonus || 0) * 0.001;
-      const ob = cryptoBooksMap[pair] || null;
 
       const item = {
         market: 'crypto',
@@ -1036,11 +1030,11 @@ async function runMarketScan(isManual = false) {
         entryPrice: close,
         stopLoss: close * 0.988,
         takeProfit: close * 1.022,
-        qty: Number((state.paperSliceUSD / close).toFixed(4)),
+        qty: 1,
         setup: setupName,
-        candles: bars,
+        candles: [minBar, dailyBar].filter(Boolean),
         orderbook: ob,
-        strength: bodyPct + learnedBonus,
+        strength: bodyPct + (imb - 1) * 0.001 + learnedBonus,
       };
 
       if (isBreakout || isWickBounce || isImpulse) {
@@ -1052,12 +1046,12 @@ async function runMarketScan(isManual = false) {
 
     moverList.sort((a, b) => b.move5m - a.move5m);
     for (const m of moverList.slice(0, 4)) {
-      topMoversPreview.push(`${m.pair.replace('/USD', '')} (${m.move5m >= 0 ? '+' : ''}${m.move5m.toFixed(2)}%)`);
+      topMoversPreview.push(`${m.pair.replace('/USD', '')} (${m.move5m >= 0 ? '+' : ''}${m.move5m.toFixed(1)}%)`);
     }
 
-    if (candidates.length === 0 && fallbackCandidates.length > 0) {
+    if (candidates.length < 3 && fallbackCandidates.length > 0) {
       fallbackCandidates.sort((a, b) => b.strength - a.strength);
-      for (const fb of fallbackCandidates.slice(0, 3)) {
+      for (const fb of fallbackCandidates.slice(0, 3 - candidates.length)) {
         candidates.push({
           ...fb,
           setup: '1m Relative Strength Scalp',
