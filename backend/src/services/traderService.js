@@ -614,9 +614,6 @@ async function placeAlpacaPaperOrder({ symbol, side, entryPrice }) {
 
   // Handle Crypto SHORT (SELL): Alpaca Crypto is Spot-only (cannot short 0 balance on /v2/orders)
   if (isCrypto && cleanSide === 'sell') {
-    if (existingPos && Number(existingPos.qty) > 0) {
-      await closeAlpacaPosition(normSym);
-    }
     const fillPrice = entryPrice || (await getAlpacaLatestTrade(cleanSym)) || 1;
     const synthId = `ALPACA-SHORT-${normSym}-${Date.now().toString().slice(-6)}`;
     state.activeCryptoTrades.set(cleanSym, {
@@ -631,11 +628,13 @@ async function placeAlpacaPaperOrder({ symbol, side, entryPrice }) {
     return { id: synthId, symbol: cleanSym, side: 'sell', status: 'filled_paper_short' };
   }
 
-  // Handle Stock Flip (e.g. Shorting a stock that is currently Long, or Buying a stock that is currently Short)
+  // Handle Stock Flip ONLY if explicit flip intent requested; never silently close existing positions on standard approvals!
   if (!isCrypto && existingPos) {
     const posIsLong = Number(existingPos.qty) > 0 && existingPos.side !== 'short';
-    if ((cleanSide === 'sell' && posIsLong) || (cleanSide === 'buy' && !posIsLong)) {
-      await closeAlpacaPosition(normSym);
+    const isOpposite = (cleanSide === 'sell' && posIsLong) || (cleanSide === 'buy' && !posIsLong);
+    if (isOpposite) {
+      // Do not close existing position automatically unless explicit
+      console.log(`[TraderService] Existing ${existingPos.side} open on ${cleanSym}, respecting original trade.`);
     }
   }
 
@@ -1082,16 +1081,31 @@ Return JSON object mapping each symbol to {"approved":true,"score":8.2,"timemach
 
 /**
  * 1-MINUTE UNIFIED BI-DIRECTIONAL (LONG + SHORT) ALPACA PAPER SCANNER
+ * State-Aware: Distinguishes Fresh Entries, Scale-Ins (Pyramiding winners), and Prevents Averaging Down!
  */
 async function runMarketScan(isManual = false) {
   state.lastScanTime = new Date();
   state.totalScansRun += 1;
   const now = Date.now();
-  const candidates = [];
-  const fallbackCandidates = [];
+  const rawCandidates = [];
   const topMoversPreview = [];
 
   await monitorOngoingTrades();
+
+  // Fetch current open positions to make scanning state-aware
+  const openPositions = await getAlpacaPositions();
+  const openPositionsMap = new Map();
+  for (const p of openPositions || []) {
+    openPositionsMap.set(normalizeSymbol(p.symbol), p);
+  }
+  for (const [sym, sp] of state.activeCryptoTrades.entries()) {
+    openPositionsMap.set(normalizeSymbol(sym), {
+      symbol: sym,
+      side: 'short',
+      unrealized_plpc: (Number(sp.unrealizedPlPct || 0) / 100).toFixed(4),
+      market_value: String(sp.notionalUSD || state.paperSliceUSD),
+    });
+  }
 
   // 1. Scan All 14 US Equities on Alpaca IEX via Snapshots (Both LONG & SHORT!)
   const clock = await getAlpacaClock();
@@ -1100,9 +1114,6 @@ async function runMarketScan(isManual = false) {
   if (isMarketOpen) {
     const stockSnaps = await getMultiStockSnapshots(STOCK_WATCHLIST);
     for (const [sym, snap] of Object.entries(stockSnaps)) {
-      const lastAlert = state.alertCooldowns.get(sym) || 0;
-      if (!isManual && now - lastAlert < 2 * 60 * 1000) continue;
-
       const minBar = snap?.minuteBar;
       const dailyBar = snap?.dailyBar;
       const liveTradePrice = snap?.latestTrade?.p || minBar?.c;
@@ -1128,7 +1139,7 @@ async function runMarketScan(isManual = false) {
           : '1m IEX Bullish Impulse (LONG)';
         const learnedBonus = (state.setupStats.get(setupName)?.weightBonus || 0) * 0.001;
 
-        candidates.push({
+        rawCandidates.push({
           market: 'stock',
           symbol: sym,
           action: 'buy',
@@ -1148,7 +1159,7 @@ async function runMarketScan(isManual = false) {
           : '1m IEX Bearish Dump Scalp (SHORT)';
         const learnedBonus = (state.setupStats.get(setupName)?.weightBonus || 0) * 0.001;
 
-        candidates.push({
+        rawCandidates.push({
           market: 'stock',
           symbol: sym,
           action: 'sell',
@@ -1181,9 +1192,6 @@ async function runMarketScan(isManual = false) {
       const refOpen = dailyBar?.o || prevDaily?.c || minBar.o;
       const movePct = refOpen > 0 ? ((close - refOpen) / refOpen) * 100 : 0;
       moverList.push({ pair, move5m: movePct });
-
-      const lastAlert = state.alertCooldowns.get(pair) || 0;
-      if (!isManual && now - lastAlert < 2 * 60 * 1000) continue;
 
       const open = Number(minBar.o || close);
       const bodyPct = open > 0 ? (close - open) / open : 0;
@@ -1234,39 +1242,63 @@ async function runMarketScan(isManual = false) {
         strength: Math.abs(bodyPct) + obEdge + learnedBonus,
       };
 
-      if (
-        isBreakoutLong ||
-        isWickBounceLong ||
-        isImpulseLong ||
-        isBreakdownShort ||
-        isRejectionShort ||
-        isDumpShort
-      ) {
-        candidates.push(item);
-      } else {
-        fallbackCandidates.push(item);
-      }
+      rawCandidates.push(item);
     }
 
     moverList.sort((a, b) => Math.abs(b.move5m) - Math.abs(a.move5m));
     for (const m of moverList.slice(0, 4)) {
       topMoversPreview.push(`${m.pair.replace('/USD', '')} (${m.move5m >= 0 ? '+' : ''}${m.move5m.toFixed(1)}%)`);
     }
-
-    if (candidates.length < 3 && fallbackCandidates.length > 0) {
-      fallbackCandidates.sort((a, b) => b.strength - a.strength);
-      for (const fb of fallbackCandidates.slice(0, 3 - candidates.length)) {
-        candidates.push({
-          ...fb,
-          setup: fb.action === 'sell' ? '1m Relative Weakness Short (SHORT)' : '1m Relative Strength Scalp (LONG)',
-        });
-      }
-    }
   } catch (err) {
     console.error('[TraderService] Alpaca Crypto scan error:', err.message);
   }
 
-  // Batch-audit all qualifying setups (up to 5 per minute in 1 single Gemini API call!)
+  // 3. Pro-Trader Position Management Engine: Classify into Fresh Entry vs Scale-In vs Suppress
+  const candidates = [];
+  for (const item of rawCandidates) {
+    const norm = normalizeSymbol(item.symbol);
+    const existing = openPositionsMap.get(norm);
+    const lastAlert = state.alertCooldowns.get(item.symbol) || 0;
+    if (!isManual && now - lastAlert < 2 * 60 * 1000) continue;
+
+    if (!existing) {
+      // Scenario 1: Fresh Entry on an unheld asset
+      candidates.push({
+        ...item,
+        intent: 'FRESH_ENTRY',
+      });
+    } else {
+      const isPosLong = existing.side !== 'short' && Number(existing.qty || 1) > 0;
+      const isSignalLong = item.action === 'buy';
+      const plPercent = Number(existing.unrealized_plpc || 0) * 100;
+
+      if (isPosLong === isSignalLong) {
+        // Same Direction: Check if in profit for Pyramiding (Scale-In)
+        const marketVal = Math.abs(Number(existing.market_value || 0));
+        const estimatedSlices = Math.max(1, Math.round(marketVal / state.paperSliceUSD));
+
+        if (plPercent >= 0.75 && estimatedSlices < 3) {
+          // Scenario 2: Scale-In on a confirmed runner (Pyramiding)
+          candidates.push({
+            ...item,
+            intent: 'SCALE_IN',
+            currentPlPct: plPercent,
+            existingSlices: estimatedSlices,
+            setup: `📈 Scale-In (+1 Slice): ${item.setup}`,
+          });
+        } else {
+          // Scenario 3: Anti-Martingale Rule: Suppress alert if trade is flat/losing or already at 3 slices max!
+          // This stops repeated TSLA or XRP cards when already floating!
+          continue;
+        }
+      } else {
+        // Opposite direction signal while in an active trade: Suppress to avoid shifting original trade until decided!
+        continue;
+      }
+    }
+  }
+
+  // Batch-audit qualifying setups (up to 5 per minute in 1 single Gemini API call!)
   candidates.sort((a, b) => b.strength - a.strength);
   const batchToAudit = candidates.slice(0, 5);
   const auditedList = await batchAuditCandidatesWithGemini(batchToAudit);
@@ -1285,6 +1317,9 @@ async function runMarketScan(isManual = false) {
       qty: cand.qty,
       time: new Date(),
       setup: cand.setup,
+      intent: cand.intent,
+      currentPlPct: cand.currentPlPct,
+      existingSlices: cand.existingSlices,
       candles: cand.candles,
       orderbook: cand.orderbook,
       riskINR: state.maxRiskPerTradeINR,
@@ -1369,6 +1404,7 @@ function formatPrice(val) {
 
 async function notifyTradeOpportunity(signal) {
   const isShort = signal.action === 'sell';
+  const isScaleIn = signal.intent === 'SCALE_IN';
   const sideBadge = isShort ? '🔴 SHORT (SELL)' : '🟢 LONG (BUY)';
   const sideCode = isShort ? 's' : 'b';
   const entryStr = formatPrice(signal.entryPrice);
@@ -1378,8 +1414,19 @@ async function notifyTradeOpportunity(signal) {
     ? `• *Alpaca Orderbook:* Bid/Ask ${signal.orderbook.imbalance}x | Spread ${signal.orderbook.spreadPct}%\n`
     : '';
 
+  const scaleInContext = isScaleIn
+    ? `📈 *SCALE-IN ON RUNNING WINNER (Slice #${(signal.existingSlices || 1) + 1} of 3)*\n` +
+      `• *Current Trade Gain:* +${(signal.currentPlPct || 0).toFixed(2)}% (Breakeven Locked)\n` +
+      `• *Action:* Adding +1 isolated slice ($${state.paperSliceUSD} / ₹${signal.sliceMarginINR}) to compound momentum without extra risk!\n\n`
+    : '';
+
+  const headerTitle = isScaleIn
+    ? `📈 *SCALE-IN: \`${signal.symbol}\`* [${sideBadge}]`
+    : `⚡ *ALPACA PAPER SCALP [${sideBadge}]: \`${signal.symbol}\`*`;
+
   const card =
-    `⚡ *ALPACA PAPER SCALP [${sideBadge}]: \`${signal.symbol}\`*\n\n` +
+    `${headerTitle}\n\n` +
+    `${scaleInContext}` +
     `🧠 *Self-Learning AI Audit (${signal.aiScore}/10):*\n` +
     `"${signal.aiThesis}"\n\n` +
     `• *Direction:* *${sideBadge}*\n` +
@@ -1390,7 +1437,7 @@ async function notifyTradeOpportunity(signal) {
     `• *₹6,000 Strategy Slice:* ₹${signal.sliceMarginINR} Margin @ 35x = *$${state.paperSliceUSD} Alpaca Order*\n` +
     `• *Stop Loss:* $${stopStr} (${isShort ? '+1.2% above' : '-1.2% below'} | Risk: -₹${signal.riskINR})\n` +
     `• *Take Profit:* $${targetStr} (${isShort ? '-2.2% drop' : '+2.2% gain'} | Gain: +₹${signal.rewardINR})\n\n` +
-    `🛡️ *Bi-Directional Ready:* Click Approve on as many LONG or SHORT setups as you want!`;
+    `🛡️ *Rule:* Never averages down on losing trades. Only confirmed winners get Scale-In cards!`;
 
   const cbData = `ex:${signal.symbol}:${sideCode}:${signal.qty}:${stopStr}:${targetStr}:${entryStr}`.slice(0, 64);
 
@@ -1398,7 +1445,7 @@ async function notifyTradeOpportunity(signal) {
     inline_keyboard: [
       [
         {
-          text: 'Approve',
+          text: isScaleIn ? 'Approve (+1 Slice)' : 'Approve',
           callback_data: cbData,
         },
         {
