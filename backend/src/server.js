@@ -30,6 +30,7 @@ const notificationRoutes = require('./routes/notifications.routes');
 const kycRoutes = require('./routes/kyc.routes');
 const payoutRoutes = require('./routes/payouts.routes');
 const voiceDilemmaRoutes = require('./routes/voiceDilemmas.routes');
+const traderRoutes = require('./routes/trader.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -182,6 +183,9 @@ app.use('/api/payouts',     payoutRoutes);
 
 // --- Async Voice Dilemmas (?99 audio mentorship) ---
 app.use('/api/voice-dilemmas', voiceDilemmaRoutes);
+
+// --- Trader Bot & Mobile Webhook ---
+app.use('/api/trader', traderRoutes);
 
 // Anything else under /api is not implemented yet.
 app.use('/api', (_req, res) => {
