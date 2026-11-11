@@ -4,11 +4,34 @@ const crypto = require('crypto');
 const https = require('https');
 const { pool } = require('../config/db');
 
-// Telegram Configuration
+// Telegram Configuration (Execution Bot + Dedicated Thinking Bot @Traderthinkbot)
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '9066897267:AAFxTbLCj2KmUZ9d070hvEG4Am7-HB4-7Wc';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
-// Bybit Demo Perpetual Futures Configuration (Primary 24/7 Crypto Exchange)
+const TELEGRAM_THINK_TOKEN = process.env.TELEGRAM_THINK_BOT_TOKEN || '8836965252:AAFqSAHp02FqZnP7KpiQKMDIcbA9-mB3tbI';
+const TELEGRAM_THINK_API = `https://api.telegram.org/bot${TELEGRAM_THINK_TOKEN}`;
+
+// STRICT UNBYPASSABLE COMPLIANCE BAN: NEVER TOUCH INTUIT (INTU / INTUUSDT)
+const STRICTLY_BLOCKED_SYMBOLS = new Set([
+  'INTU',
+  'INTUUSDT',
+  'INTUUSD',
+  'INTUPERP',
+  'INTUSTOCK',
+  'INTUSTOCKUSDT',
+  'INTUIT',
+]);
+
+function isStrictlyBlockedSymbol(symbol, fullName = '') {
+  const s = String(symbol || '').toUpperCase().trim();
+  const f = String(fullName || '').toUpperCase().trim();
+  if (!s) return false;
+  if (STRICTLY_BLOCKED_SYMBOLS.has(s)) return true;
+  if (s === 'INTU' || s.startsWith('INTU') || s.includes('INTUIT') || f.includes('INTUIT')) return true;
+  return false;
+}
+
+// Bybit Demo Perpetual Futures Configuration (24/7 Crypto Perps + 293 US Stock Perps)
 const BYBIT_KEY = process.env.BYBIT_API_KEY || 'k4SXoC5OZgSNSFnt81';
 const BYBIT_SECRET = process.env.BYBIT_API_SECRET || 'WZI894Or0LVBqC7U4ZF6Ocnzv0CrrxpdR5m6';
 const BYBIT_BASE_URL = process.env.BYBIT_BASE_URL || 'https://api-demo.bybit.com';
@@ -27,15 +50,20 @@ const GEMINI_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY |
   .map((k) => k.trim())
   .filter(Boolean);
 
-// Empirically verified active models on user's 4 keys (Native Thinking + Ultra-Fast Lite)
+// Empirically verified high-quota models supporting native includeThoughts: true
 const GEMINI_MODEL_BUCKETS = [
-  'gemini-3-flash-preview',
+  'gemini-3.6-flash',
   'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
 ];
 
-const THINKING_MODELS = new Set(['gemini-3-flash-preview', 'gemini-3.5-flash']);
+const THINKING_MODELS = new Set([
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+]);
 
 let geminiKeyIdx = 0;
 let geminiModelIdx = 0;
@@ -51,7 +79,7 @@ const rateLimiter = {
   lastMinuteReset: Date.now(),
   lastDayReset: Date.now(),
   cooldownUntil: 0,
-  lastModelUsed: 'gemini-3-flash-preview',
+  lastModelUsed: 'gemini-3.6-flash',
   lastThoughtsTokens: 0,
   auditCache: new Map(),
 };
@@ -90,7 +118,7 @@ function getNextGeminiKeyAndModel(preferThinking = true) {
   const key = GEMINI_KEYS[geminiKeyIdx % GEMINI_KEYS.length];
   let model;
   if (preferThinking) {
-    const thinkingPool = ['gemini-3-flash-preview', 'gemini-3.5-flash'];
+    const thinkingPool = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
     model = thinkingPool[geminiModelIdx % thinkingPool.length];
   } else {
     model = GEMINI_MODEL_BUCKETS[geminiModelIdx % GEMINI_MODEL_BUCKETS.length];
@@ -105,12 +133,17 @@ const USD_TO_INR = 87;
 
 const state = {
   subscribedChatIds: new Set(),
+  thinkSubscribedChatIds: new Set(),
+  thinkBotLastUpdateId: 0,
+  operatorDirectives: [],         // Live natural-language instructions from user on Telegram
+  recentThoughts: [],             // Full Chain-of-Thought history for CLI & @Traderthinkbot
   scannerIntervalMs: 60 * 1000,
   monitorIntervalMs: 30 * 1000,
   sendEveryScanReport: true,
   autoExecuteTrades: true,        // 100% Autonomous execution for high-conviction setups (aiScore >= 8)
   maxConcurrentCryptoPositions: 5,
-  maxConcurrentStockPositions: 4,
+  maxConcurrentBybitStockPositions: 6,
+  maxConcurrentStockPositions: 6,
   lastScanTime: null,
   totalScansRun: 0,
   recentSignals: [],
@@ -120,6 +153,9 @@ const state = {
   bookedPositions: new Set(),
   activeTradeMeta: new Map(),
   activeCryptoTrades: new Map(),
+  bybitStockUniverse: new Map(),  // Dynamically loaded 293 Bybit US Stock Perpetuals (INTU strictly excluded)
+  bybitCryptoUniverse: new Map(), // Dynamically loaded 568 Bybit Crypto USDT Perpetuals
+  lastUniverseRefresh: 0,
   learnedLessons: [],
   symbolStats: new Map(),
   setupStats: new Map(),
@@ -147,6 +183,7 @@ const state = {
     qqqMoveIntraday: 0,
     usMarketOpen: false,
     usMarketRegime: 'CLOSED',
+    activeBias: 'CRYPTO_24_7',
   },
   coordination: {
     activeMode: 'RENDER_CLOUD',
@@ -155,7 +192,7 @@ const state = {
   },
 };
 
-// 20 Liquid 24/7 Linear Crypto Perpetual Pairs on Bybit Demo
+// Fallback seed Crypto list (used only before first dynamic Bybit universe load completes)
 const BYBIT_CRYPTO_WATCHLIST = [
   'SOLUSDT', 'BTCUSDT', 'ETHUSDT', 'DOGEUSDT', 'XRPUSDT',
   'AVAXUSDT', 'LINKUSDT', 'PEPEUSDT', 'SHIBUSDT', 'ADAUSDT',
@@ -163,18 +200,36 @@ const BYBIT_CRYPTO_WATCHLIST = [
   'ARBUSDT', 'OPUSDT', 'LTCUSDT', 'BNBUSDT', 'INJUSDT',
 ];
 
+// Fallback seed Bybit US Stock Perps list (used before dynamic load of all 293 Bybit US Stock Perps)
+const BYBIT_STOCK_SEED_LIST = [
+  'NVDAUSDT', 'TSLAUSDT', 'AAPLUSDT', 'AMDSTOCKUSDT', 'MSFTUSDT',
+  'AMZNUSDT', 'METAUSDT', 'GOOGLUSDT', 'NFLXUSDT', 'PLTRUSDT',
+  'COINUSDT', 'MSTRUSDT', 'SPYUSDT', 'QQQUSDT', 'TQQQUSDT',
+  'AVGOUSDT', 'ARMUSDT', 'SMCIUSDT', 'MUUSDT', 'CRWDUSDT',
+  'PANWUSDT', 'SNOWUSDT', 'UBERUSDT', 'BABAUSDT', 'TSMUSDT', 'ASMLUSDT',
+];
+
 const VALID_BYBIT_CRYPTO_SET = new Set(BYBIT_CRYPTO_WATCHLIST);
 
-// 14 High-Beta US Equities on Alpaca Paper
+// 40 High-Beta Liquid US Equities on Alpaca Paper (STRICTLY EXCLUDING INTU)
 const STOCK_WATCHLIST = [
-  'TSLA', 'NVDA', 'AAPL', 'AMD', 'MSFT', 'AMZN', 'META', 'SPY', 'QQQ',
-  'COIN', 'MSTR', 'PLTR', 'MARA', 'SMCI',
-];
+  'TSLA', 'NVDA', 'AAPL', 'AMD', 'MSFT', 'AMZN', 'META', 'GOOGL', 'NFLX', 'SPY', 'QQQ', 'TQQQ', 'SOXL',
+  'COIN', 'MSTR', 'PLTR', 'MARA', 'SMCI', 'AVGO', 'ARM', 'MU', 'TSM', 'ASML', 'ORCL', 'CRM', 'ADBE',
+  'CRWD', 'PANW', 'SNOW', 'UBER', 'SHOP', 'LLY', 'JPM', 'GS', 'BA', 'CAT', 'XOM', 'CVX', 'BABA', 'HOOD',
+].filter((s) => !isStrictlyBlockedSymbol(s));
 
 const VALID_STOCK_SET = new Set(STOCK_WATCHLIST);
 
+function isBybitStockPerp(symbol) {
+  const clean = String(symbol || '').toUpperCase().trim();
+  if (state.bybitStockUniverse.has(clean)) return true;
+  if (BYBIT_STOCK_SEED_LIST.includes(clean)) return true;
+  return false;
+}
+
 function isUSStock(symbol) {
   const clean = String(symbol || '').toUpperCase().trim();
+  if (isStrictlyBlockedSymbol(clean)) return false;
   return VALID_STOCK_SET.has(clean);
 }
 
@@ -182,9 +237,18 @@ function normalizeSymbol(sym) {
   return String(sym || '').replace('/', '').toUpperCase().trim();
 }
 
-function formatPriceForBybit(price) {
+function formatPriceForBybit(price, symbol = '') {
   const p = Number(price);
   if (isNaN(p) || p <= 0) return '0.00';
+  const inst = state.bybitStockUniverse.get(symbol) || state.bybitCryptoUniverse.get(symbol);
+  if (inst && inst.tickSize) {
+    const tick = Number(inst.tickSize);
+    if (tick > 0) {
+      const decimals = (inst.tickSize.split('.')[1] || '').replace(/0+$/, '').length;
+      const rounded = Math.round(p / tick) * tick;
+      return rounded.toFixed(decimals);
+    }
+  }
   if (p >= 1000) return p.toFixed(1);
   if (p >= 100) return p.toFixed(2);
   if (p >= 1) return p.toFixed(4);
@@ -194,10 +258,17 @@ function formatPriceForBybit(price) {
 
 function resolveBybitSymbol(rawSymbol) {
   let sym = String(rawSymbol || '').toUpperCase().trim();
-  if (VALID_STOCK_SET.has(sym)) return sym;
+  if (isStrictlyBlockedSymbol(sym)) {
+    throw new Error(`STRICT COMPLIANCE BLOCK: ${sym} (Intuit) is permanently restricted and cannot be touched.`);
+  }
+  if (state.bybitStockUniverse.has(sym) || state.bybitCryptoUniverse.has(sym)) return sym;
+  if (VALID_STOCK_SET.has(sym) && !sym.endsWith('USDT')) return sym;
   sym = sym.replace('B-', '').replace('_USDT', '').replace('/USD', '').replace('/USDT', '');
   if (!sym.endsWith('USDT')) {
     sym += 'USDT';
+  }
+  if (isStrictlyBlockedSymbol(sym)) {
+    throw new Error(`STRICT COMPLIANCE BLOCK: ${sym} (Intuit) is permanently restricted and cannot be touched.`);
   }
   return sym;
 }
@@ -206,6 +277,17 @@ function calculateBybitOrderQty(symbol, price, notionalUSD = 250) {
   const norm = String(symbol).toUpperCase().replace('/', '');
   const p = Number(price) > 0 ? Number(price) : 100;
   const rawQty = notionalUSD / p;
+
+  const inst = state.bybitStockUniverse.get(norm) || state.bybitCryptoUniverse.get(norm);
+  if (inst && inst.qtyStep && inst.minOrderQty) {
+    const step = Number(inst.qtyStep);
+    const minQ = Number(inst.minOrderQty);
+    if (step > 0) {
+      const decimals = (inst.qtyStep.split('.')[1] || '').replace(/0+$/, '').length;
+      const stepped = Math.max(minQ, Math.floor(rawQty / step) * step || minQ);
+      return stepped.toFixed(decimals);
+    }
+  }
 
   if (norm.startsWith('BTC')) return Math.max(0.001, Math.round(rawQty * 1000) / 1000).toFixed(3);
   if (norm.startsWith('ETH')) return Math.max(0.01, Math.round(rawQty * 100) / 100).toFixed(2);
@@ -318,19 +400,79 @@ async function getBybitLatestPrice(symbol) {
   return null;
 }
 
+async function refreshBybitInstrumentUniverse() {
+  try {
+    let cursor = '';
+    const allInst = [];
+    do {
+      const q = `category=linear&limit=1000${cursor ? '&cursor=' + encodeURIComponent(cursor) : ''}`;
+      const res = await bybitRequest('/v5/market/instruments-info', 'GET', q);
+      const list = res?.result?.list || [];
+      allInst.push(...list);
+      cursor = res?.result?.nextPageCursor || '';
+    } while (cursor);
+
+    let stockCount = 0;
+    let cryptoCount = 0;
+    for (const inst of allInst) {
+      if (inst.status !== 'Trading' || inst.quoteCoin !== 'USDT') continue;
+      if (
+        isStrictlyBlockedSymbol(inst.symbol, inst.fullName) ||
+        isStrictlyBlockedSymbol(inst.baseCoin, inst.fullName) ||
+        isStrictlyBlockedSymbol(inst.underlyingTicker, inst.fullName)
+      ) {
+        continue; // STRICT COMPLIANCE BAN: NEVER load INTU / Intuit
+      }
+      const meta = {
+        symbol: inst.symbol,
+        baseCoin: inst.baseCoin,
+        underlyingTicker: inst.underlyingTicker || inst.baseCoin,
+        fullName: inst.fullName || inst.baseCoin,
+        symbolType: inst.symbolType || 'crypto',
+        marketRegion: inst.marketRegion || '',
+        maxLeverage: Number(inst.leverageFilter?.maxLeverage || 25),
+        tickSize: inst.priceFilter?.tickSize || '0.01',
+        qtyStep: inst.lotSizeFilter?.qtyStep || '0.01',
+        minOrderQty: inst.lotSizeFilter?.minOrderQty || '0.01',
+      };
+      if (inst.symbolType === 'stock' || inst.marketRegion === 'US') {
+        state.bybitStockUniverse.set(inst.symbol, meta);
+        stockCount += 1;
+      } else {
+        state.bybitCryptoUniverse.set(inst.symbol, meta);
+        cryptoCount += 1;
+      }
+    }
+    state.lastUniverseRefresh = Date.now();
+    console.log(
+      `[TraderService] Dynamic Bybit Universe Loaded: ${stockCount} US Stock Perpetuals (INTU Strictly Blocked) + ${cryptoCount} Crypto USDT Perpetuals`
+    );
+  } catch (err) {
+    console.warn('[TraderService] Error refreshing Bybit instrument universe:', err.message);
+  }
+}
+
 async function placeBybitOrder({ symbol, side, qty, stopLoss, takeProfit, entryPrice }) {
+  if (isStrictlyBlockedSymbol(symbol)) {
+    throw new Error(`STRICT COMPLIANCE BLOCK: ${symbol} (Intuit) is permanently restricted and cannot be traded.`);
+  }
   const normSym = resolveBybitSymbol(symbol);
+  if (isStrictlyBlockedSymbol(normSym)) {
+    throw new Error(`STRICT COMPLIANCE BLOCK: ${normSym} (Intuit) is permanently restricted and cannot be traded.`);
+  }
   const bybitSide = side.toLowerCase() === 'sell' || side.toLowerCase() === 'short' ? 'Sell' : 'Buy';
+  const inst = state.bybitStockUniverse.get(normSym) || state.bybitCryptoUniverse.get(normSym);
+  const targetLev = String(Math.min(25, inst?.maxLeverage || 25));
 
   try {
     await bybitRequest('/v5/position/set-leverage', 'POST', {
       category: 'linear',
       symbol: normSym,
-      buyLeverage: '25',
-      sellLeverage: '25',
+      buyLeverage: targetLev,
+      sellLeverage: targetLev,
     });
   } catch (e) {
-    // Ignore if leverage already 25x
+    // Ignore if leverage already set
   }
 
   const fillPrice = Number(entryPrice) || (await getBybitLatestPrice(normSym)) || 100;
@@ -343,11 +485,11 @@ async function placeBybitOrder({ symbol, side, qty, stopLoss, takeProfit, entryP
   let computedTP;
 
   if (bybitSide === 'Buy') {
-    computedSL = slNum > 0 && slNum < fillPrice ? formatPriceForBybit(slNum) : formatPriceForBybit(fillPrice * 0.988);
-    computedTP = tpNum > fillPrice ? formatPriceForBybit(tpNum) : formatPriceForBybit(fillPrice * 1.023);
+    computedSL = slNum > 0 && slNum < fillPrice ? formatPriceForBybit(slNum, normSym) : formatPriceForBybit(fillPrice * 0.988, normSym);
+    computedTP = tpNum > fillPrice ? formatPriceForBybit(tpNum, normSym) : formatPriceForBybit(fillPrice * 1.023, normSym);
   } else {
-    computedSL = slNum > fillPrice ? formatPriceForBybit(slNum) : formatPriceForBybit(fillPrice * 1.012);
-    computedTP = tpNum > 0 && tpNum < fillPrice ? formatPriceForBybit(tpNum) : formatPriceForBybit(fillPrice * 0.977);
+    computedSL = slNum > fillPrice ? formatPriceForBybit(slNum, normSym) : formatPriceForBybit(fillPrice * 1.012, normSym);
+    computedTP = tpNum > 0 && tpNum < fillPrice ? formatPriceForBybit(tpNum, normSym) : formatPriceForBybit(fillPrice * 0.977, normSym);
   }
 
   const payload = {
@@ -365,6 +507,7 @@ async function placeBybitOrder({ symbol, side, qty, stopLoss, takeProfit, entryP
 
   const res = await bybitRequest('/v5/order/create', 'POST', payload);
   if (res && res.retCode === 0) {
+    const isStockPerp = isBybitStockPerp(normSym);
     return {
       id: res.result.orderId,
       symbol: normSym,
@@ -373,7 +516,7 @@ async function placeBybitOrder({ symbol, side, qty, stopLoss, takeProfit, entryP
       stopLoss: computedSL,
       takeProfit: computedTP,
       entryPrice: fillPrice,
-      exchange: 'Bybit Demo',
+      exchange: isStockPerp ? 'Bybit Demo (25x US Stock Perp)' : 'Bybit Demo (25x Crypto Perp)',
       status: 'filled',
     };
   }
@@ -404,7 +547,7 @@ async function closeBybitPosition(symbol, side, qty) {
 
 /**
  * ============================================================================
- * ALPACA PAPER US EQUITIES ENGINE (14 High-Beta US Stocks)
+ * ALPACA PAPER US EQUITIES ENGINE (40+ High-Beta US Stocks, INTU Strictly Blocked)
  * ============================================================================
  */
 function alpacaHeaders() {
@@ -445,7 +588,7 @@ async function getAlpacaPositions() {
     const res = await fetch(`${APCA_BASE_URL}/v2/positions`, { headers: alpacaHeaders() });
     if (!res.ok) return [];
     const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    return Array.isArray(data) ? data.filter((p) => !isStrictlyBlockedSymbol(p.symbol)) : [];
   } catch (err) {
     console.warn('[TraderService] Alpaca positions error:', err.message);
     return [];
@@ -455,7 +598,8 @@ async function getAlpacaPositions() {
 async function getAlpacaStockSnapshots(symbols = STOCK_WATCHLIST) {
   if (!APCA_KEY || !APCA_SECRET) return {};
   try {
-    const url = `${APCA_DATA_URL}/v2/stocks/snapshots?symbols=${encodeURIComponent(symbols.join(','))}&feed=iex`;
+    const safeSymbols = symbols.filter((s) => !isStrictlyBlockedSymbol(s));
+    const url = `${APCA_DATA_URL}/v2/stocks/snapshots?symbols=${encodeURIComponent(safeSymbols.join(','))}&feed=iex`;
     const res = await fetch(url, { headers: alpacaHeaders() });
     if (!res.ok) return {};
     return await res.json();
@@ -467,6 +611,9 @@ async function getAlpacaStockSnapshots(symbols = STOCK_WATCHLIST) {
 
 async function placeAlpacaPaperOrder({ symbol, qty, notionalUSD, side = 'buy' }) {
   const cleanSym = String(symbol).toUpperCase().trim();
+  if (isStrictlyBlockedSymbol(cleanSym)) {
+    throw new Error(`STRICT COMPLIANCE BLOCK: ${cleanSym} (Intuit) is permanently restricted and cannot be traded.`);
+  }
   const cleanSide = side.toLowerCase() === 'sell' || side.toLowerCase() === 'short' ? 'sell' : 'buy';
 
   const body = {
@@ -532,6 +679,17 @@ async function initDbAndMemory() {
         chat_id BIGINT PRIMARY KEY,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS trader_think_subscribers (
+        chat_id BIGINT PRIMARY KEY,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS trader_operator_directives (
+        id SERIAL PRIMARY KEY,
+        chat_id BIGINT,
+        directive TEXT NOT NULL,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
       CREATE TABLE IF NOT EXISTS trader_journal (
         id SERIAL PRIMARY KEY,
         symbol VARCHAR(32) NOT NULL,
@@ -566,8 +724,22 @@ async function initDbAndMemory() {
 
     const subRes = await pool.query('SELECT chat_id FROM trader_subscribers');
     for (const row of subRes.rows) {
+      if (String(row.chat_id) === '999999') continue;
+      state.subscribedChatIds.add(String(row.chat_id));
+      state.thinkSubscribedChatIds.add(String(row.chat_id));
+    }
+
+    const thinkSubRes = await pool.query('SELECT chat_id FROM trader_think_subscribers');
+    for (const row of thinkSubRes.rows) {
+      if (String(row.chat_id) === '999999') continue;
+      state.thinkSubscribedChatIds.add(String(row.chat_id));
       state.subscribedChatIds.add(String(row.chat_id));
     }
+
+    const dirRes = await pool.query(
+      'SELECT * FROM trader_operator_directives WHERE active = TRUE ORDER BY created_at DESC LIMIT 15'
+    );
+    state.operatorDirectives = dirRes.rows.map((r) => r.directive);
 
     const journalRes = await pool.query('SELECT * FROM trader_journal ORDER BY created_at DESC');
     state.totalWins = 0;
@@ -620,10 +792,13 @@ async function initDbAndMemory() {
       };
     }
 
+    await refreshBybitInstrumentUniverse();
+
     console.log(
-      `[TraderService] Initialized Dual-Engine (Bybit 24/7 Crypto + Alpaca 14 US Stocks) with ` +
+      `[TraderService] Initialized Full-Universe Dual-Engine (${state.bybitStockUniverse.size} Bybit US Stock Perps + ` +
+        `${state.bybitCryptoUniverse.size} Bybit Crypto Perps + ${STOCK_WATCHLIST.length} Alpaca US Stocks) with ` +
         `${GEMINI_KEYS.length} Gemini Thinking keys, ${state.subscribedChatIds.size} subscribers, ` +
-        `${journalRes.rows.length} journal trades, and ${state.learnedLessons.length} self-learning rules.`
+        `${state.operatorDirectives.length} operator directives, and ${state.learnedLessons.length} self-learning rules.`
     );
   } catch (err) {
     console.error('[TraderService] Error initializing DB memory:', err.message);
@@ -693,16 +868,34 @@ async function handoffControl(targetMode = 'RENDER_CLOUD', agentId = 'manual-han
 
 async function saveSubscriber(chatId) {
   try {
+    if (String(chatId) === '999999') return;
     state.subscribedChatIds.add(String(chatId));
+    state.thinkSubscribedChatIds.add(String(chatId));
     await pool.query('INSERT INTO trader_subscribers (chat_id) VALUES ($1) ON CONFLICT DO NOTHING', [chatId]);
+    await pool.query('INSERT INTO trader_think_subscribers (chat_id) VALUES ($1) ON CONFLICT DO NOTHING', [chatId]);
   } catch (err) {
     console.error('[TraderService] Error saving subscriber:', err.message);
   }
 }
 
-async function sendTelegram(method, body) {
+async function saveOperatorDirective(chatId, directiveText) {
+  const clean = String(directiveText || '').trim();
+  if (!clean) return;
   try {
-    const res = await fetch(`${TELEGRAM_API}/${method}`, {
+    state.operatorDirectives.unshift(clean);
+    if (state.operatorDirectives.length > 15) state.operatorDirectives.pop();
+    await pool.query('INSERT INTO trader_operator_directives (chat_id, directive, active) VALUES ($1, $2, TRUE)', [
+      chatId,
+      clean,
+    ]);
+  } catch (err) {
+    console.warn('[TraderService] Error saving operator directive:', err.message);
+  }
+}
+
+async function sendTelegramToApi(baseApiUrl, method, body) {
+  try {
+    const res = await fetch(`${baseApiUrl}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -714,7 +907,7 @@ async function sendTelegram(method, body) {
       if (typeof plainBody.text === 'string') {
         plainBody.text = plainBody.text.replace(/[*_`]/g, '');
       }
-      const retryRes = await fetch(`${TELEGRAM_API}/${method}`, {
+      const retryRes = await fetch(`${baseApiUrl}/${method}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(plainBody),
@@ -728,9 +921,18 @@ async function sendTelegram(method, body) {
   }
 }
 
+async function sendTelegram(method, body) {
+  return sendTelegramToApi(TELEGRAM_API, method, body);
+}
+
+async function sendThinkTelegram(method, body) {
+  return sendTelegramToApi(TELEGRAM_THINK_API, method, body);
+}
+
 async function broadcastTelegram(text) {
   if (state.subscribedChatIds.size === 0) return;
   for (const chatId of state.subscribedChatIds) {
+    if (String(chatId) === '999999') continue;
     await sendTelegram('sendMessage', {
       chat_id: chatId,
       text,
@@ -739,9 +941,42 @@ async function broadcastTelegram(text) {
   }
 }
 
+async function broadcastThinkTelegram(text) {
+  const targets = state.thinkSubscribedChatIds.size > 0 ? state.thinkSubscribedChatIds : state.subscribedChatIds;
+  if (targets.size === 0) return;
+  const chunks = [];
+  if (text.length <= 3900) {
+    chunks.push(text);
+  } else {
+    for (let i = 0; i < text.length; i += 3800) {
+      chunks.push(text.slice(i, i + 3800));
+    }
+  }
+  for (const chatId of targets) {
+    if (String(chatId) === '999999') continue;
+    for (const chunk of chunks) {
+      const res = await sendThinkTelegram('sendMessage', {
+        chat_id: chatId,
+        text: chunk,
+        parse_mode: 'Markdown',
+      });
+      // If user hasn't clicked /start on @Traderthinkbot yet, also mirror to main bot once or fallback
+      if (res && res.error_code === 400 && String(res.description || '').includes('chat not found')) {
+        // Mirror thinking to primary bot until user clicks /start in @Traderthinkbot
+        await sendTelegram('sendMessage', {
+          chat_id: chatId,
+          text: `🧠 *[@Traderthinkbot Thinking Stream]* _(Tap [t.me/Traderthinkbot](https://t.me/Traderthinkbot) -> Start to receive on dedicated bot)_\n\n${chunk}`,
+          parse_mode: 'Markdown',
+        });
+      }
+    }
+  }
+}
+
 async function broadcastTelegramWithMarkup(text, replyMarkup) {
   if (state.subscribedChatIds.size === 0) return;
   for (const chatId of state.subscribedChatIds) {
+    if (String(chatId) === '999999') continue;
     await sendTelegram('sendMessage', {
       chat_id: chatId,
       text,
@@ -752,17 +987,27 @@ async function broadcastTelegramWithMarkup(text, replyMarkup) {
 }
 
 /**
- * Helper to extract text from Gemini response (filtering out internal thinking parts)
+ * Extract BOTH Internal Chain-of-Thought (`p.thought === true`) AND Response Text from Gemini
  */
-function extractGeminiResponseText(data) {
+function extractGeminiThoughtAndText(data) {
   const usage = data?.usageMetadata;
   if (usage?.thoughtsTokenCount !== undefined) {
     rateLimiter.lastThoughtsTokens = usage.thoughtsTokenCount;
   }
   const parts = data?.candidates?.[0]?.content?.parts || [];
-  const textParts = parts.filter((p) => !p.thought && typeof p.text === 'string').map((p) => p.text);
-  if (textParts.length > 0) return textParts.join('\n').trim();
-  return parts[0]?.text?.trim() || '';
+  const thoughtParts = parts.filter((p) => p.thought && typeof p.text === 'string').map((p) => p.text.trim());
+  const textParts = parts.filter((p) => !p.thought && typeof p.text === 'string').map((p) => p.text.trim());
+  const thoughtText = thoughtParts.join('\n\n').trim();
+  const responseText = textParts.length > 0 ? textParts.join('\n').trim() : parts[0]?.text?.trim() || '';
+  return {
+    thoughtText,
+    responseText,
+    thoughtsTokens: usage?.thoughtsTokenCount || 0,
+  };
+}
+
+function extractGeminiResponseText(data) {
+  return extractGeminiThoughtAndText(data).responseText;
 }
 
 /**
@@ -1106,14 +1351,18 @@ async function monitorOngoingTrades() {
 
 /**
  * ============================================================================
- * GEMINI NATIVE THINKING MODE BATCH AUDITOR (4-Key Pool + thinkingBudget: 512)
+ * GEMINI NATIVE THINKING MODE BATCH AUDITOR (4-Key Pool + includeThoughts: true)
+ * - Broadcasts Full Chain-of-Thought Reasoning to @Traderthinkbot
  * ============================================================================
  */
 async function batchAuditCandidatesWithGemini(candidates) {
   if (!candidates || candidates.length === 0) return [];
-  const quota = checkAndConsumeQuota(750);
+  const safeCandidates = candidates.filter((c) => !isStrictlyBlockedSymbol(c.symbol));
+  if (safeCandidates.length === 0) return [];
+
+  const quota = checkAndConsumeQuota(850);
   if (!quota.allowed) {
-    return candidates.map((cand) => ({
+    return safeCandidates.map((cand) => ({
       ...cand,
       aiScore: 8,
       aiThesis: `${cand.setup} [${cand.market.toUpperCase()}]. Quant momentum & macro regime aligned.`,
@@ -1122,7 +1371,7 @@ async function batchAuditCandidatesWithGemini(candidates) {
 
   const { key: geminiKey, model: geminiModel } = getNextGeminiKeyAndModel(true);
   if (!geminiKey) {
-    return candidates.map((cand) => ({
+    return safeCandidates.map((cand) => ({
       ...cand,
       aiScore: 8,
       aiThesis: `${cand.setup} [${cand.market.toUpperCase()}]. High-conviction momentum scalp.`,
@@ -1138,17 +1387,41 @@ async function batchAuditCandidatesWithGemini(candidates) {
             .join('\n')
         : '- Require tight spread, clear orderbook imbalance, and alignment with BTC/SPY macro regime.';
 
-    const listDescriptions = candidates.map((c, i) => {
+    const directivesText =
+      state.operatorDirectives.length > 0
+        ? state.operatorDirectives
+            .slice(0, 5)
+            .map((d, i) => `  ${i + 1}. "${d}"`)
+            .join('\n')
+        : '  - Follow US Stock Priority when US Market is OPEN; compound ₹6,000 -> ₹50,000 safely.';
+
+    const listDescriptions = safeCandidates.map((c, i) => {
       const ob = c.orderbook
         ? `L2 Imbalance ${c.orderbook.imbalance}x, Spread ${c.orderbook.spreadPct}%`
         : 'Liquid IEX Book';
-      return `#${i + 1}: [${c.market.toUpperCase()}] ${c.symbol} (${c.action.toUpperCase()}) Setup: "${c.setup}" | 1h/Intraday Move: ${c.movePct?.toFixed(2) || '0.50'}% | Entry: $${c.entryPrice}, SL: $${c.stopLoss}, TP: $${c.takeProfit} | ${ob}`;
+      return `#${i + 1}: [${c.market.toUpperCase()}] ${c.symbol}${c.fullName ? ` (${c.fullName})` : ''} (${c.action.toUpperCase()}) Setup: "${c.setup}" | Move: ${c.movePct?.toFixed(2) || '0.50'}% | Entry: $${c.entryPrice}, SL: $${c.stopLoss}, TP: $${c.takeProfit} | ${ob}`;
     });
 
-    const prompt = `You are the Chief Quantitative Risk Officer & Momentum Auditor for an Autonomous Dual-Market Desk (Bybit 24/7 Linear Crypto Perps @ 25x + Alpaca US Equities).
+    const isUSOpen = state.macroRegime.usMarketOpen;
+    const marketBiasInstruction = isUSOpen
+      ? `🇺🇸 US STOCK MARKET IS CURRENTLY OPEN (PRIME SESSION - ACTIVE BIAS: US_STOCK_PRIORITY):
+- MANDATORY PRIORITY: Strongly favor and prioritize US Stock setups ([BYBIT_US_STOCK] 25x US Stock Perpetuals & [US_STOCK] Alpaca Equities) over Crypto!
+- During US market hours, institutional liquidity & trend continuation are strongest in US Stocks. Give high conviction (score >= 8) to clean US Stock momentum breakouts, orderbook imbalances, and VWAP reclaims. Only score a Crypto trade >= 8 during US hours if it is an extraordinary A+ outlier.`
+      : `⚡ US STOCK MARKET IS CLOSED (ACTIVE BIAS: CRYPTO_24_7):
+- Focus primary risk budget on 24/7 Bybit Linear Crypto Perpetuals and high-liquidity 24/7 Bybit US Stock Perpetuals with tight spreads.`;
+
+    const prompt = `You are the Chief Quantitative Risk Officer & Momentum Auditor for an Autonomous Dual-Market Desk (${state.bybitStockUniverse.size || 293} Bybit US Stock Perps + ${state.bybitCryptoUniverse.size || 568} Bybit Crypto Perps @ 25x + ${STOCK_WATCHLIST.length} Alpaca US Equities).
+
+STRICT COMPLIANCE RULE: NEVER mention, analyze, recommend, or trade INTU / INTUUSDT (Intuit Inc) under any circumstances.
+
+${marketBiasInstruction}
+
+Live Operator Directives from User (Telegram):
+${directivesText}
+
 Macro Regime Context:
 - BTC 1h Change: ${state.macroRegime.btcMove1h.toFixed(2)}% (${state.macroRegime.btcRegime})
-- US Market (SPY/QQQ): ${state.macroRegime.usMarketOpen ? `OPEN (SPY ${state.macroRegime.spyMoveIntraday.toFixed(2)}%, QQQ ${state.macroRegime.qqqMoveIntraday.toFixed(2)}%)` : 'CLOSED (Pre/Post Market)'}
+- US Market (SPY/QQQ): ${isUSOpen ? `OPEN (SPY ${state.macroRegime.spyMoveIntraday.toFixed(2)}%, QQQ ${state.macroRegime.qqqMoveIntraday.toFixed(2)}%)` : 'CLOSED (Pre/Post Market)'}
 - Fee Hurdle: 0.11% Round-Trip Taker Fee on Bybit (require true continuation momentum, reject wicky fakeouts).
 - Recent Self-Learning Rules from PostgreSQL:
 ${recentLessonsText}
@@ -1159,15 +1432,18 @@ ${listDescriptions.join('\n')}
 Respond ONLY with a valid JSON array of objects having keys:
 - "index": number (1-based index)
 - "score": number (1 to 10; score >= 8 triggers immediate autonomous execution; score 7 sends manual approval card; score < 7 rejects)
-- "thesis": string (1 crisp quantitative sentence explaining macro alignment, L2 imbalance, and fee-adjusted edge)`;
+- "thesis": string (1 crisp quantitative sentence explaining US stock / macro alignment, L2 imbalance, and fee-adjusted edge)`;
 
     const isThinkingModel = THINKING_MODELS.has(geminiModel);
     const generationConfig = {
-      maxOutputTokens: isThinkingModel ? 1024 : 500,
+      maxOutputTokens: isThinkingModel ? 1200 : 600,
       temperature: 0.15,
     };
     if (isThinkingModel) {
-      generationConfig.thinkingConfig = { thinkingBudget: 512 };
+      generationConfig.thinkingConfig = {
+        includeThoughts: true,
+        thinkingBudget: 512,
+      };
     }
 
     const res = await fetch(
@@ -1183,23 +1459,75 @@ Respond ONLY with a valid JSON array of objects having keys:
     );
 
     const data = await res.json();
-    const rawText = extractGeminiResponseText(data);
-    const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-    const cleanJson = jsonMatch ? jsonMatch[0] : rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsedAudits = JSON.parse(cleanJson);
+    const { thoughtText, responseText, thoughtsTokens } = extractGeminiThoughtAndText(data);
+    let parsedAudits = [];
+    try {
+      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+      const rawJsonStr = jsonMatch ? jsonMatch[0] : responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const sanitizedJsonStr = rawJsonStr.replace(/[\u0000-\u001F]+/g, ' ');
+      parsedAudits = JSON.parse(sanitizedJsonStr);
+    } catch (parseErr) {
+      console.warn('[TraderService] JSON parse sanitized fallback:', parseErr.message);
+    }
 
-    return candidates.map((cand, idx) => {
+    const auditedCandidates = safeCandidates.map((cand, idx) => {
       const matchingAudit = Array.isArray(parsedAudits) ? parsedAudits.find((a) => a.index === idx + 1) : null;
       return {
         ...cand,
         aiScore: Number(matchingAudit?.score) || 8,
-        aiThesis: matchingAudit?.thesis || `${cand.setup} aligned with ${state.macroRegime.btcRegime} regime.`,
+        aiThesis: matchingAudit?.thesis || `${cand.setup} aligned with ${isUSOpen ? 'US Stock Priority' : state.macroRegime.btcRegime} regime.`,
         aiModel: geminiModel,
+        aiThought: thoughtText,
       };
     });
+
+    // Save to recentThoughts and broadcast to @Traderthinkbot!
+    const thoughtRecord = {
+      timestamp: new Date().toISOString(),
+      scanNumber: state.totalScansRun,
+      brainMode: state.coordination.activeMode,
+      model: geminiModel,
+      thoughtsTokens,
+      activeBias: isUSOpen ? '🇺🇸 US_STOCK_PRIORITY (Market Open)' : '⚡ CRYPTO_24_7',
+      thoughtProcess:
+        thoughtText ||
+        auditedCandidates.map((c) => `[${c.symbol} (${c.market}) -> ${c.aiScore}/10]: ${c.aiThesis}`).join('\n'),
+      decisions: auditedCandidates.map((c) => ({
+        symbol: c.symbol,
+        market: c.market,
+        action: c.action,
+        score: c.aiScore,
+        thesis: c.aiThesis,
+      })),
+    };
+    state.recentThoughts.unshift(thoughtRecord);
+    if (state.recentThoughts.length > 30) state.recentThoughts.pop();
+
+    const decisionsLines = auditedCandidates
+      .map(
+        (c) =>
+          `• \`${c.symbol}\` [${c.market.toUpperCase()} ${c.action.toUpperCase()}] ➔ *${c.aiScore}/10* ${
+            c.aiScore >= 8 ? '✅ AUTO-EXEC' : c.aiScore >= 7 ? '🟡 CARD' : '❌ SKIP'
+          }\n  _"${c.aiThesis}"_`
+      )
+      .join('\n');
+
+    const thinkMsg =
+      `🧠 *AGY / GEMINI LIVE THINKING STREAM (#${state.totalScansRun})*\n` +
+      `• *Brain:* \`${state.coordination.activeMode}\` | *Model:* \`${geminiModel}\` (${thoughtsTokens} thought tokens)\n` +
+      `• *Active Bias:* *${thoughtRecord.activeBias}*\n` +
+      `• *Universe Scanned:* ${state.bybitStockUniverse.size || 293} Bybit US Stocks + ${STOCK_WATCHLIST.length} Alpaca US Stocks + ${state.bybitCryptoUniverse.size || 568} Crypto Perps _(INTU Blocked)_\n\n` +
+      `💭 *Internal Chain-of-Thought Monologue:*\n` +
+      `${(thoughtRecord.thoughtProcess || '').slice(0, 2200)}\n\n` +
+      `🎯 *Quant Audit Decisions:*\n${decisionsLines}\n\n` +
+      `💬 _Reply to this message with any instruction (e.g., "focus on NVDA/TSLA", "close crypto", "why did you pick X?") to direct the agent!_`;
+
+    await broadcastThinkTelegram(thinkMsg);
+
+    return auditedCandidates;
   } catch (err) {
     console.warn(`[TraderService] Gemini (${geminiModel}) batch audit fallback:`, err.message);
-    return candidates.map((cand) => ({
+    return safeCandidates.map((cand) => ({
       ...cand,
       aiScore: 8,
       aiThesis: `${cand.setup}. Quantitative momentum & orderbook imbalance confirmed.`,
@@ -1210,7 +1538,10 @@ Respond ONLY with a valid JSON array of objects having keys:
 
 /**
  * ============================================================================
- * 1-MINUTE DUAL-ENGINE SCANNER (24/7 Bybit Crypto Perps + Alpaca 14 US Stocks)
+ * 1-MINUTE FULL-UNIVERSE DUAL-ENGINE SCANNER
+ * - Scans ALL 293 Bybit US Stock Perpetuals + 40 Alpaca US Stocks + 568 Bybit Crypto Perps
+ * - Enforces US Stock Market Priority Bias when US Market is OPEN
+ * - Strictly blocks INTU / Intuit everywhere
  * ============================================================================
  */
 async function runMarketScan(isManual = false) {
@@ -1223,6 +1554,11 @@ async function runMarketScan(isManual = false) {
     }
   }
 
+  // Refresh dynamic Bybit universe every 30 minutes or if empty
+  if (state.bybitStockUniverse.size === 0 || Date.now() - state.lastUniverseRefresh > 30 * 60 * 1000) {
+    await refreshBybitInstrumentUniverse();
+  }
+
   state.lastScanTime = new Date();
   state.totalScansRun += 1;
   const now = Date.now();
@@ -1233,11 +1569,14 @@ async function runMarketScan(isManual = false) {
   const clock = await getAlpacaClock();
   const isUSMarketOpen = Boolean(clock && clock.is_open);
   state.macroRegime.usMarketOpen = isUSMarketOpen;
+  state.macroRegime.activeBias = isUSMarketOpen ? 'US_STOCK_PRIORITY' : 'CRYPTO_24_7';
 
   const alpacaOpenPositions = isUSMarketOpen ? await getAlpacaPositions() : [];
   for (const ap of alpacaOpenPositions) {
-    openPositionsMap.set(String(ap.symbol).toUpperCase(), {
-      symbol: String(ap.symbol).toUpperCase(),
+    const apSym = String(ap.symbol).toUpperCase();
+    if (isStrictlyBlockedSymbol(apSym)) continue;
+    openPositionsMap.set(apSym, {
+      symbol: apSym,
       side: ap.side === 'short' ? 'Sell' : 'Buy',
       avgPrice: ap.avg_entry_price,
       markPrice: ap.current_price,
@@ -1247,18 +1586,20 @@ async function runMarketScan(isManual = false) {
     });
   }
 
-  const rawCandidates = [];
+  const rawStockCandidates = [];
+  const rawCryptoCandidates = [];
   const topMoversPreview = [];
+  const bybitStockMoversPreview = [];
 
   // ----------------------------------------------------------------------------
-  // PART A: Scan 20 Bybit 24/7 Linear Crypto Perps (With BTC Macro Regime Gate)
+  // PART A: Scan Full Bybit V5 Linear Universe (293 US Stock Perps + 568 Crypto Perps)
   // ----------------------------------------------------------------------------
   try {
     const tickersRes = await bybitRequest('/v5/market/tickers', 'GET', 'category=linear');
     const tickerList = tickersRes?.result?.list || [];
     const tickerMap = new Map(tickerList.map((t) => [t.symbol, t]));
 
-    // Evaluate BTC Macro Regime first
+    // Evaluate BTC & SPY/QQQ Macro Regime from Bybit Linear Tickers
     const btcTicker = tickerMap.get('BTCUSDT');
     if (btcTicker) {
       const btcLast = Number(btcTicker.lastPrice || btcTicker.markPrice);
@@ -1269,12 +1610,117 @@ async function runMarketScan(isManual = false) {
         btcMove1h <= -0.85 ? 'BEARISH_DUMP' : btcMove1h >= 0.85 ? 'BULLISH_SURGE' : 'NEUTRAL_FLOW';
     }
 
-    const moverList = [];
-    for (const sym of BYBIT_CRYPTO_WATCHLIST) {
+    const spyBybit = tickerMap.get('SPYUSDT');
+    const qqqBybit = tickerMap.get('QQQUSDT');
+    if (spyBybit) {
+      state.macroRegime.spyMoveIntraday = Number(spyBybit.price24hPcnt || 0) * 100;
+    }
+    if (qqqBybit) {
+      state.macroRegime.qqqMoveIntraday = Number(qqqBybit.price24hPcnt || 0) * 100;
+    }
+
+    // 1. Scan ALL 293 Bybit US Stock Perpetuals (`symbolType === 'stock'`, INTU Strictly Excluded!)
+    const stockSymbolsToScan =
+      state.bybitStockUniverse.size > 0 ? Array.from(state.bybitStockUniverse.keys()) : BYBIT_STOCK_SEED_LIST;
+
+    for (const sym of stockSymbolsToScan) {
+      if (isStrictlyBlockedSymbol(sym)) continue;
       const t = tickerMap.get(sym);
       if (!t) continue;
 
       const lastPrice = Number(t.lastPrice || t.markPrice);
+      if (lastPrice <= 0) continue;
+      const prevPrice1h = Number(t.prevPrice1h || lastPrice);
+      const move1h = prevPrice1h > 0 ? ((lastPrice - prevPrice1h) / prevPrice1h) * 100 : 0;
+      const price24h = Number(t.price24hPcnt || 0) * 100;
+      const turnover24h = Number(t.turnover24h || 0);
+      const high24h = Number(t.highPrice24h || lastPrice);
+      const low24h = Number(t.lowPrice24h || lastPrice);
+      const bidSize = Number(t.bid1Size || 1);
+      const askSize = Number(t.ask1Size || 1);
+      const imbalance = bidSize / (askSize || 1);
+      const spreadPct = Number(
+        t.ask1Price && t.bid1Price ? ((Number(t.ask1Price) - Number(t.bid1Price)) / lastPrice) * 100 : 0.02
+      );
+
+      if (turnover24h >= 50000) {
+        bybitStockMoversPreview.push({ sym, move1h, price24h, turnover24h });
+      }
+
+      // Require liquid book & tight spread (<= 0.18%)
+      if (spreadPct > 0.18 || turnover24h < 25000) continue;
+
+      const effectiveMove = Math.abs(move1h) >= 0.08 ? move1h : price24h * 0.25;
+      const isBreakoutLong =
+        (move1h >= 0.12 && imbalance >= 1.05) ||
+        (price24h >= 1.2 && imbalance >= 1.15 && lastPrice >= high24h * 0.975);
+      const isBounceLong = imbalance >= 1.35 && lastPrice >= low24h * 1.005 && move1h >= -0.35;
+
+      const isBreakdownShort =
+        (move1h <= -0.12 && imbalance <= 0.95) ||
+        (price24h <= -1.2 && imbalance <= 0.85 && lastPrice <= low24h * 1.025);
+      const isRejectionShort = imbalance <= 0.75 && lastPrice <= high24h * 0.995 && move1h <= 0.35;
+
+      const decideShort = (isBreakdownShort || isRejectionShort) && (move1h <= 0 || price24h < -0.5);
+      const decideLong = !decideShort && (isBreakoutLong || isBounceLong);
+
+      if (!decideShort && !decideLong) continue;
+
+      const instMeta = state.bybitStockUniverse.get(sym);
+      const action = decideShort ? 'sell' : 'buy';
+      const setupName = decideShort
+        ? 'Bybit 25x US Stock Perp Breakdown (SHORT)'
+        : 'Bybit 25x US Stock Perp Breakout (LONG)';
+
+      const stopLoss = decideShort
+        ? formatPriceForBybit(lastPrice * 1.010, sym)
+        : formatPriceForBybit(lastPrice * 0.990, sym);
+      const takeProfit = decideShort
+        ? formatPriceForBybit(lastPrice * 0.978, sym)
+        : formatPriceForBybit(lastPrice * 1.022, sym);
+      const orderQty = calculateBybitOrderQty(sym, lastPrice, state.paperSliceUSD);
+
+      // Apply 2.5x Priority Multiplier when US Stock Market is OPEN!
+      const usOpenPriorityMultiplier = isUSMarketOpen ? 2.5 : 1.15;
+      const baseStrength = Math.abs(effectiveMove) * 0.018 + Math.min(0.015, Math.abs(imbalance - 1) * 0.004);
+
+      rawStockCandidates.push({
+        market: 'bybit_us_stock',
+        symbol: sym,
+        fullName: instMeta?.fullName || sym.replace('USDT', ''),
+        action,
+        entryPrice: lastPrice,
+        stopLoss: Number(stopLoss),
+        takeProfit: Number(takeProfit),
+        qty: orderQty,
+        movePct: Math.abs(move1h) >= 0.05 ? move1h : price24h,
+        setup: setupName,
+        orderbook: {
+          imbalance: Number(imbalance.toFixed(2)),
+          spreadPct: Number(spreadPct.toFixed(3)),
+          bids: [[t.bid1Price, t.bid1Size]],
+          asks: [[t.ask1Price, t.ask1Size]],
+        },
+        strength: baseStrength * usOpenPriorityMultiplier,
+      });
+    }
+
+    // 2. Scan All 568 Dynamic Bybit Crypto USDT Perpetuals
+    const cryptoSymbolsToScan =
+      state.bybitCryptoUniverse.size > 0 ? Array.from(state.bybitCryptoUniverse.keys()) : BYBIT_CRYPTO_WATCHLIST;
+
+    const moverList = [];
+    for (const sym of cryptoSymbolsToScan) {
+      if (isStrictlyBlockedSymbol(sym) || isBybitStockPerp(sym)) continue;
+      const t = tickerMap.get(sym);
+      if (!t) continue;
+
+      const turnover24h = Number(t.turnover24h || 0);
+      // Filter out illiquid micro-cap crypto pairs (< $1.5M 24h volume unless in core watchlist)
+      if (turnover24h < 1500000 && !VALID_BYBIT_CRYPTO_SET.has(sym)) continue;
+
+      const lastPrice = Number(t.lastPrice || t.markPrice);
+      if (lastPrice <= 0) continue;
       const prevPrice1h = Number(t.prevPrice1h || lastPrice);
       const move1h = prevPrice1h > 0 ? ((lastPrice - prevPrice1h) / prevPrice1h) * 100 : 0;
       const price24h = Number(t.price24hPcnt || 0) * 100;
@@ -1287,27 +1733,27 @@ async function runMarketScan(isManual = false) {
         t.ask1Price && t.bid1Price ? ((Number(t.ask1Price) - Number(t.bid1Price)) / lastPrice) * 100 : 0.02
       );
 
-      moverList.push({ pair: sym, move5m: move1h });
+      moverList.push({ pair: sym, move5m: move1h, turnover24h });
 
       // Skip wide-spread illiquid ticks
       if (spreadPct > 0.12) continue;
 
-      const isBreakoutLong = (move1h >= 0.15 && imbalance >= 1.08) || (price24h > 1.8 && lastPrice >= high24h * 0.985);
-      const isWickBounceLong = imbalance >= 1.30 && lastPrice >= low24h * 1.01 && move1h > -0.4;
+      const isBreakoutLong = (move1h >= 0.20 && imbalance >= 1.10) || (price24h > 2.2 && lastPrice >= high24h * 0.985);
+      const isWickBounceLong = imbalance >= 1.35 && lastPrice >= low24h * 1.01 && move1h > -0.4;
 
-      const isBreakdownShort = (move1h <= -0.15 && imbalance <= 0.92) || (price24h < -1.8 && lastPrice <= low24h * 1.015);
-      const isRejectionShort = imbalance <= 0.78 && lastPrice <= high24h * 0.99 && move1h < 0.4;
+      const isBreakdownShort = (move1h <= -0.20 && imbalance <= 0.90) || (price24h < -2.2 && lastPrice <= low24h * 1.015);
+      const isRejectionShort = imbalance <= 0.75 && lastPrice <= high24h * 0.99 && move1h < 0.4;
 
-      let decideShort = (isBreakdownShort || isRejectionShort) && (move1h < 0 || imbalance < 0.92);
+      let decideShort = (isBreakdownShort || isRejectionShort) && (move1h < 0 || imbalance < 0.90);
       let decideLong = !decideShort && (isBreakoutLong || isWickBounceLong);
 
       // Apply Macro Regime Gatekeeper for Altcoins
       if (sym !== 'BTCUSDT') {
         if (state.macroRegime.btcRegime === 'BEARISH_DUMP' && decideLong && move1h < 1.2) {
-          decideLong = false; // Veto weak altcoin Longs when BTC is dumping
+          decideLong = false;
           if (move1h < 0) decideShort = true;
         } else if (state.macroRegime.btcRegime === 'BULLISH_SURGE' && decideShort && move1h > -1.2) {
-          decideShort = false; // Veto weak altcoin Shorts when BTC is surging
+          decideShort = false;
           if (move1h > 0) decideLong = true;
         }
       }
@@ -1327,14 +1773,17 @@ async function runMarketScan(isManual = false) {
       const obEdge = decideShort ? Math.max(0, 1 - imbalance) * 0.001 : Math.max(0, imbalance - 1) * 0.001;
 
       const stopLoss = decideShort
-        ? formatPriceForBybit(lastPrice * 1.012)
-        : formatPriceForBybit(lastPrice * 0.988);
+        ? formatPriceForBybit(lastPrice * 1.012, sym)
+        : formatPriceForBybit(lastPrice * 0.988, sym);
       const takeProfit = decideShort
-        ? formatPriceForBybit(lastPrice * 0.977)
-        : formatPriceForBybit(lastPrice * 1.023);
+        ? formatPriceForBybit(lastPrice * 0.977, sym)
+        : formatPriceForBybit(lastPrice * 1.023, sym);
       const orderQty = calculateBybitOrderQty(sym, lastPrice, state.paperSliceUSD);
 
-      rawCandidates.push({
+      // De-prioritize Crypto slightly when US Stock Market is OPEN so US Stocks lead
+      const cryptoBiasFactor = isUSMarketOpen ? 0.65 : 1.0;
+
+      rawCryptoCandidates.push({
         market: 'crypto',
         symbol: sym,
         action,
@@ -1350,7 +1799,7 @@ async function runMarketScan(isManual = false) {
           bids: [[t.bid1Price, t.bid1Size]],
           asks: [[t.ask1Price, t.ask1Size]],
         },
-        strength: Math.abs(move1h) * 0.012 + obEdge + learnedBonus,
+        strength: (Math.abs(move1h) * 0.012 + obEdge + learnedBonus) * cryptoBiasFactor,
       });
     }
 
@@ -1359,11 +1808,11 @@ async function runMarketScan(isManual = false) {
       topMoversPreview.push(`${m.pair.replace('USDT', '')} (${m.move5m >= 0 ? '+' : ''}${m.move5m.toFixed(1)}%)`);
     }
   } catch (err) {
-    console.error('[TraderService] Bybit Crypto scan error:', err.message);
+    console.error('[TraderService] Bybit Full-Universe scan error:', err.message);
   }
 
   // ----------------------------------------------------------------------------
-  // PART B: Scan 14 High-Beta US Equities via Alpaca IEX Snapshots
+  // PART B: Scan 40 High-Beta US Equities via Alpaca IEX Snapshots (INTU Blocked)
   // ----------------------------------------------------------------------------
   const stockMoversPreview = [];
   try {
@@ -1388,6 +1837,7 @@ async function runMarketScan(isManual = false) {
       : 'NEUTRAL';
 
     for (const sym of STOCK_WATCHLIST) {
+      if (isStrictlyBlockedSymbol(sym)) continue;
       const snap = snapshots?.[sym];
       if (!snap) continue;
       const lastPrice = Number(snap.latestTrade?.p || snap.minuteBar?.c || snap.dailyBar?.c || 0);
@@ -1399,10 +1849,9 @@ async function runMarketScan(isManual = false) {
 
       stockMoversPreview.push({ sym, dayChangePct });
 
-      // Generate actionable US Stock candidates when US Market is OPEN (or during manual /scan test)
       if (isUSMarketOpen || isManual) {
-        const isBullBreakout = dayChangePct >= 0.60 && minMovePct >= -0.05 && state.macroRegime.spyMoveIntraday > -0.65;
-        const isOversoldBounce = dayChangePct <= -1.50 && minMovePct >= 0.15;
+        const isBullBreakout = dayChangePct >= 0.45 && minMovePct >= -0.08 && state.macroRegime.spyMoveIntraday > -0.85;
+        const isOversoldBounce = dayChangePct <= -1.20 && minMovePct >= 0.10;
 
         if (isBullBreakout || isOversoldBounce) {
           const setupName = isBullBreakout
@@ -1412,7 +1861,7 @@ async function runMarketScan(isManual = false) {
           const takeProfit = Number((lastPrice * 1.018).toFixed(2));
           const qty = Math.max(1, Math.round(state.paperSliceUSD / lastPrice));
 
-          rawCandidates.push({
+          rawStockCandidates.push({
             market: 'us_stock',
             symbol: sym,
             action: 'buy',
@@ -1423,10 +1872,10 @@ async function runMarketScan(isManual = false) {
             movePct: dayChangePct,
             setup: setupName,
             orderbook: {
-              imbalance: 1.25,
-              spreadPct: 0.02,
+              imbalance: 1.35,
+              spreadPct: 0.01,
             },
-            strength: Math.abs(dayChangePct) * 0.01 + 0.003,
+            strength: (Math.abs(dayChangePct) * 0.015 + 0.008) * (isUSMarketOpen ? 2.5 : 1.0),
           });
         }
       }
@@ -1437,9 +1886,18 @@ async function runMarketScan(isManual = false) {
     console.warn('[TraderService] Alpaca US Stock scan error:', err.message);
   }
 
-  // Anti-Martingale / Cooldown Filtering
+  // Combine & Filter Candidates (Enforcing US Stock Priority When US Market is Open: Bybit 25x US Stock Perps + Alpaca US Stocks!)
+  const rawBybitStocks = rawStockCandidates.filter((c) => c.market === 'bybit_us_stock').sort((a, b) => b.strength - a.strength);
+  const rawAlpacaStocks = rawStockCandidates.filter((c) => c.market === 'us_stock').sort((a, b) => b.strength - a.strength);
+  rawCryptoCandidates.sort((a, b) => b.strength - a.strength);
+
+  const combinedRaw = isUSMarketOpen
+    ? [...rawBybitStocks.slice(0, 6), ...rawAlpacaStocks.slice(0, 5), ...rawCryptoCandidates.slice(0, 3)]
+    : [...rawBybitStocks.slice(0, 4), ...rawAlpacaStocks.slice(0, 2), ...rawCryptoCandidates.slice(0, 8)];
+
   const candidates = [];
-  for (const item of rawCandidates) {
+  for (const item of combinedRaw) {
+    if (isStrictlyBlockedSymbol(item.symbol)) continue;
     const existing = openPositionsMap.get(item.symbol);
     const lastAlert = state.alertCooldowns.get(item.symbol) || 0;
     if (!isManual && now - lastAlert < 2 * 60 * 1000) continue;
@@ -1449,7 +1907,7 @@ async function runMarketScan(isManual = false) {
         ...item,
         intent: 'FRESH_ENTRY',
       });
-    } else if (item.market === 'crypto') {
+    } else if (item.market === 'crypto' || item.market === 'bybit_us_stock') {
       const isPosLong = existing.side === 'Buy';
       const isSignalLong = item.action === 'buy';
       const entryPrice = Number(existing.avgPrice);
@@ -1474,16 +1932,34 @@ async function runMarketScan(isManual = false) {
     }
   }
 
-  candidates.sort((a, b) => b.strength - a.strength);
-  const batchToAudit = candidates.slice(0, 5);
+  // When US Market is OPEN, guarantee top 3 Bybit 25x US Stock Perps + top 2 Alpaca US Stocks + top 1 Crypto
+  let batchToAudit;
+  if (isUSMarketOpen) {
+    const bybitStockCands = candidates.filter((c) => c.market === 'bybit_us_stock');
+    const alpacaStockCands = candidates.filter((c) => c.market === 'us_stock');
+    const cryptoCands = candidates.filter((c) => c.market === 'crypto');
+    batchToAudit = [
+      ...bybitStockCands.slice(0, 3),
+      ...alpacaStockCands.slice(0, 2),
+      ...cryptoCands.slice(0, 1),
+    ].slice(0, 6);
+  } else {
+    candidates.sort((a, b) => b.strength - a.strength);
+    batchToAudit = candidates.slice(0, 6);
+  }
+
   const auditedList = await batchAuditCandidatesWithGemini(batchToAudit);
 
   const qualifyingHits = [];
-  let currentCryptoCount = (bybitOpenPositions || []).length;
-  let currentStockCount = (alpacaOpenPositions || []).length;
+  let currentBybitStockCount = (bybitOpenPositions || []).filter((p) => isBybitStockPerp(p.symbol)).length;
+  let currentCryptoCount = (bybitOpenPositions || []).filter((p) => !isBybitStockPerp(p.symbol)).length;
+  let sessionAlpacaStockCount = Array.from(state.activeTradeMeta.values()).filter((m) => m.market === 'us_stock').length;
+
+  // During US Market Open, cap Crypto slots tightly (max 3) and expand Bybit US Stock Perp slots (up to 6)!
+  const effectiveMaxCrypto = isUSMarketOpen ? 3 : state.maxConcurrentCryptoPositions;
 
   for (const cand of auditedList) {
-    if (cand.aiScore < 7) continue;
+    if (cand.aiScore < 7 || isStrictlyBlockedSymbol(cand.symbol)) continue;
 
     state.alertCooldowns.set(cand.symbol, now);
 
@@ -1491,7 +1967,25 @@ async function runMarketScan(isManual = false) {
     let autoExecutedOrder = null;
     if (state.autoExecuteTrades && cand.aiScore >= 8) {
       try {
-        if (cand.market === 'crypto' && currentCryptoCount < state.maxConcurrentCryptoPositions) {
+        if (
+          cand.market === 'bybit_us_stock' &&
+          currentBybitStockCount < state.maxConcurrentBybitStockPositions
+        ) {
+          autoExecutedOrder = await placeBybitOrder({
+            symbol: cand.symbol,
+            side: cand.action,
+            qty: cand.qty,
+            stopLoss: cand.stopLoss,
+            takeProfit: cand.takeProfit,
+            entryPrice: cand.entryPrice,
+          });
+          currentBybitStockCount += 1;
+          state.activeTradeMeta.set(cand.symbol, {
+            symbol: cand.symbol,
+            market: 'bybit_us_stock',
+            setup: cand.setup,
+          });
+        } else if (cand.market === 'crypto' && currentCryptoCount < effectiveMaxCrypto) {
           autoExecutedOrder = await placeBybitOrder({
             symbol: cand.symbol,
             side: cand.action,
@@ -1509,7 +2003,7 @@ async function runMarketScan(isManual = false) {
         } else if (
           cand.market === 'us_stock' &&
           isUSMarketOpen &&
-          currentStockCount < state.maxConcurrentStockPositions
+          sessionAlpacaStockCount < state.maxConcurrentStockPositions
         ) {
           autoExecutedOrder = await placeAlpacaPaperOrder({
             symbol: cand.symbol,
@@ -1517,7 +2011,7 @@ async function runMarketScan(isManual = false) {
             notionalUSD: state.paperSliceUSD,
             side: cand.action,
           });
-          currentStockCount += 1;
+          sessionAlpacaStockCount += 1;
           state.activeTradeMeta.set(cand.symbol, {
             symbol: cand.symbol,
             market: 'us_stock',
@@ -1532,6 +2026,7 @@ async function runMarketScan(isManual = false) {
     const hit = {
       market: cand.market,
       symbol: cand.symbol,
+      fullName: cand.fullName,
       action: cand.action,
       entryPrice: cand.entryPrice,
       stopLoss: cand.stopLoss,
@@ -1561,11 +2056,13 @@ async function runMarketScan(isManual = false) {
 
   // Every-1-Minute Dual-Market Status Report to Telegram
   if (state.sendEveryScanReport && state.totalScansRun % 1 === 0 && state.subscribedChatIds.size > 0) {
-    const totalCryptoOpen = (bybitOpenPositions || []).length;
-    let posSummary = '• *Bybit Crypto Positions:* 0 active\n';
-    if (totalCryptoOpen > 0) {
-      posSummary = `*Bybit Open Crypto Positions (${totalCryptoOpen}):*\n`;
-      for (const p of bybitOpenPositions) {
+    const bybitStockPos = (bybitOpenPositions || []).filter((p) => isBybitStockPerp(p.symbol));
+    const bybitCryptoPos = (bybitOpenPositions || []).filter((p) => !isBybitStockPerp(p.symbol));
+
+    let posSummary = '';
+    if (bybitStockPos.length > 0) {
+      posSummary += `*🇺🇸 Bybit 25x US Stock Perps (${bybitStockPos.length}):*\n`;
+      for (const p of bybitStockPos) {
         const side = p.side === 'Sell' ? 'SHORT' : 'LONG';
         const plUsd = Number(p.unrealisedPnl || 0);
         const plInr = Math.round(plUsd * USD_TO_INR);
@@ -1578,10 +2075,28 @@ async function runMarketScan(isManual = false) {
         posSummary += `  ↳ \`${p.symbol}\` (${side}): ${plPercent >= 0 ? '+' : ''}${plPercent.toFixed(2)}% ($${plUsd.toFixed(2)} / ₹${plInr >= 0 ? '+' : ''}${plInr})\n`;
       }
     }
+    if (bybitCryptoPos.length > 0) {
+      posSummary += `*⚡ Bybit 24/7 Crypto Perps (${bybitCryptoPos.length}):*\n`;
+      for (const p of bybitCryptoPos) {
+        const side = p.side === 'Sell' ? 'SHORT' : 'LONG';
+        const plUsd = Number(p.unrealisedPnl || 0);
+        const plInr = Math.round(plUsd * USD_TO_INR);
+        const entryPrice = Number(p.avgPrice);
+        const markPrice = Number(p.markPrice);
+        const plPercent =
+          p.side === 'Sell'
+            ? ((entryPrice - markPrice) / entryPrice) * 100
+            : ((markPrice - entryPrice) / entryPrice) * 100;
+        posSummary += `  ↳ \`${p.symbol}\` (${side}): ${plPercent >= 0 ? '+' : ''}${plPercent.toFixed(2)}% ($${plUsd.toFixed(2)} / ₹${plInr >= 0 ? '+' : ''}${plInr})\n`;
+      }
+    }
+    if (!posSummary) {
+      posSummary = '• *Bybit Open Positions:* 0 active\n';
+    }
 
     if (alpacaOpenPositions.length > 0) {
-      posSummary += `*Alpaca US Stock Positions (${alpacaOpenPositions.length}):*\n`;
-      for (const sp of alpacaOpenPositions) {
+      posSummary += `*🇺🇸 Alpaca US Stock Positions (${alpacaOpenPositions.length} total, showing top 5):*\n`;
+      for (const sp of alpacaOpenPositions.slice(0, 5)) {
         const plUsd = Number(sp.unrealized_pl || 0);
         const plPct = Number(sp.unrealized_plpc || 0) * 100;
         posSummary += `  ↳ \`${sp.symbol}\` (STOCK): ${plPct >= 0 ? '+' : ''}${plPct.toFixed(2)}% ($${plUsd.toFixed(2)})\n`;
@@ -1591,24 +2106,24 @@ async function runMarketScan(isManual = false) {
     const currentLifelineINR = state.lifelineBaseINR + state.realizedPnlINR;
     const quota = rateLimiter;
     const cryptoPulseText =
-      topMoversPreview.length > 0 ? `🔥 *Crypto Pulse (24/7):* ${topMoversPreview.join(', ')}\n` : '';
+      topMoversPreview.length > 0 ? `🔥 *Crypto Pulse (568 Perps):* ${topMoversPreview.join(', ')}\n` : '';
     const topStocksStr = stockMoversPreview
       .slice(0, 4)
       .map((s) => `${s.sym} (${s.dayChangePct >= 0 ? '+' : ''}${s.dayChangePct.toFixed(1)}%)`)
       .join(', ');
     const stockPulseText = topStocksStr
-      ? `🇺🇸 *US Stocks (${isUSMarketOpen ? 'OPEN' : 'EXT/CLOSED'}):* ${topStocksStr}\n`
+      ? `🇺🇸 *US Stocks (${isUSMarketOpen ? 'OPEN - PRIORITY #1' : 'EXT/CLOSED'} | 293 Bybit + 40 Alpaca):* ${topStocksStr}\n`
       : '';
 
     const summaryReport =
-      `⏱️ *1-MIN DUAL-MARKET AUTONOMOUS REPORT (#${state.totalScansRun})*\n\n` +
+      `⏱️ *1-MIN FULL-UNIVERSE AUTONOMOUS REPORT (#${state.totalScansRun})*\n\n` +
       `🎯 *₹6,000 Strategy Capital:* *₹${currentLifelineINR.toLocaleString()}* / ₹${state.overallGoalINR.toLocaleString()}\n` +
+      `🧭 *Active Desk Bias:* *${isUSMarketOpen ? '🇺🇸 US STOCK MARKET PRIORITY (OPEN)' : '⚡ 24/7 CRYPTO & GLOBAL PERPS'}*\n` +
       `📊 *Scoreboard:* ${state.totalWins}W - ${state.totalLosses}L - ${state.totalBreakevens}BE | *Auto-Exec:* ${state.autoExecuteTrades ? '🟢 ON' : '🟡 MANUAL'}\n` +
-      `🧭 *Macro Regime:* BTC ${state.macroRegime.btcMove1h >= 0 ? '+' : ''}${state.macroRegime.btcMove1h.toFixed(2)}% (${state.macroRegime.btcRegime}) | SPY ${state.macroRegime.spyMoveIntraday >= 0 ? '+' : ''}${state.macroRegime.spyMoveIntraday.toFixed(2)}%\n` +
-      `${cryptoPulseText}` +
       `${stockPulseText}` +
+      `${cryptoPulseText}` +
       `${posSummary}\n` +
-      `🧠 *Thinking Pool (4 Keys):* \`${quota.lastModelUsed}\` (${quota.requestsThisMinute}/${quota.rpmLimit} RPM | ${quota.requestsToday}/${quota.rpdLimit} RPD)`;
+      `🧠 *Thinking Stream:* Live on [@Traderthinkbot](https://t.me/Traderthinkbot) (\`${quota.lastModelUsed}\` | ${quota.lastThoughtsTokens} thought tokens)`;
 
     await broadcastTelegram(summaryReport);
   }
@@ -1626,6 +2141,7 @@ function formatPrice(val) {
 async function notifyTradeOpportunity(signal) {
   const isShort = signal.action === 'sell';
   const isStock = signal.market === 'us_stock';
+  const isBybitStock = signal.market === 'bybit_us_stock' || isBybitStockPerp(signal.symbol);
   const isScaleIn = signal.intent === 'SCALE_IN';
   const sideBadge = isShort ? '🔴 SHORT (SELL)' : '🟢 LONG (BUY)';
   const sideCode = isShort ? 's' : 'b';
@@ -1633,7 +2149,11 @@ async function notifyTradeOpportunity(signal) {
   const stopStr = isStock ? Number(signal.stopLoss).toFixed(2) : formatPrice(signal.stopLoss);
   const targetStr = isStock ? Number(signal.takeProfit).toFixed(2) : formatPrice(signal.takeProfit);
 
-  const exchangeBadge = isStock ? '🇺🇸 ALPACA US STOCK' : '⚡ BYBIT 24/7 PERP';
+  const exchangeBadge = isBybitStock
+    ? '🇺🇸 BYBIT 25x US STOCK PERP'
+    : isStock
+    ? '🇺🇸 ALPACA US STOCK'
+    : '⚡ BYBIT 24/7 CRYPTO PERP';
   const autoOrder = signal.autoExecutedOrder;
 
   const autoBanner = autoOrder
@@ -1643,12 +2163,12 @@ async function notifyTradeOpportunity(signal) {
 
   const headerTitle = isScaleIn
     ? `📈 *SCALE-IN: \`${signal.symbol}\`* [${sideBadge}]`
-    : `${exchangeBadge} [${sideBadge}]: \`${signal.symbol}\``;
+    : `${exchangeBadge} [${sideBadge}]: \`${signal.symbol}\`${signal.fullName ? ` (${signal.fullName})` : ''}`;
 
   const card =
     `${headerTitle}\n\n` +
     `${autoBanner}` +
-    `🧠 *Gemini Thinking Audit (${signal.aiScore}/10 via \`${signal.aiModel || 'gemini-3-flash'}\`):*\n` +
+    `🧠 *Gemini Thinking Audit (${signal.aiScore}/10 via \`${signal.aiModel || 'gemini-3.6-flash'}\`):*\n` +
     `"${signal.aiThesis}"\n\n` +
     `• *Setup:* ${signal.setup}\n` +
     `• *Entry Price:* $${entryStr}\n` +
@@ -1677,7 +2197,194 @@ async function notifyTradeOpportunity(signal) {
 }
 
 /**
- * Telegram Webhook Handler
+ * ============================================================================
+ * INTERACTIVE TWO-WAY OPERATOR INPUT HANDLER (Natural Language -> Thinking + Action)
+ * -Triggered whenever the user replies or types a message on @Traderthinkbot or @Harshtradetbot
+ * ============================================================================
+ */
+async function handleOperatorThinkingInput(chatId, userText, replyViaThinkBot = true) {
+  const sendFn = replyViaThinkBot ? sendThinkTelegram : sendTelegram;
+  const cleanText = String(userText || '').trim();
+  if (!cleanText) return;
+
+  // Save as an operator directive if it looks like an instruction/rule
+  if (!cleanText.startsWith('/')) {
+    await saveOperatorDirective(chatId, cleanText);
+  }
+
+  await sendFn('sendMessage', {
+    chat_id: chatId,
+    text: `🧠 *Agent Thinking on Your Input:* _"${cleanText}"_ ...`,
+    parse_mode: 'Markdown',
+  });
+
+  const [bybitPositions, alpacaPositions, clock] = await Promise.all([
+    getBybitPositions(),
+    getAlpacaPositions(),
+    getAlpacaClock(),
+  ]);
+  const isUSOpen = Boolean(clock && clock.is_open);
+
+  const openBybitStr =
+    (bybitPositions || [])
+      .map((p) => `${p.symbol} (${p.side === 'Sell' ? 'SHORT' : 'LONG'}, Entry $${p.avgPrice}, Mark $${p.markPrice}, PnL $${p.unrealisedPnl})`)
+      .join('; ') || 'None';
+  const openAlpacaStr =
+    (alpacaPositions || [])
+      .slice(0, 8)
+      .map((p) => `${p.symbol} (Qty ${p.qty}, PnL $${p.unrealized_pl})`)
+      .join('; ') || 'None';
+
+  const { key: geminiKey, model: geminiModel } = getNextGeminiKeyAndModel(true);
+  if (!geminiKey) {
+    await sendFn('sendMessage', {
+      chat_id: chatId,
+      text: `✅ Saved your directive: *"${cleanText}"*. It will be applied on every 1-minute scan.`,
+      parse_mode: 'Markdown',
+    });
+    return;
+  }
+
+  const prompt = `You are the Autonomous Dual-Market Trading Agent (${state.bybitStockUniverse.size || 293} Bybit 25x US Stock Perpetuals + ${state.bybitCryptoUniverse.size || 568} Bybit Crypto Perpetuals + ${STOCK_WATCHLIST.length} Alpaca US Equities).
+STRICT COMPLIANCE RULE: NEVER touch, recommend, or trade INTU / INTUUSDT (Intuit Inc) under any circumstances.
+
+Current Desk Context:
+- US Stock Market Open: ${isUSOpen ? 'YES (ACTIVE BIAS: US_STOCK_PRIORITY)' : 'NO (ACTIVE BIAS: CRYPTO_24_7)'}
+- Open Bybit Positions: ${openBybitStr}
+- Open Alpaca Positions: ${openAlpacaStr}
+- Active Operator Directives: ${state.operatorDirectives.slice(0, 5).join(' | ')}
+
+The human operator just sent you this message on Telegram:
+"${cleanText}"
+
+Think deeply step-by-step about the operator's message, how it affects our US Stock vs Crypto positioning, and whether an immediate action should be triggered.
+Respond ONLY with a valid JSON object:
+{
+  "action": "NONE" | "SCAN_NOW" | "BUY_BYBIT" | "SELL_BYBIT" | "CLOSE_BYBIT" | "CLOSE_ALL_CRYPTO" | "CLEAR_DIRECTIVES",
+  "symbol": "optional Bybit symbol like NVDAUSDT or TSLAUSDT or BTCUSDT (never INTU)",
+  "reply": "Clear, direct quantitative response to the operator explaining how you updated your strategy or what action you are taking."
+}`;
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 1200,
+            temperature: 0.2,
+            thinkingConfig: { includeThoughts: true, thinkingBudget: 512 },
+          },
+        }),
+      }
+    );
+
+    const data = await res.json();
+    const { thoughtText, responseText, thoughtsTokens } = extractGeminiThoughtAndText(data);
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { action: 'NONE', reply: responseText };
+
+    let actionResultText = '';
+    if (parsed.action === 'SCAN_NOW') {
+      const hits = await runMarketScan(true);
+      actionResultText = `\n\n⚡ *Triggered Immediate Scan:* ${hits.length} high-conviction setups found.`;
+    } else if ((parsed.action === 'BUY_BYBIT' || parsed.action === 'SELL_BYBIT') && parsed.symbol) {
+      if (isStrictlyBlockedSymbol(parsed.symbol)) {
+        actionResultText = `\n\n⛔ *Compliance Block:* \`${parsed.symbol}\` (Intuit) is strictly prohibited.`;
+      } else {
+        const side = parsed.action === 'SELL_BYBIT' ? 'sell' : 'buy';
+        const normSym = resolveBybitSymbol(parsed.symbol);
+        const order = await placeBybitOrder({ symbol: normSym, side });
+        actionResultText = `\n\n✅ *Executed Operator Order:* ${side.toUpperCase()} \`${normSym}\` (Qty: ${order.qty}, Order ID: \`${order.id}\`)`;
+      }
+    } else if (parsed.action === 'CLOSE_BYBIT' && parsed.symbol) {
+      const normSym = resolveBybitSymbol(parsed.symbol);
+      const pos = (bybitPositions || []).find((p) => p.symbol === normSym);
+      if (pos) {
+        const ok = await closeBybitPosition(normSym, pos.side, pos.size);
+        actionResultText = ok
+          ? `\n\n✅ *Closed Position:* \`${normSym}\``
+          : `\n\n⚠️ Could not close \`${normSym}\`.`;
+      }
+    } else if (parsed.action === 'CLOSE_ALL_CRYPTO') {
+      let closedCount = 0;
+      for (const p of bybitPositions || []) {
+        if (!isBybitStockPerp(p.symbol)) {
+          const ok = await closeBybitPosition(p.symbol, p.side, p.size);
+          if (ok) closedCount += 1;
+        }
+      }
+      actionResultText = `\n\n✅ *Closed ${closedCount} Crypto Perpetual positions* so capital is focused on US Stocks!`;
+    } else if (parsed.action === 'CLEAR_DIRECTIVES') {
+      state.operatorDirectives = [];
+      await pool.query('UPDATE trader_operator_directives SET active = FALSE');
+      actionResultText = `\n\n🧹 *Cleared custom operator directives.*`;
+    }
+
+    const fullReply =
+      `🧠 *AGENT INTERNAL THINKING (\`${geminiModel}\` | ${thoughtsTokens} thought tokens):*\n` +
+      `${(thoughtText || 'Analyzed operator directive against live US Stock & Crypto portfolio.').slice(0, 2200)}\n\n` +
+      `🎯 *AGENT RESPONSE & ACTION:*\n` +
+      `${parsed.reply || 'Directive stored and active across all 1-minute scans.'}` +
+      `${actionResultText}`;
+
+    await sendFn('sendMessage', {
+      chat_id: chatId,
+      text: fullReply,
+      parse_mode: 'Markdown',
+    });
+  } catch (err) {
+    console.warn('[TraderService] Operator thinking input error:', err.message);
+    await sendFn('sendMessage', {
+      chat_id: chatId,
+      text: `✅ *Directive Stored in Brain Memory:* "${cleanText}"\nIt will be injected into every 1-minute scan.`,
+      parse_mode: 'Markdown',
+    });
+  }
+}
+
+/**
+ * Dedicated Webhook Handler for @Traderthinkbot (8836965252:AAFqSAHp02FqZnP7KpiQKMDIcbA9-mB3tbI)
+ */
+async function handleThinkTelegramUpdate(update) {
+  const msg = update?.message;
+  const chatId = msg?.chat?.id;
+  if (!chatId || !msg?.text) return;
+
+  await saveSubscriber(chatId);
+  const text = msg.text.trim();
+
+  if (text.startsWith('/start') || text.startsWith('/help')) {
+    const welcome =
+      `🧠 *AGY & Gemini Live Thinking Channel (@Traderthinkbot) Activated!*\n\n` +
+      `• *Full Market Universe:* **${state.bybitStockUniverse.size || 293} Bybit 25x US Stock Perpetuals** + **${STOCK_WATCHLIST.length} Alpaca US Stocks** + **${state.bybitCryptoUniverse.size || 568} Bybit Crypto Perps**\n` +
+      `• *Compliance Guard:* \`INTU\` (Intuit) is **100% Strictly Blocked** at every layer.\n` +
+      `• *Market-Hours Bias:* Automatically prioritizes **🇺🇸 US Stocks** whenever the US Stock Market is open!\n\n` +
+      `💬 *Two-Way Interactive Brain:*\n` +
+      `Reply or send ANY message in plain English right here (e.g., _"focus on NVDA and TSLA"_, _"close all crypto trades"_, _"why did you pick that setup?"_, _"scan now"_) and I will think through your instruction, store it in PostgreSQL memory, and execute it!`;
+    await sendThinkTelegram('sendMessage', { chat_id: chatId, text: welcome, parse_mode: 'Markdown' });
+    return;
+  }
+
+  if (text === '/scan') {
+    await sendThinkTelegram('sendMessage', {
+      chat_id: chatId,
+      text: '🧠 *Running immediate US-Stock-Prioritized Full-Universe Scan and streaming Chain-of-Thought...*',
+      parse_mode: 'Markdown',
+    });
+    await runMarketScan(true);
+    return;
+  }
+
+  // Any other message on @Traderthinkbot is treated as live operator input for the Thinking Agent!
+  await handleOperatorThinkingInput(chatId, text, true);
+}
+
+/**
+ * Telegram Webhook Handler (@Harshtradetbot)
  */
 async function handleTelegramUpdate(update) {
   if (update.callback_query) {
@@ -1710,10 +2417,18 @@ async function handleTelegramUpdate(update) {
       const takeProfit = parts[5];
       const originalEntryPrice = parts[6];
 
+      if (isStrictlyBlockedSymbol(rawSymbol)) {
+        await sendTelegram('answerCallbackQuery', {
+          callback_query_id: callbackQueryId,
+          text: 'STRICT COMPLIANCE BLOCK: INTU is restricted.',
+        });
+        return;
+      }
+
       const isShort = sideCode === 's';
       const sideBadge = isShort ? '🔴 SHORT (SELL)' : '🟢 LONG (BUY)';
       const cleanSide = isShort ? 'sell' : 'buy';
-      const isStock = isUSStock(rawSymbol);
+      const isStock = isUSStock(rawSymbol) && !String(rawSymbol).toUpperCase().endsWith('USDT');
       const symbol = isStock ? String(rawSymbol).toUpperCase() : resolveBybitSymbol(rawSymbol);
 
       await sendTelegram('answerCallbackQuery', {
@@ -1747,8 +2462,8 @@ async function handleTelegramUpdate(update) {
           });
           state.activeTradeMeta.set(symbol, {
             symbol,
-            market: 'crypto',
-            setup: `1m Bybit Linear Scalp (${isShort ? 'SHORT' : 'LONG'})`,
+            market: isBybitStockPerp(symbol) ? 'bybit_us_stock' : 'crypto',
+            setup: `Bybit 25x Linear Scalp (${isShort ? 'SHORT' : 'LONG'})`,
           });
         }
 
@@ -1786,19 +2501,18 @@ async function handleTelegramUpdate(update) {
 
     if (text.startsWith('/start') || text.startsWith('/help')) {
       const welcome =
-        `🤖 *24/7 Dual-Market Autonomous Trading Desk (Bybit Crypto + Alpaca US Stocks)*\n\n` +
-        `💵 *1:1 Strategy Sizing:* **$250 USD Notional per slice** (25x Isolated on Bybit Perps + $250 Fractional/Whole Shares on Alpaca US Equities).\n` +
-        `🧠 *4-Key Gemini Native Thinking Pool:* Rotates across \`gemini-3-flash-preview\` & \`gemini-3.5-flash\` with \`thinkingBudget: 512\`.\n` +
-        `🛡️ *Two-Stage Fee-Adjusted Breakeven Ratchet:* Covers 0.11% RT taker fees at +0.90% move (+0.20% lock) and ratchets to +0.85% at +1.55% move!\n\n` +
+        `🤖 *24/7 Full-Universe Dual-Market Trading Desk*\n\n` +
+        `🇺🇸 *US Stocks Priority (When Open):* **${state.bybitStockUniverse.size || 293} Bybit 25x US Stock Perpetuals** + **${STOCK_WATCHLIST.length} Alpaca US Stocks** (_INTU Strictly Blocked_).\n` +
+        `⚡ *24/7 Crypto Universe:* **${state.bybitCryptoUniverse.size || 568} Bybit USDT Linear Perpetuals**.\n` +
+        `🧠 *Live Thinking Bot:* Tap **[@Traderthinkbot](https://t.me/Traderthinkbot)** and press **Start** to receive every Chain-of-Thought trace and reply with natural-language instructions!\n\n` +
         `*Commands:*\n` +
-        `• \`/status\` - Live Dual-Market Status, Open Crypto & Stock Positions, Macro Regime\n` +
-        `• \`/scan\` - Force immediate 1-minute Crypto + US Stock scan\n` +
+        `• \`/status\` - Live Dual-Market Status, US Stock & Crypto Positions, Active Bias\n` +
+        `• \`/scan\` - Force immediate Full-Universe scan\n` +
         `• \`/auto on\` | \`/auto off\` - Toggle 100% Autonomous Order Execution\n` +
-        `• \`/brain\` - View 7-Day Accuracy Scoreboard & Learned PostgreSQL Rules\n` +
+        `• \`/brain\` - View 7-Day Accuracy Scoreboard & Learned Rules\n` +
         `• \`/balance\` - View Bybit Demo USDT + Alpaca US Stock Equity\n` +
-        `• \`/trade <SYMBOL> <BUY|SELL>\` - Trigger a manual Crypto or US Stock card\n` +
-        `• \`/mute\` / \`/unmute\` - Toggle 1-minute heartbeat summaries\n` +
-        `• \`/reset\` - Reset journal stats`;
+        `• \`/trade <SYMBOL> <BUY|SELL>\` - Trigger a manual US Stock or Crypto card\n` +
+        `• _Or simply type any natural-language instruction right here!_`;
       await sendTelegram('sendMessage', { chat_id: chatId, text: welcome, parse_mode: 'Markdown' });
       return;
     }
@@ -1807,7 +2521,7 @@ async function handleTelegramUpdate(update) {
       state.autoExecuteTrades = true;
       await sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '🤖 *100% Autonomous Execution ENABLED!* High-conviction setups (`aiScore >= 8`) will execute automatically on Bybit Demo & Alpaca Paper without waiting for button clicks.',
+        text: '🤖 *100% Autonomous Execution ENABLED!* High-conviction setups (`aiScore >= 8`) will execute automatically on Bybit Demo & Alpaca Paper.',
         parse_mode: 'Markdown',
       });
       return;
@@ -1844,14 +2558,20 @@ async function handleTelegramUpdate(update) {
           .join('\n');
       }
 
+      const directivesList =
+        state.operatorDirectives.length > 0
+          ? state.operatorDirectives.slice(0, 5).map((d, i) => `${i + 1}. "${d}"`).join('\n')
+          : '_No custom operator directives yet — reply in @Traderthinkbot to add!_';
+
       const reply =
         `🧠 *DUAL-MARKET SELF-LEARNING BRAIN (4-Key Thinking Pool)*\n\n` +
         `🎯 *₹6,000 Strategy Balance:* *₹${currentLifelineINR.toLocaleString()}* / ₹${state.overallGoalINR.toLocaleString()}\n` +
         `📊 *Record:* ${state.totalWins}W | ${state.totalLosses}L | ${state.totalBreakevens}BE (*${winRate}% Win Rate*)\n` +
         `🔑 *Gemini Pool:* ${GEMINI_KEYS.length} Keys Active | Last Model: \`${rateLimiter.lastModelUsed}\` (Thoughts: ${rateLimiter.lastThoughtsTokens} tokens)\n` +
-        `🔋 *Quota Governor:* ${rateLimiter.requestsThisMinute}/${rateLimiter.rpmLimit} RPM | ${rateLimiter.requestsToday}/${rateLimiter.rpdLimit} RPD\n\n` +
-        `*1. Bayesian Setup Expectancy Matrix:*\n${setupWeightsText}\n` +
-        `*2. Permanent Post-Mortem Rules:*\n${lessonsList}`;
+        `🌐 *Universe:* ${state.bybitStockUniverse.size || 293} Bybit US Stocks + ${STOCK_WATCHLIST.length} Alpaca US Stocks + ${state.bybitCryptoUniverse.size || 568} Crypto Perps\n\n` +
+        `*1. Active Operator Directives:*\n${directivesList}\n\n` +
+        `*2. Bayesian Setup Expectancy Matrix:*\n${setupWeightsText}\n` +
+        `*3. Permanent Post-Mortem Rules:*\n${lessonsList}`;
 
       await sendTelegram('sendMessage', { chat_id: chatId, text: reply, parse_mode: 'Markdown' });
       return;
@@ -1898,17 +2618,18 @@ async function handleTelegramUpdate(update) {
       let reply =
         `🛰️ *DUAL-MARKET AUTONOMOUS DESK STATUS*\n\n` +
         `🎯 *₹6,000 Strategy Live Balance:* *₹${liveLifelineINR.toLocaleString()}* / ₹${state.overallGoalINR.toLocaleString()}\n` +
+        `🧭 *Active Desk Bias:* *${state.macroRegime.usMarketOpen ? '🇺🇸 US STOCK MARKET PRIORITY' : '⚡ 24/7 CRYPTO PERPS'}*\n` +
         `🤖 *Execution Mode:* *${state.autoExecuteTrades ? '100% AUTONOMOUS (Auto-Exec ON)' : 'MANUAL APPROVAL'}*\n` +
         `🔄 *Active Coordinator:* \`${coord.activeMode}\` (${coord.activeAgentId})\n` +
-        `🧠 *Accuracy:* ${state.totalWins}W - ${state.totalLosses}L - ${state.totalBreakevens}BE (*${winRate}%*)\n` +
-        `🔑 *Gemini Thinking Pool:* ${GEMINI_KEYS.length} Keys (\`${rateLimiter.lastModelUsed}\`)\n` +
-        `🧭 *Macro Regime:* BTC ${state.macroRegime.btcMove1h >= 0 ? '+' : ''}${state.macroRegime.btcMove1h.toFixed(2)}% (${state.macroRegime.btcRegime}) | US Market: ${state.macroRegime.usMarketOpen ? '🟢 OPEN' : '🕒 CLOSED'}\n` +
+        `🌐 *Universe:* ${state.bybitStockUniverse.size || 293} Bybit US Stock Perps + ${STOCK_WATCHLIST.length} Alpaca US Stocks + ${state.bybitCryptoUniverse.size || 568} Crypto Perps _(INTU Blocked)_\n` +
+        `🧠 *Thinking Bot:* [@Traderthinkbot](https://t.me/Traderthinkbot) (\`${rateLimiter.lastModelUsed}\`)\n` +
         `• *Last Scan:* #${state.totalScansRun} at ${lastScanStr}\n\n`;
 
       if (bybitPositions.length > 0) {
-        reply += `*Open Bybit Crypto Positions (${bybitPositions.length}):*\n`;
+        reply += `*Open Bybit Positions (${bybitPositions.length}):*\n`;
         for (const p of bybitPositions) {
           const side = p.side === 'Sell' ? 'SHORT' : 'LONG';
+          const tag = isBybitStockPerp(p.symbol) ? '🇺🇸 STOCK PERP' : '⚡ CRYPTO';
           const plUsd = Number(p.unrealisedPnl || 0);
           const entryPrice = Number(p.avgPrice);
           const markPrice = Number(p.markPrice);
@@ -1916,14 +2637,14 @@ async function handleTelegramUpdate(update) {
             p.side === 'Sell'
               ? ((entryPrice - markPrice) / entryPrice) * 100
               : ((markPrice - entryPrice) / entryPrice) * 100;
-          reply += `• \`${p.symbol}\` (${side}): ${plPercent >= 0 ? '+' : ''}${plPercent.toFixed(2)}% ($${plUsd.toFixed(2)})\n`;
+          reply += `• \`${p.symbol}\` [${tag} ${side}]: ${plPercent >= 0 ? '+' : ''}${plPercent.toFixed(2)}% ($${plUsd.toFixed(2)})\n`;
         }
         reply += '\n';
       }
 
       if (alpacaPositions.length > 0) {
-        reply += `*Open Alpaca US Stock Positions (${alpacaPositions.length}):*\n`;
-        for (const sp of alpacaPositions) {
+        reply += `*Open Alpaca US Stock Positions (${alpacaPositions.length} total, top 8):*\n`;
+        for (const sp of alpacaPositions.slice(0, 8)) {
           const plUsd = Number(sp.unrealized_pl || 0);
           const plPct = Number(sp.unrealized_plpc || 0) * 100;
           reply += `• \`${sp.symbol}\` (STOCK): ${plPct >= 0 ? '+' : ''}${plPct.toFixed(2)}% ($${plUsd.toFixed(2)})\n`;
@@ -1945,14 +2666,14 @@ async function handleTelegramUpdate(update) {
     if (text === '/scan') {
       await sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '⏳ *Running immediate Dual-Market scan (20 Bybit Crypto Perps + 14 Alpaca US Stocks) with Gemini Thinking Mode...*',
+        text: `⏳ *Running immediate Full-Universe scan (${state.bybitStockUniverse.size || 293} Bybit US Stock Perps + ${STOCK_WATCHLIST.length} Alpaca US Stocks + ${state.bybitCryptoUniverse.size || 568} Crypto Perps) with US Stock Priority...*`,
         parse_mode: 'Markdown',
       });
       const manualHits = await runMarketScan(true);
       if (!manualHits || manualHits.length === 0) {
         await sendTelegram('sendMessage', {
           chat_id: chatId,
-          text: '🔍 *Manual Scan Completed:* All 20 Crypto Perps & 14 US Stocks scanned. No new setups passed the macro + fee-hurdle filter this minute.',
+          text: '🔍 *Manual Scan Completed:* No new setups scored >= 7/10 this minute.',
           parse_mode: 'Markdown',
         });
       }
@@ -1970,14 +2691,14 @@ async function handleTelegramUpdate(update) {
       let reply = `💼 *DUAL-MARKET PORTFOLIO BALANCES*\n\n`;
       if (bybitBal) {
         reply +=
-          `*1. Bybit Demo (24/7 Crypto Perps):*\n` +
+          `*1. Bybit Demo (293 US Stock Perps + 568 Crypto Perps):*\n` +
           `• *Total Equity:* $${bybitBal.totalEquity.toLocaleString()} USDT\n` +
           `• *Available:* $${bybitBal.totalAvailableBalance.toLocaleString()} USDT\n` +
           `• *Open Perp Positions:* ${bybitPositions.length}\n\n`;
       }
       if (alpacaAcct) {
         reply +=
-          `*2. Alpaca Paper (14 US Equities):*\n` +
+          `*2. Alpaca Paper (${STOCK_WATCHLIST.length} US Equities):*\n` +
           `• *Total Equity:* $${Number(alpacaAcct.equity || 0).toLocaleString()} USD\n` +
           `• *Buying Power:* $${Number(alpacaAcct.buying_power || 0).toLocaleString()} USD\n` +
           `• *Open Stock Positions:* ${alpacaPositions.length}\n`;
@@ -1992,16 +2713,25 @@ async function handleTelegramUpdate(update) {
       if (parts.length < 3) {
         await sendTelegram('sendMessage', {
           chat_id: chatId,
-          text: `⚠️ *Usage:* \`/trade <SYMBOL> <BUY|SELL> [QTY]\`\n_Examples:_ \`/trade SOL BUY\` or \`/trade NVDA BUY\``,
+          text: `⚠️ *Usage:* \`/trade <SYMBOL> <BUY|SELL> [QTY]\`\n_Examples:_ \`/trade NVDAUSDT BUY\` or \`/trade TSLA BUY\``,
           parse_mode: 'Markdown',
         });
         return;
       }
 
       const [, rawSym, side, customQty] = parts;
+      if (isStrictlyBlockedSymbol(rawSym)) {
+        await sendTelegram('sendMessage', {
+          chat_id: chatId,
+          text: `⛔ *STRICT COMPLIANCE BLOCK:* \`${rawSym}\` (Intuit) is permanently restricted and cannot be traded.`,
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+
       const cleanSide = side.toLowerCase() === 'sell' ? 'sell' : 'buy';
       const isShort = cleanSide === 'sell';
-      const isStock = isUSStock(rawSym);
+      const isStock = isUSStock(rawSym) && !String(rawSym).toUpperCase().endsWith('USDT');
       const symbol = isStock ? String(rawSym).toUpperCase() : resolveBybitSymbol(rawSym);
 
       let currentPrice = 100.0;
@@ -2021,7 +2751,7 @@ async function handleTelegramUpdate(update) {
           : calculateBybitOrderQty(symbol, currentPrice, state.paperSliceUSD));
 
       const promptText =
-        `📊 *MANUAL SCALP PROPOSAL [${isStock ? 'US STOCK' : 'BYBIT PERP'}]: \`${symbol}\`*\n\n` +
+        `📊 *MANUAL SCALP PROPOSAL [${isStock ? 'US STOCK' : isBybitStockPerp(symbol) ? 'BYBIT US STOCK PERP' : 'BYBIT CRYPTO PERP'}]: \`${symbol}\`*\n\n` +
         `• *Action:* ${cleanSide.toUpperCase()} ${qty}\n` +
         `• *Live Price:* $${formatPrice(currentPrice)}\n` +
         `• *Stop Loss:* $${formatPrice(stopPrice)}\n` +
@@ -2066,10 +2796,8 @@ async function handleTelegramUpdate(update) {
       return;
     }
 
-    await sendTelegram('sendMessage', {
-      chat_id: chatId,
-      text: `Command not recognized. Type /help, /status, /scan, or /auto on.`,
-    });
+    // Any non-command text on @Harshtradetbot ALSO routes to the interactive Thinking Agent!
+    await handleOperatorThinkingInput(chatId, text, false);
   }
 }
 
@@ -2099,13 +2827,25 @@ async function resetJournalAndBalance() {
   return { clearedRecords };
 }
 
+async function registerThinkBotWebhook() {
+  try {
+    const publicUrl = process.env.API_PUBLIC_URL || 'https://unmute-backend-4x1x.onrender.com';
+    const webhookUrl = `${publicUrl.replace(/\/$/, '')}/api/trader/think-webhook`;
+    const res = await sendThinkTelegram('setWebhook', { url: webhookUrl });
+    console.log(`[TraderService] Registered @Traderthinkbot webhook (${webhookUrl}):`, JSON.stringify(res));
+  } catch (err) {
+    console.warn('[TraderService] Could not register @Traderthinkbot webhook:', err.message);
+  }
+}
+
 let loopsStarted = false;
 
 async function startBackgroundLoops() {
   if (loopsStarted) return;
   loopsStarted = true;
-  console.log(`[TraderService] Starting Dual-Market 1-Minute Scanner (60s) & 2-Stage Ratchet Monitor (30s)...`);
+  console.log(`[TraderService] Starting Full-Universe Dual-Market 1-Minute Scanner (60s) & 2-Stage Ratchet Monitor (30s)...`);
   await initDbAndMemory();
+  await registerThinkBotWebhook();
 
   setTimeout(() => {
     runMarketScan().catch((err) => console.error('[TraderService] Initial auto-scan error:', err));
@@ -2127,6 +2867,11 @@ if (process.env.NODE_ENV !== 'test') {
 module.exports = {
   startBackgroundLoops,
   handleTelegramUpdate,
+  handleThinkTelegramUpdate,
+  handleOperatorThinkingInput,
+  isStrictlyBlockedSymbol,
+  isBybitStockPerp,
+  refreshBybitInstrumentUniverse,
   getBybitWalletBalance,
   getBybitPositions,
   getBybitLatestPrice,
@@ -2144,6 +2889,7 @@ module.exports = {
   runMarketScan,
   monitorOngoingTrades,
   resetJournalAndBalance,
+  broadcastThinkTelegram,
   GEMINI_KEYS,
   GEMINI_MODEL_BUCKETS,
   rateLimiter,

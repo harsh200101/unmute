@@ -5,7 +5,7 @@ const router = express.Router();
 const traderService = require('../services/traderService');
 
 /**
- * Telegram Webhook endpoint.
+ * Telegram Webhook endpoint (@Harshtradetbot).
  */
 router.post('/webhook', async (req, res) => {
   res.status(200).json({ ok: true });
@@ -16,6 +16,40 @@ router.post('/webhook', async (req, res) => {
     }
   } catch (err) {
     console.error('[TraderRoute] Error processing webhook:', err);
+  }
+});
+
+/**
+ * Dedicated Thinking Bot Webhook endpoint (@Traderthinkbot).
+ */
+router.post('/think-webhook', async (req, res) => {
+  res.status(200).json({ ok: true });
+
+  try {
+    if (req.body) {
+      await traderService.handleThinkTelegramUpdate(req.body);
+    }
+  } catch (err) {
+    console.error('[TraderRoute] Error processing think-webhook:', err);
+  }
+});
+
+/**
+ * Live Chain-of-Thought History & Operator Directives endpoint
+ */
+router.get('/thoughts', async (_req, res) => {
+  try {
+    const coordination = await traderService.getCoordinationState();
+    res.json({
+      ok: true,
+      activeMode: coordination.activeMode,
+      activeAgentId: coordination.activeAgentId,
+      activeBias: traderService.state.macroRegime.activeBias,
+      operatorDirectives: traderService.state.operatorDirectives,
+      thoughts: traderService.state.recentThoughts,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
@@ -48,6 +82,13 @@ router.get('/status', async (_req, res) => {
         breakevens: traderService.state.totalBreakevens,
       },
       macroRegime: traderService.state.macroRegime,
+      universe: {
+        bybitUSStockPerpsCount: traderService.state.bybitStockUniverse.size || 293,
+        bybitCryptoPerpsCount: traderService.state.bybitCryptoUniverse.size || 568,
+        alpacaUSStocksCount: 40,
+        strictlyBlockedCompliance: ['INTU', 'INTUUSDT', 'INTUIT'],
+      },
+      operatorDirectives: traderService.state.operatorDirectives,
       coordination,
       geminiPool: {
         activeKeysCount: traderService.GEMINI_KEYS.length,
