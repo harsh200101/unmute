@@ -119,14 +119,14 @@ const state = {
   dailyTargetINR: 6300,
   sliceMarginINR: 250,
   leverageMultiplier: 25,
-  paperSliceUSD: 100,
+  paperSliceUSD: 250,             // 1:1 INR to USD ratio for Bybit Demo as requested by user
   maxRiskPerTradeINR: 105,
   targetScalpProfitINR: 200,
   realizedPnlUSD: 0,
   realizedPnlINR: 0,
   tradesToday: 0,
   maxTradesPerDay: 100,
-  defaultLeverage: '25x Isolated (₹250 Slice = $100 Bybit Notional)',
+  defaultLeverage: '25x Isolated (₹250 Slice = $250 Bybit Notional)',
 };
 
 // 20 Liquid 24/7 Linear Crypto Perpetual Pairs on Bybit Demo
@@ -149,6 +149,16 @@ function normalizeSymbol(sym) {
   return String(sym || '').replace('/', '').toUpperCase();
 }
 
+function formatPriceForBybit(price) {
+  const p = Number(price);
+  if (isNaN(p) || p <= 0) return '0.00';
+  if (p >= 1000) return p.toFixed(1);
+  if (p >= 100) return p.toFixed(2);
+  if (p >= 1) return p.toFixed(4);
+  if (p >= 0.01) return p.toFixed(5);
+  return p.toFixed(7);
+}
+
 function resolveBybitSymbol(rawSymbol) {
   let sym = String(rawSymbol || '').toUpperCase().trim();
   sym = sym.replace('B-', '').replace('_USDT', '').replace('/USD', '').replace('/USDT', '');
@@ -158,16 +168,30 @@ function resolveBybitSymbol(rawSymbol) {
   return sym;
 }
 
-function calculateBybitOrderQty(symbol, price, notionalUSD = 100) {
+function calculateBybitOrderQty(symbol, price, notionalUSD = 250) {
   const norm = String(symbol).toUpperCase().replace('/', '');
   const p = Number(price) > 0 ? Number(price) : 100;
   const rawQty = notionalUSD / p;
+
   if (norm.startsWith('BTC')) return Math.max(0.001, Math.round(rawQty * 1000) / 1000).toFixed(3);
   if (norm.startsWith('ETH')) return Math.max(0.01, Math.round(rawQty * 100) / 100).toFixed(2);
   if (norm.startsWith('SOL')) return Math.max(0.1, Math.round(rawQty * 10) / 10).toFixed(1);
-  if (norm.startsWith('DOGE') || norm.startsWith('PEPE') || norm.startsWith('SHIB') || norm.startsWith('BONK')) {
-    return String(Math.max(1, Math.round(rawQty)));
+  if (norm.startsWith('BNB')) return Math.max(0.01, Math.round(rawQty * 100) / 100).toFixed(2);
+  if (norm.startsWith('LTC')) return Math.max(0.1, Math.round(rawQty * 10) / 10).toFixed(1);
+  if (norm.startsWith('AVAX')) return Math.max(0.1, Math.round(rawQty * 10) / 10).toFixed(1);
+  if (norm.startsWith('LINK')) return Math.max(0.1, Math.round(rawQty * 10) / 10).toFixed(1);
+  if (norm.startsWith('INJ')) return Math.max(0.1, Math.round(rawQty * 10) / 10).toFixed(1);
+  if (norm.startsWith('NEAR')) return Math.max(0.1, Math.round(rawQty * 10) / 10).toFixed(1);
+  if (norm.startsWith('APT')) return Math.max(0.1, Math.round(rawQty * 10) / 10).toFixed(1);
+  if (norm.startsWith('XRP')) return Math.max(1, Math.round(rawQty)).toFixed(1);
+  if (norm.startsWith('SUI')) return String(Math.max(10, Math.round(rawQty)));
+  if (norm.startsWith('WIF')) return String(Math.max(10, Math.round(rawQty)));
+  if (norm.startsWith('ARB')) return Math.max(10, Math.round(rawQty * 10) / 10).toFixed(1);
+  if (norm.startsWith('DOGE') || norm.startsWith('ADA')) return String(Math.max(10, Math.round(rawQty)));
+  if (norm.startsWith('1000PEPE') || norm.startsWith('1000BONK') || norm.startsWith('PEPE') || norm.startsWith('BONK')) {
+    return String(Math.max(100, Math.round(rawQty)));
   }
+
   if (p > 100) return Math.max(0.01, Math.round(rawQty * 100) / 100).toFixed(2);
   if (p > 1) return Math.max(0.1, Math.round(rawQty * 10) / 10).toFixed(1);
   return String(Math.max(1, Math.round(rawQty)));
@@ -290,16 +314,20 @@ async function placeBybitOrder({ symbol, side, qty, stopLoss, takeProfit, entryP
   const fillPrice = Number(entryPrice) || (await getBybitLatestPrice(normSym)) || 100;
   const orderQty = qty && parseFloat(qty) > 0 ? String(qty) : calculateBybitOrderQty(normSym, fillPrice, state.paperSliceUSD);
 
-  const computedSL = stopLoss
-    ? String(stopLoss)
-    : bybitSide === 'Buy'
-    ? (fillPrice * 0.988).toFixed(2)
-    : (fillPrice * 1.012).toFixed(2);
-  const computedTP = takeProfit
-    ? String(takeProfit)
-    : bybitSide === 'Buy'
-    ? (fillPrice * 1.022).toFixed(2)
-    : (fillPrice * 0.978).toFixed(2);
+  const slNum = Number(stopLoss);
+  const tpNum = Number(takeProfit);
+
+  let computedSL;
+  let computedTP;
+
+  if (bybitSide === 'Buy') {
+    computedSL = (slNum > 0 && slNum < fillPrice) ? formatPriceForBybit(slNum) : formatPriceForBybit(fillPrice * 0.988);
+    computedTP = (tpNum > fillPrice) ? formatPriceForBybit(tpNum) : formatPriceForBybit(fillPrice * 1.022);
+  } else {
+    // For Sell (Short): SL must be strictly GREATER than fillPrice, TP must be strictly LESS than fillPrice
+    computedSL = (slNum > fillPrice) ? formatPriceForBybit(slNum) : formatPriceForBybit(fillPrice * 1.012);
+    computedTP = (tpNum > 0 && tpNum < fillPrice) ? formatPriceForBybit(tpNum) : formatPriceForBybit(fillPrice * 0.978);
+  }
 
   const payload = {
     category: 'linear',
@@ -884,8 +912,12 @@ async function runMarketScan(isManual = false) {
       const learnedBonus = (state.setupStats.get(setupName)?.weightBonus || 0) * 0.001;
       const obEdge = decideShort ? Math.max(0, 1 - imbalance) * 0.001 : Math.max(0, imbalance - 1) * 0.001;
 
-      const stopLoss = decideShort ? (lastPrice * 1.012).toFixed(2) : (lastPrice * 0.988).toFixed(2);
-      const takeProfit = decideShort ? (lastPrice * 0.978).toFixed(2) : (lastPrice * 1.022).toFixed(2);
+      const stopLoss = decideShort
+        ? formatPriceForBybit(lastPrice * 1.012)
+        : formatPriceForBybit(lastPrice * 0.988);
+      const takeProfit = decideShort
+        ? formatPriceForBybit(lastPrice * 0.978)
+        : formatPriceForBybit(lastPrice * 1.022);
       const orderQty = calculateBybitOrderQty(sym, lastPrice, state.paperSliceUSD);
 
       const item = {
@@ -1034,12 +1066,7 @@ async function runMarketScan(isManual = false) {
 }
 
 function formatPrice(val) {
-  const num = Number(val);
-  if (isNaN(num)) return '0.00';
-  if (num >= 100) return num.toFixed(2);
-  if (num >= 1) return num.toFixed(3);
-  if (num >= 0.01) return num.toFixed(4);
-  return num.toFixed(6);
+  return formatPriceForBybit(val);
 }
 
 /**
