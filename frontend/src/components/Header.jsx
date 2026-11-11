@@ -53,7 +53,7 @@ export default function Header() {
   ] : [];
 
   return (
-    <header className="glass border-b border-border sticky top-0 z-30">
+    <header className="glass border-b border-border sticky top-0 z-30 pt-[env(safe-area-inset-top,0px)]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
         <Link to="/" className="flex items-center gap-2 shrink-0 group" aria-label="unmute — home">
           <Logo size={32} className="transition-transform group-hover:scale-105" />
@@ -120,10 +120,10 @@ export default function Header() {
         <>
           {/* Backdrop — tap to close */}
           <div
-            className="sm:hidden fixed inset-0 top-14 bg-foreground/40 z-20"
+            className="sm:hidden fixed inset-0 top-[calc(3.5rem+env(safe-area-inset-top,0px))] bg-foreground/40 z-20"
             onClick={() => setMenuOpen(false)}
           />
-          <div className="sm:hidden absolute left-0 right-0 top-14 z-30 bg-popover text-popover-foreground border-b border-border shadow-lg">
+          <div className="sm:hidden absolute left-0 right-0 top-full z-30 bg-popover text-popover-foreground border-b border-border shadow-lg">
             <nav className="px-4 py-3 flex flex-col gap-1">
               {navItems.map((it) => (
                 <MobileNavItem key={it.to} to={it.to}>{it.label}</MobileNavItem>

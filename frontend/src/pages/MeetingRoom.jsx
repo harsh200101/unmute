@@ -351,7 +351,7 @@ export default function MeetingRoom() {
       <div className="flex-1 relative flex flex-col min-w-0">
         {/* Floating HUD pills, top-left. Glassmorphism (backdrop-blur)
             looks soft over the dark video background. */}
-        <div className="absolute top-3 left-3 right-3 z-20 pointer-events-none flex flex-wrap items-start justify-between gap-2">
+        <div className="absolute top-[calc(0.75rem+env(safe-area-inset-top,0px))] left-3 right-3 z-20 pointer-events-none flex flex-wrap items-start justify-between gap-2">
           <div className="flex flex-wrap items-start gap-2">
             <HUDPills billing={billing} meta={meta} />
           </div>

@@ -234,7 +234,7 @@ export default function MentorApply() {
         nextDisabled={isFinalStep && !agreedToMentorTOS}
         size="default"
         footerContent={
-          <Link to="/terms" target="_blank" className="inline-flex items-center gap-1 text-primary hover:underline">
+          <Link to="/terms" className="inline-flex items-center gap-1 text-primary hover:underline">
             Mentor terms <ArrowUpRight size={14} />
           </Link>
         }
@@ -498,9 +498,9 @@ export default function MentorApply() {
                   <li>I will <strong>not</strong> use clinical medical claims in my profile or sessions. Profiles violating this are auto-blocked.</li>
                   <li>I am an independent mentor — not an employee of unmute.</li>
                   <li>If a mentee shows signs of crisis, I will refer them to the{' '}
-                    <Link to="/crisis" target="_blank" className="underline font-semibold">crisis resources</Link>.
+                    <Link to="/crisis" className="underline font-semibold">crisis resources</Link>.
                   </li>
-                  <li>I have read and accept the <Link to="/terms" target="_blank" className="underline font-semibold">Terms of Service</Link> and <Link to="/privacy" target="_blank" className="underline font-semibold">Privacy Policy</Link>.</li>
+                  <li>I have read and accept the <Link to="/terms" className="underline font-semibold">Terms of Service</Link> and <Link to="/privacy" className="underline font-semibold">Privacy Policy</Link>.</li>
                 </ul>
                 <label className="mt-5 flex items-start gap-2.5 text-sm cursor-pointer pt-3 border-t border-amber-200/50 dark:border-amber-500/20">
                   <input

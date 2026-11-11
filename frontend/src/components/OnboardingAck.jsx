@@ -98,7 +98,7 @@ export default function OnboardingAck() {
         </label>
 
         <div className="mt-5 flex justify-end items-center gap-3">
-          <Link to="/terms" target="_blank" className="text-xs text-slate-500 dark:text-slate-400 hover:underline">
+          <Link to="/terms" className="text-xs text-slate-500 dark:text-slate-400 hover:underline">
             Read full terms
           </Link>
           <Button onClick={accept} loading={busy} disabled={!understand}>

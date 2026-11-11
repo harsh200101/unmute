@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import ProtectedRoute, { PublicOnly } from './components/ProtectedRoute.jsx';
@@ -42,6 +44,12 @@ export default function App() {
   const navigate = useNavigate();
   useEffect(() => {
     window.__unmuteNavigate = navigate;
+
+    if (Capacitor.isNativePlatform()) {
+      StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+      StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+      StatusBar.setBackgroundColor({ color: '#0f172a' }).catch(() => {});
+    }
 
     // Listen for custom scheme deep links (e.g. com.unmute.app://oauth/callback?...)
     let appUrlHandle = null;
