@@ -234,6 +234,9 @@ const state = {
     usMarketRegime: 'CLOSED',
     activeBias: 'CRYPTO_24_7',
   },
+  isPaused: false,
+  pauseReason: null,
+  isQuietMarket: false,
   coordination: {
     activeMode: 'RENDER_CLOUD',
     lastHeartbeat: new Date(),
@@ -785,10 +788,14 @@ async function initDbAndMemory() {
         active_mode VARCHAR(32) NOT NULL DEFAULT 'RENDER_CLOUD',
         last_heartbeat TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         active_agent_id VARCHAR(64) DEFAULT 'render-primary',
+        is_paused BOOLEAN DEFAULT FALSE,
+        pause_reason TEXT,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-      INSERT INTO desk_coordination (id, active_mode, last_heartbeat, active_agent_id)
-      VALUES (1, 'RENDER_CLOUD', NOW(), 'render-primary')
+      ALTER TABLE desk_coordination ADD COLUMN IF NOT EXISTS is_paused BOOLEAN DEFAULT FALSE;
+      ALTER TABLE desk_coordination ADD COLUMN IF NOT EXISTS pause_reason TEXT;
+      INSERT INTO desk_coordination (id, active_mode, last_heartbeat, active_agent_id, is_paused)
+      VALUES (1, 'RENDER_CLOUD', NOW(), 'render-primary', FALSE)
       ON CONFLICT (id) DO NOTHING;
     `);
 
@@ -880,6 +887,10 @@ async function getCoordinationState() {
     const res = await pool.query('SELECT * FROM desk_coordination WHERE id = 1');
     if (res.rows[0]) {
       const row = res.rows[0];
+      if (row.is_paused !== undefined && row.is_paused !== null) {
+        state.isPaused = Boolean(row.is_paused);
+        state.pauseReason = row.pause_reason || null;
+      }
       const ageSec = (Date.now() - new Date(row.last_heartbeat).getTime()) / 1000;
       if (row.active_mode === 'LOCAL_AGY' && ageSec > 90) {
         // Auto-failover back to RENDER_CLOUD if laptop heartbeat expired (>90s)
@@ -908,6 +919,22 @@ async function getCoordinationState() {
     console.warn('[TraderService] Coordination state read error:', err.message);
   }
   return state.coordination;
+}
+
+async function setDeskPauseState(isPaused, reason = 'Operator directive') {
+  state.isPaused = Boolean(isPaused);
+  state.pauseReason = state.isPaused ? reason : null;
+  try {
+    await pool.query(
+      `UPDATE desk_coordination
+       SET is_paused = $1, pause_reason = $2, updated_at = NOW()
+       WHERE id = 1`,
+      [state.isPaused, state.pauseReason]
+    );
+  } catch (err) {
+    console.warn('[TraderService] Pause state persistence error:', err.message);
+  }
+  return { isPaused: state.isPaused, pauseReason: state.pauseReason };
 }
 
 async function updateHeartbeat(mode = 'LOCAL_AGY', agentId = 'laptop-agy') {
@@ -1425,12 +1452,13 @@ async function monitorOngoingTrades() {
  * - Broadcasts Full Chain-of-Thought Reasoning to @Traderthinkbot
  * ============================================================================
  */
-async function batchAuditCandidatesWithGemini(candidates) {
+async function batchAuditCandidatesWithGemini(candidates, stage = 'TRADE_ENTRY_AUDIT') {
   if (!candidates || candidates.length === 0) return [];
   const safeCandidates = candidates.filter((c) => !isStrictlyBlockedSymbol(c.symbol));
   if (safeCandidates.length === 0) return [];
 
-  const quota = checkAndConsumeQuota(850);
+  const estimatedTokens = stage === 'ROUTINE_MONITOR' ? 350 : 850;
+  const quota = checkAndConsumeQuota(estimatedTokens);
   if (!quota.allowed) {
     return safeCandidates.map((cand) => ({
       ...cand,
@@ -1439,7 +1467,7 @@ async function batchAuditCandidatesWithGemini(candidates) {
     }));
   }
 
-  const { key: geminiKey, model: geminiModel, generationConfig } = getAdaptiveModelConfig('TRADE_ENTRY_AUDIT');
+  const { key: geminiKey, model: geminiModel, generationConfig } = getAdaptiveModelConfig(stage);
   if (!geminiKey) {
     return safeCandidates.map((cand) => ({
       ...cand,
@@ -1626,6 +1654,12 @@ Respond ONLY with a valid JSON array of objects having keys:
  * ============================================================================
  */
 async function runMarketScan(isManual = false) {
+  // Check if desk is stopped / paused via /stop
+  if (state.isPaused && !isManual) {
+    console.log(`[TraderService] Desk is PAUSED (${state.pauseReason || 'via /stop'}). Skipping automated scan.`);
+    return [];
+  }
+
   // Check Hybrid Coordination: If Render Cloud is running and Local Laptop AGY holds an active lease (<90s old), yield!
   if (!isManual && process.env.IS_LOCAL_DAEMON !== 'true') {
     const coord = await getCoordinationState();
@@ -2029,7 +2063,18 @@ async function runMarketScan(isManual = false) {
     batchToAudit = candidates.slice(0, 6);
   }
 
-  const auditedList = await batchAuditCandidatesWithGemini(batchToAudit);
+  // Dynamic Volatility & Quiet Market Detection:
+  // When market is quiet/low-volume, route to ROUTINE_MONITOR (0 thinking tokens on free flash-lite).
+  // When US market is open or explosive breakout occurs, escalate to TRADE_ENTRY_AUDIT (1024 thinking tokens).
+  state.isQuietMarket = batchToAudit.length === 0;
+  const maxStrength = batchToAudit.reduce((max, c) => Math.max(max, c.strength || 0), 0);
+  const isHighImpactEvent =
+    isUSMarketOpen ||
+    maxStrength >= 0.035 ||
+    batchToAudit.some((c) => Math.abs(c.movePct || 0) >= 1.5 || (c.orderbook?.imbalance || 1) >= 2.0);
+  const auditStage = isHighImpactEvent ? 'TRADE_ENTRY_AUDIT' : 'ROUTINE_MONITOR';
+
+  const auditedList = await batchAuditCandidatesWithGemini(batchToAudit, auditStage);
 
   const qualifyingHits = [];
   let currentBybitStockCount = (bybitOpenPositions || []).filter((p) => isBybitStockPerp(p.symbol)).length;

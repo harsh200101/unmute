@@ -4,7 +4,7 @@ import { Preferences } from '@capacitor/preferences';
 import { App } from '@capacitor/app';
 import { setAccessToken, onAuthChange } from '../api/client.js';
 import { auth as authApi, me as meApi } from '../api/endpoints.js';
-import { initPushNotifications } from '../services/pushNotificationService.js';
+import { initPushNotifications, resetPushNotifications } from '../services/pushNotificationService.js';
 
 const AuthContext = createContext(null);
 
@@ -148,6 +148,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(async () => {
+    resetPushNotifications();
     try { await authApi.logout(); } catch (_) {}
     await clearSession();
   }, [clearSession]);

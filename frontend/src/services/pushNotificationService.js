@@ -79,11 +79,11 @@ export async function initPushNotifications(onNotificationClick) {
       return;
     }
 
-    // 3. Register with FCM / APNs
-    await PushNotifications.register();
-    isInitialized = true;
+    // 3. Remove old listeners & attach registration listeners BEFORE register()
+    try {
+      await PushNotifications.removeAllListeners();
+    } catch (_) {}
 
-    // 4. Token registration listener
     await PushNotifications.addListener('registration', async (token) => {
       console.log('[PushNotifications] Device token registered:', token.value);
       try {
@@ -97,12 +97,11 @@ export async function initPushNotifications(onNotificationClick) {
       }
     });
 
-    // 5. Registration errors
     await PushNotifications.addListener('registrationError', (error) => {
       console.error('[PushNotifications] Error on registration:', error);
     });
 
-    // 6. Foreground Push Notifications:
+    // 4. Foreground Push Notifications:
     // When the app is open in foreground, FCM does NOT post to the Android tray automatically.
     // We schedule a local notification so it immediately pops up in the phone notification tray!
     await PushNotifications.addListener('pushNotificationReceived', async (notification) => {
@@ -125,18 +124,7 @@ export async function initPushNotifications(onNotificationClick) {
       }
     });
 
-    // 7. Handle user tapping notification in system tray (Local Notifications)
-    await LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
-      console.log('[LocalNotifications] System tray notification tapped:', action);
-      const data = action.notification.extra || {};
-      if (onNotificationClick && typeof onNotificationClick === 'function') {
-        onNotificationClick(data);
-      } else {
-        handleNotificationNavigation(data.link_url || data.url);
-      }
-    });
-
-    // 8. Handle user tapping notification in system tray (Background Push Notifications)
+    // 5. Handle user tapping notification in system tray (Background Push Notifications)
     await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
       console.log('[PushNotifications] Push notification tapped:', action);
       const data = action.notification.data || {};
@@ -146,6 +134,24 @@ export async function initPushNotifications(onNotificationClick) {
         handleNotificationNavigation(data.link_url || data.url);
       }
     });
+
+    // 6. Handle user tapping notification in system tray (Local Notifications)
+    try {
+      await LocalNotifications.removeAllListeners();
+      await LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+        console.log('[LocalNotifications] System tray notification tapped:', action);
+        const data = action.notification.extra || {};
+        if (onNotificationClick && typeof onNotificationClick === 'function') {
+          onNotificationClick(data);
+        } else {
+          handleNotificationNavigation(data.link_url || data.url);
+        }
+      });
+    } catch (_) {}
+
+    // 7. Register with FCM / APNs now that listeners are ready
+    await PushNotifications.register();
+    isInitialized = true;
 
   } catch (error) {
     console.error('[PushNotifications] Initialization error:', error);
@@ -179,4 +185,8 @@ export async function showNotificationInTray({ id, title, body, link_url }) {
   } catch (err) {
     console.error('[showNotificationInTray] Error:', err);
   }
+}
+
+export function resetPushNotifications() {
+  isInitialized = false;
 }

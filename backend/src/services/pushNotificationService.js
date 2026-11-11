@@ -2,18 +2,19 @@
 
 const path = require('path');
 const fs = require('fs');
+const { initializeApp, cert, getApps } = require('firebase-admin/app');
+const { getMessaging } = require('firebase-admin/messaging');
 const { query } = require('../config/db');
 
-let firebaseAdmin = null;
+let firebaseMessaging = null;
 let isFirebaseInitialized = false;
 
-function getFirebaseAdmin() {
-  if (isFirebaseInitialized) return firebaseAdmin;
+function getFirebaseMessaging() {
+  if (isFirebaseInitialized) return firebaseMessaging;
   isFirebaseInitialized = true;
 
   try {
     const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
-    const admin = require('firebase-admin');
     let serviceAccount = null;
 
     if (rawKey) {
@@ -29,7 +30,7 @@ function getFirebaseAdmin() {
             console.error('[pushNotificationService] JSON parse error on FIREBASE_SERVICE_ACCOUNT_KEY:', e2.message);
           }
         }
-      } else if (trimmed.startsWith('ey') || trimmed.length > 100 && !trimmed.includes('{')) {
+      } else if (trimmed.startsWith('ey') || (trimmed.length > 100 && !trimmed.includes('{'))) {
         // Base64 encoded JSON string
         try {
           const decoded = Buffer.from(trimmed, 'base64').toString('utf8');
@@ -68,14 +69,13 @@ function getFirebaseAdmin() {
       return null;
     }
 
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-    firebaseAdmin = admin;
-    console.log('[pushNotificationService] Firebase Admin initialized successfully.');
-    return firebaseAdmin;
+    const apps = getApps();
+    const app = apps.length > 0 ? apps[0] : initializeApp({ credential: cert(serviceAccount) });
+    firebaseMessaging = getMessaging(app);
+    console.log('[pushNotificationService] Firebase Messaging initialized successfully.');
+    return firebaseMessaging;
   } catch (err) {
-    console.warn('[pushNotificationService] Failed to initialize Firebase Admin:', err.message);
+    console.warn('[pushNotificationService] Failed to initialize Firebase Messaging:', err.message);
     return null;
   }
 }
@@ -106,9 +106,9 @@ async function sendPushToUser({ user_id, title, body, link_url, kind }) {
     if (!r.rows.length) return;
 
     const tokens = r.rows.map(row => row.token);
-    const admin = getFirebaseAdmin();
+    const messaging = getFirebaseMessaging();
 
-    if (!admin) {
+    if (!messaging) {
       console.log(`[pushNotificationService Mock] Would send push to user ${user_id} (${tokens.length} devices): "${title}" - "${body}"`);
       return;
     }
@@ -138,7 +138,7 @@ async function sendPushToUser({ user_id, title, body, link_url, kind }) {
       }
     };
 
-    const response = await admin.messaging().sendEachForMulticast({
+    const response = await messaging.sendEachForMulticast({
       tokens,
       ...payload
     });
