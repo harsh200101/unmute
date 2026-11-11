@@ -29,8 +29,15 @@ export default function Login() {
     navigate(next, { replace: true });
   };
 
-  const onGoogleSignIn = () => {
-    window.location.href = `${API_BASE_URL}/auth/google?next=${encodeURIComponent(next)}`;
+  const onGoogleSignIn = async () => {
+    if (Capacitor.isNativePlatform()) {
+      await Browser.open({
+        url: `${API_BASE_URL}/auth/google?next=${encodeURIComponent(next)}&platform=mobile`,
+        presentationStyle: 'popover',
+      });
+    } else {
+      window.location.href = `${API_BASE_URL}/auth/google?next=${encodeURIComponent(next)}`;
+    }
   };
 
   const onForgotPassword = () => {

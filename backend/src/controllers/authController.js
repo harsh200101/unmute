@@ -170,7 +170,8 @@ async function googleStart(req, res, next) {
     // CSRF state — random nonce + a return URL the user wants to land on
     const nonce = crypto.randomBytes(16).toString('hex');
     const next_url = typeof req.query.next === 'string' ? req.query.next : '/dashboard';
-    const state = signOauthState({ nonce, next_url });
+    const platform = req.query.platform === 'mobile' ? 'mobile' : 'web';
+    const state = signOauthState({ nonce, next_url, platform });
 
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     url.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
@@ -228,8 +229,11 @@ async function exchangeCodeForProfile(code) {
 async function googleCallback(req, res, next) {
   // We always redirect back to the frontend (success OR failure) so the user
   // never sees a raw JSON error page on the OAuth flow.
-  const fail = (code) =>
-    res.redirect(`${env.FRONTEND_URL}/oauth/callback?error=${encodeURIComponent(code)}`);
+  let isMobile = false;
+  const fail = (code) => {
+    const base = isMobile ? 'com.unmute.app://oauth/callback' : `${env.FRONTEND_URL}/oauth/callback`;
+    return res.redirect(`${base}?error=${encodeURIComponent(code)}`);
+  };
   try {
     if (!auth.googleConfigured()) return fail('google_not_configured');
 
@@ -241,6 +245,7 @@ async function googleCallback(req, res, next) {
     try {
       const decoded = verifyOauthState(String(state));
       if (decoded.next_url && decoded.next_url.startsWith('/')) nextUrl = decoded.next_url;
+      if (decoded.platform === 'mobile') isMobile = true;
     } catch (_) {
       return fail('invalid_state');
     }
@@ -278,8 +283,9 @@ async function googleCallback(req, res, next) {
         audience: 'unmute-oauth-exchange',
       }
     );
+    const redirectBase = isMobile ? 'com.unmute.app://oauth/callback' : `${env.FRONTEND_URL}/oauth/callback`;
     res.redirect(
-      `${env.FRONTEND_URL}/oauth/callback?exchange=${encodeURIComponent(exchange_token)}&next=${encodeURIComponent(nextUrl)}`
+      `${redirectBase}?exchange=${encodeURIComponent(exchange_token)}&next=${encodeURIComponent(nextUrl)}`
     );
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -312,6 +318,7 @@ async function oauthExchange(req, res, next) {
     setRefreshCookie(res, decoded.refresh_token);
     res.json({
       access_token: decoded.access_token,
+      refresh_token: decoded.refresh_token,
       access_expires_in: env.JWT_ACCESS_TTL_SECONDS,
     });
   } catch (e) { next(e); }

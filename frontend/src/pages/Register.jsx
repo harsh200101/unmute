@@ -28,8 +28,15 @@ export default function Register() {
     navigate('/verify-email?email=' + encodeURIComponent(email), { replace: true });
   };
 
-  const onGoogleSignIn = () => {
-    window.location.href = `${API_BASE_URL}/auth/google?next=/dashboard`;
+  const onGoogleSignIn = async () => {
+    if (Capacitor.isNativePlatform()) {
+      await Browser.open({
+        url: `${API_BASE_URL}/auth/google?next=/dashboard&platform=mobile`,
+        presentationStyle: 'popover',
+      });
+    } else {
+      window.location.href = `${API_BASE_URL}/auth/google?next=/dashboard`;
+    }
   };
 
   return (

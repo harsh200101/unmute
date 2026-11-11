@@ -63,6 +63,19 @@ if (!raw.API_PUBLIC_URL && raw.RENDER_EXTERNAL_URL) {
   raw.__API_PUBLIC_URL_DERIVED__ = true;
 }
 
+// --- Google OAuth normalisation ----------------------------------------------
+//
+// Accept legacy GOOGLE_CALLBACK_URL alias when GOOGLE_REDIRECT_URI is unset,
+// and derive GOOGLE_REDIRECT_URI from API_PUBLIC_URL (or RENDER_EXTERNAL_URL)
+// so deployments never fail with `google_not_configured` just because the
+// callback URL was omitted or named GOOGLE_CALLBACK_URL in the environment.
+if (!raw.GOOGLE_REDIRECT_URI && raw.GOOGLE_CALLBACK_URL) {
+  raw.GOOGLE_REDIRECT_URI = raw.GOOGLE_CALLBACK_URL;
+}
+if (!raw.GOOGLE_REDIRECT_URI && raw.API_PUBLIC_URL) {
+  raw.GOOGLE_REDIRECT_URI = `${raw.API_PUBLIC_URL.replace(/\/$/, '')}/api/auth/google/callback`;
+}
+
 // PhonePe V2 uses different hosts per environment. Default them from
 // PHONEPE_ENV (or NODE_ENV) so operators only set credentials, not URLs.
 const phonepeEnv =

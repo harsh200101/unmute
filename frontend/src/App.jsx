@@ -54,6 +54,10 @@ export default function App() {
         const queryIndex = url.indexOf('?');
         const query = queryIndex !== -1 ? url.slice(queryIndex + 1) : '';
         navigate(`/oauth/callback?${query}`, { replace: true });
+      } else if (url && url.includes('://wallet')) {
+        const queryIndex = url.indexOf('?');
+        const query = queryIndex !== -1 ? url.slice(queryIndex + 1) : '';
+        navigate(`/wallet?${query}`, { replace: true });
       }
     }).then((h) => { appUrlHandle = h; });
 
