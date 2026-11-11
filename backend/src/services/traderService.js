@@ -744,10 +744,21 @@ async function getCoinDCXBalances() {
  */
 async function monitorOngoingTrades() {
   try {
-    const positions = await getAlpacaPositions();
+    const [positions, clock] = await Promise.all([getAlpacaPositions(), getAlpacaClock()]);
+    const isMarketOpen = clock ? clock.is_open : false;
+
+    // Clean up bookedPositions that have actually closed on Alpaca
+    const activeNorms = new Set((positions || []).map((p) => normalizeSymbol(p.symbol)));
+    for (const bSym of state.bookedPositions) {
+      if (!activeNorms.has(bSym)) {
+        state.bookedPositions.delete(bSym);
+      }
+    }
+
     if (Array.isArray(positions)) {
       for (const pos of positions) {
         const normSym = normalizeSymbol(pos.symbol);
+        const isCrypto = pos.symbol.includes('/') || pos.asset_class === 'crypto';
         const unrealizedPlPercent = Number(pos.unrealized_plpc) * 100;
         const currentPrice = Number(pos.current_price);
         const entryPrice = Number(pos.avg_entry_price);
@@ -756,9 +767,14 @@ async function monitorOngoingTrades() {
         const sideLabel = pos.side === 'short' || Number(pos.qty) < 0 ? 'SHORT' : 'LONG';
         const meta = state.activeTradeMeta.get(normSym) || {
           symbol: pos.symbol,
-          market: pos.asset_class === 'crypto' ? 'crypto' : 'stock',
+          market: isCrypto ? 'crypto' : 'stock',
           setup: `1m Alpaca Paper Scalp (${sideLabel})`,
         };
+
+        // If market is closed for US stocks, do not attempt to market close positions (avoids queueing unfillable orders)
+        if (!isCrypto && !isMarketOpen) {
+          continue;
+        }
 
         // 1. Lock Breakeven at +0.8% gain (~+28% ROI on ₹250 @ 35x slice!)
         if (unrealizedPlPercent >= 0.8 && !state.trailedPositions.has(normSym)) {
@@ -778,7 +794,7 @@ async function monitorOngoingTrades() {
           const closed = await closeAlpacaPosition(normSym);
           if (closed) {
             state.trailedPositions.delete(normSym);
-            state.bookedPositions.delete(normSym);
+            // Keep normSym in bookedPositions until the position actually vanishes from Alpaca!
             state.realizedPnlUSD += profitUSD;
             state.realizedPnlINR = Math.round(state.realizedPnlUSD * USD_TO_INR);
             const currentLifelineINR = state.lifelineBaseINR + state.realizedPnlINR;
@@ -808,7 +824,7 @@ async function monitorOngoingTrades() {
           const closed = await closeAlpacaPosition(normSym);
           if (closed) {
             state.trailedPositions.delete(normSym);
-            state.bookedPositions.delete(normSym);
+            // Keep normSym in bookedPositions until the position actually vanishes from Alpaca!
             await broadcastTelegram(
               `🛡️ *ALPACA BREAKEVEN EXIT [${sideLabel}]: \`${pos.symbol}\`*\n\n` +
               `• *Exit Price:* $${formatPrice(currentPrice)} (${unrealizedPlPercent.toFixed(2)}%)\n` +
@@ -834,7 +850,7 @@ async function monitorOngoingTrades() {
           const closed = await closeAlpacaPosition(normSym);
           if (closed) {
             state.trailedPositions.delete(normSym);
-            state.bookedPositions.delete(normSym);
+            // Keep normSym in bookedPositions until the position actually vanishes from Alpaca!
             state.realizedPnlUSD += profitUSD;
             state.realizedPnlINR = Math.round(state.realizedPnlUSD * USD_TO_INR);
             await broadcastTelegram(
@@ -1037,9 +1053,9 @@ Return JSON object mapping each symbol to {"approved":true,"score":8.2,"timemach
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 220 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1200 },
         }),
-        signal: AbortSignal.timeout(4200),
+        signal: AbortSignal.timeout(5000),
       }
     );
 
@@ -1054,8 +1070,13 @@ Return JSON object mapping each symbol to {"approved":true,"score":8.2,"timemach
     }
 
     const data = await res.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+    let parsed = {};
+    try {
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+    } catch (parseErr) {
+      console.warn('[TraderService] Gemini JSON parse fallback:', parseErr.message);
+    }
 
     for (const cand of uncached) {
       const fb = fallbackMap.get(cand.symbol);
