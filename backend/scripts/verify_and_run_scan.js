@@ -41,6 +41,12 @@ async function main() {
     console.log('\n5. Latest Chain-of-Thought Trace:\n', traderService.state.recentThoughts[0].thoughtProcess.slice(0, 1200));
   }
 
+  console.log('\n6. Testing Pause / Resume Control:');
+  await traderService.setDeskPauseState(true, 'Test verification');
+  console.log('   Desk isPaused (should be true):', traderService.state.isPaused);
+  await traderService.setDeskPauseState(false, 'Test verification unpause');
+  console.log('   Desk isPaused (should be false):', traderService.state.isPaused);
+
   await pool.end();
 }
 main().catch(console.error);

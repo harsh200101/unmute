@@ -101,7 +101,10 @@ router.get('/status', async (_req, res) => {
         requestsToday: traderService.rateLimiter.requestsToday,
       },
       scanner: {
-        active: true,
+        active: !traderService.state.isPaused,
+        isPaused: traderService.state.isPaused,
+        pauseReason: traderService.state.pauseReason,
+        isQuietMarket: traderService.state.isQuietMarket,
         intervalSeconds: Math.round(traderService.state.scannerIntervalMs / 1000),
         monitorSeconds: Math.round(traderService.state.monitorIntervalMs / 1000),
         totalScansRun: traderService.state.totalScansRun,
@@ -126,6 +129,31 @@ router.get('/status', async (_req, res) => {
       },
       telegramConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN || true),
     });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * Pause / Stop Autonomous Desk
+ */
+router.post('/pause', async (req, res) => {
+  try {
+    const reason = req.body?.reason || 'API request';
+    const status = await traderService.setDeskPauseState(true, reason);
+    res.json({ ok: true, message: 'Autonomous trading desk paused', ...status });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * Resume / Start Autonomous Desk
+ */
+router.post('/resume', async (_req, res) => {
+  try {
+    const status = await traderService.setDeskPauseState(false, 'API request');
+    res.json({ ok: true, message: 'Autonomous trading desk resumed', ...status });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }

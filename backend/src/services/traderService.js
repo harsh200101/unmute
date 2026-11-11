@@ -2479,6 +2479,31 @@ async function handleThinkTelegramUpdate(update) {
   await saveSubscriber(chatId);
   const text = msg.text.trim();
 
+  if (text === '/stop' || text === '/pause' || text.toLowerCase() === 'stop' || text.toLowerCase() === 'pause') {
+    await setDeskPauseState(true, 'Telegram /stop command on @Traderthinkbot');
+    const msgText =
+      `🛑 *EMERGENCY STOP ENGAGED: Autonomous Desk Paused!*\n\n` +
+      `• *1-Minute Scanner:* Halted.\n` +
+      `• *Trade Executions:* Paused.\n` +
+      `• *Position Monitors:* Active (trailing stops & TP protection remain armed to defend capital).\n\n` +
+      `💬 *To resume:* Send \`/start\` or \`/resume\` whenever you are ready.`;
+    await sendThinkTelegram('sendMessage', { chat_id: chatId, text: msgText, parse_mode: 'Markdown' });
+    await broadcastTelegram(`🛑 *Operator commanded /stop — Desk Paused.*`);
+    return;
+  }
+
+  if (text === '/resume' || (text === '/start' && state.isPaused)) {
+    await setDeskPauseState(false, 'Telegram /start command on @Traderthinkbot');
+    const msgText =
+      `▶️ *AUTONOMOUS DESK RESUMED & ACTIVE!*\n\n` +
+      `• *1-Minute Scanner:* Active across **${state.bybitStockUniverse.size || 292} US Stocks** + **567 Crypto**.\n` +
+      `• *US Stock Priority:* Active during US market hours.\n` +
+      `• *Adaptive Reasoning:* Auto-escalates thinking for high-conviction events.`;
+    await sendThinkTelegram('sendMessage', { chat_id: chatId, text: msgText, parse_mode: 'Markdown' });
+    await broadcastTelegram(`▶️ *Operator commanded /start — Desk Resumed.*`);
+    return;
+  }
+
   if (text.startsWith('/start') || text.startsWith('/help')) {
     const welcome =
       `🧠 *AGY & Gemini Live Thinking Channel (@Traderthinkbot) Activated!*\n\n` +
@@ -2621,7 +2646,32 @@ async function handleTelegramUpdate(update) {
 
     const text = msg.text.trim();
 
-    if (text.startsWith('/start') || text.startsWith('/help')) {
+    if (text === '/stop' || text === '/pause' || text.toLowerCase() === 'stop' || text.toLowerCase() === 'pause') {
+    await setDeskPauseState(true, 'Telegram /stop command on @Traderthinkbot');
+    const msgText =
+      `🛑 *EMERGENCY STOP ENGAGED: Autonomous Desk Paused!*\n\n` +
+      `• *1-Minute Scanner:* Halted.\n` +
+      `• *Trade Executions:* Paused.\n` +
+      `• *Position Monitors:* Active (trailing stops & TP protection remain armed to defend capital).\n\n` +
+      `💬 *To resume:* Send \`/start\` or \`/resume\` whenever you are ready.`;
+    await sendThinkTelegram('sendMessage', { chat_id: chatId, text: msgText, parse_mode: 'Markdown' });
+    await broadcastTelegram(`🛑 *Operator commanded /stop — Desk Paused.*`);
+    return;
+  }
+
+  if (text === '/resume' || (text === '/start' && state.isPaused)) {
+    await setDeskPauseState(false, 'Telegram /start command on @Traderthinkbot');
+    const msgText =
+      `▶️ *AUTONOMOUS DESK RESUMED & ACTIVE!*\n\n` +
+      `• *1-Minute Scanner:* Active across **${state.bybitStockUniverse.size || 292} US Stocks** + **567 Crypto**.\n` +
+      `• *US Stock Priority:* Active during US market hours.\n` +
+      `• *Adaptive Reasoning:* Auto-escalates thinking for high-conviction events.`;
+    await sendThinkTelegram('sendMessage', { chat_id: chatId, text: msgText, parse_mode: 'Markdown' });
+    await broadcastTelegram(`▶️ *Operator commanded /start — Desk Resumed.*`);
+    return;
+  }
+
+  if (text.startsWith('/start') || text.startsWith('/help')) {
       const welcome =
         `🤖 *24/7 Full-Universe Dual-Market Trading Desk*\n\n` +
         `🇺🇸 *US Stocks Priority (When Open):* **${state.bybitStockUniverse.size || 293} Bybit 25x US Stock Perpetuals** + **${STOCK_WATCHLIST.length} Alpaca US Stocks** (_INTU Strictly Blocked_).\n` +
@@ -3008,6 +3058,7 @@ module.exports = {
   getCoordinationState,
   updateHeartbeat,
   handoffControl,
+  setDeskPauseState,
   runMarketScan,
   monitorOngoingTrades,
   resetJournalAndBalance,
