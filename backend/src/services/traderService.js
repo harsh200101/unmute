@@ -520,6 +520,27 @@ async function placeBybitOrder({ symbol, side, qty, stopLoss, takeProfit, entryP
       status: 'filled',
     };
   }
+
+  // If Bybit returns 110126 (Stock Perp agreement popup not clicked in Bybit Web UI yet),
+  // automatically route the underlying US Stock ticker to Alpaca Paper US Equities!
+  if (res && res.retCode === 110126 && isBybitStockPerp(normSym)) {
+    const underlying = (
+      inst?.underlyingTicker ||
+      normSym.replace(/STOCKUSDT$/i, '').replace(/USDT$/i, '')
+    ).toUpperCase();
+    if (!isStrictlyBlockedSymbol(underlying)) {
+      console.log(
+        `[TraderService] Bybit Stock Perp ${normSym} requires UI agreement (110126) -> Auto-routing ${underlying} to Alpaca US Equities!`
+      );
+      return await placeAlpacaPaperOrder({
+        symbol: underlying,
+        qty: Math.max(1, Math.round(state.paperSliceUSD / fillPrice)),
+        notionalUSD: state.paperSliceUSD,
+        side: bybitSide === 'Sell' ? 'sell' : 'buy',
+      });
+    }
+  }
+
   throw new Error(`Bybit (${res?.retCode}): ${res?.retMsg || JSON.stringify(res)}`);
 }
 
