@@ -93,6 +93,7 @@ const state = {
   trailedPositions: new Set(),    // normSymbol already trailed to breakeven on Alpaca
   bookedPositions: new Set(),     // normSymbol currently being closed
   activeTradeMeta: new Map(),     // normSymbol -> { symbol, market, setup, candles, orderbook }
+  activeCryptoTrades: new Map(),  // symbol -> { id, symbol, side, entryPrice, notionalUSD, trailed, openedAt }
   // Structural Self-Learning Memory (Synced with PostgreSQL)
   learnedLessons: [],             // Array of { id, symbol, setup, outcome, lesson, created_at }
   symbolStats: new Map(),         // normSymbol -> { wins, losses, breakevens, consecutiveLosses, totalPnl }
