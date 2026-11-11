@@ -60,4 +60,16 @@ router.post('/scan', async (_req, res) => {
   }
 });
 
+/**
+ * Clear/Reset journal stats and phantom balance
+ */
+router.post('/reset-journal', async (_req, res) => {
+  try {
+    const result = await traderService.resetJournalAndBalance();
+    res.json({ ok: true, message: 'Trader journal and balance reset successfully', ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 module.exports = router;

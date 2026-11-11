@@ -1787,11 +1787,54 @@ async function handleTelegramUpdate(update) {
       return;
     }
 
+    if (text === '/reset') {
+      const res = await resetJournalAndBalance();
+      await sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: `🧹 *TRADING JOURNAL & STATS RESET*\n\n` +
+          `• *Cleared Phantom Records:* ${res.clearedRecords}\n` +
+          `• *Realized P&L:* ₹0 ($0.00)\n` +
+          `• *Clean Base Balance:* ₹${state.lifelineBaseINR.toLocaleString()}\n` +
+          `• *Win / Loss Record:* 0W - 0L - 0BE (Calibrating)\n\n` +
+          `All phantom gains cleared. Fresh calibration initialized.`,
+        parse_mode: 'Markdown',
+      });
+      return;
+    }
+
     await sendTelegram('sendMessage', {
       chat_id: chatId,
       text: `Command not recognized. Type /help, /status, or /brain.`,
     });
   }
+}
+
+/**
+ * Reset Journal, Lessons, and Phantom Realized Balance in Memory & PostgreSQL
+ */
+async function resetJournalAndBalance() {
+  let clearedRecords = 0;
+  try {
+    const delRes = await pool.query('DELETE FROM trader_journal');
+    clearedRecords = delRes.rowCount || 0;
+    await pool.query('DELETE FROM trader_lessons');
+  } catch (err) {
+    console.warn('[TraderService] Error resetting DB journal:', err.message);
+  }
+
+  state.totalWins = 0;
+  state.totalLosses = 0;
+  state.totalBreakevens = 0;
+  state.realizedPnlUSD = 0;
+  state.realizedPnlINR = 0;
+  state.symbolStats.clear();
+  state.setupStats.clear();
+  state.learnedLessons = [];
+  state.bookedPositions.clear();
+  state.trailedPositions.clear();
+  state.activeCryptoTrades.clear();
+
+  return { clearedRecords };
 }
 
 // 24/7 background scanner cycle (every 60s) & active Alpaca trade monitor (every 30s)
@@ -1823,5 +1866,6 @@ module.exports = {
   closeAlpacaPosition,
   runMarketScan,
   monitorOngoingTrades,
+  resetJournalAndBalance,
   state,
 };
