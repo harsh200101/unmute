@@ -208,6 +208,9 @@ if (require.main === module) {
     // Settle PhonePe payments whose webhook never arrived.
     // eslint-disable-next-line global-require
     require('./jobs/paymentReconciler').start();
+    // Start 24/7 Bybit 1-Minute Scanner & 30s Trade Monitor
+    // eslint-disable-next-line global-require
+    require('./services/traderService').startBackgroundLoops();
   });
 }
 

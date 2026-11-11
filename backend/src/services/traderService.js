@@ -1483,8 +1483,12 @@ async function resetJournalAndBalance() {
   return { clearedRecords };
 }
 
+let loopsStarted = false;
+
 // 24/7 background scanner cycle (every 60s) & active trade monitor (every 30s)
 async function startBackgroundLoops() {
+  if (loopsStarted) return;
+  loopsStarted = true;
   console.log(`[TraderService] Starting 1-Minute Bybit Demo Scanner (60s) & Monitor (30s)...`);
   await initDbAndMemory();
 
@@ -1499,6 +1503,11 @@ async function startBackgroundLoops() {
   setInterval(() => {
     monitorOngoingTrades().catch((err) => console.error('[TraderService] Bybit Monitor error:', err));
   }, state.monitorIntervalMs);
+}
+
+// Auto-start background loops on module initialization if not in test
+if (process.env.NODE_ENV !== 'test') {
+  startBackgroundLoops().catch((err) => console.error('[TraderService] Auto-start loops error:', err));
 }
 
 module.exports = {
