@@ -1699,7 +1699,14 @@ async function handleTelegramUpdate(update) {
         text: '⏳ *Running immediate 1-minute unified Alpaca Paper scan...*',
         parse_mode: 'Markdown',
       });
-      await runMarketScan(true);
+      const manualHits = await runMarketScan(true);
+      if (!manualHits || manualHits.length === 0) {
+        await sendTelegram('sendMessage', {
+          chat_id: chatId,
+          text: '🔍 *Manual Scan Completed:* All 20 Crypto pairs & 14 Stocks scanned. No new qualifying setups met the entry threshold this minute (or existing runners are in protection cooldown). Next auto-scan in 60s!',
+          parse_mode: 'Markdown',
+        });
+      }
       return;
     }
 
