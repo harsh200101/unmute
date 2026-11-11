@@ -21,14 +21,23 @@ router.post('/webhook', async (req, res) => {
 });
 
 /**
- * Health check & scanner status endpoint
+ * Health check & Bybit Demo scanner status endpoint
  */
 router.get('/status', async (_req, res) => {
   try {
-    const alpaca = await traderService.getAlpacaAccount();
+    const bybitBalance = await traderService.getBybitWalletBalance();
+    const bybitPositions = await traderService.getBybitPositions();
     res.json({
       ok: true,
-      service: 'trader-bot-v2',
+      service: 'bybit-demo-trader-v2',
+      strategy: {
+        baseINR: traderService.state.lifelineBaseINR,
+        realizedPnlINR: traderService.state.realizedPnlINR,
+        targetINR: traderService.state.overallGoalINR,
+        wins: traderService.state.totalWins,
+        losses: traderService.state.totalLosses,
+        breakevens: traderService.state.totalBreakevens,
+      },
       scanner: {
         active: true,
         intervalSeconds: Math.round(traderService.state.scannerIntervalMs / 1000),
@@ -38,10 +47,14 @@ router.get('/status', async (_req, res) => {
         subscribedUsers: traderService.state.subscribedChatIds.size,
         recentSignalsCount: traderService.state.recentSignals.length,
       },
+      bybit: {
+        configured: Boolean(process.env.BYBIT_API_KEY || true),
+        status: bybitBalance ? 'connected' : 'disconnected',
+        totalEquityUSDT: bybitBalance ? bybitBalance.totalEquity : null,
+        availableBalanceUSDT: bybitBalance ? bybitBalance.totalAvailableBalance : null,
+        openPositionsCount: bybitPositions ? bybitPositions.length : 0,
+      },
       telegramConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN),
-      alpacaStatus: alpaca ? alpaca.status : 'disconnected',
-      alpacaBuyingPower: alpaca ? alpaca.buying_power : null,
-      coindcxConfigured: Boolean(process.env.COINDCX_API_KEY),
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -53,7 +66,7 @@ router.get('/status', async (_req, res) => {
  */
 router.post('/scan', async (_req, res) => {
   try {
-    const hits = await traderService.runMarketScan();
+    const hits = await traderService.runMarketScan(true);
     res.json({ ok: true, hitsFound: hits.length, hits });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
