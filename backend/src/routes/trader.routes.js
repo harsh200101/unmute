@@ -93,6 +93,8 @@ router.get('/status', async (_req, res) => {
       geminiPool: {
         activeKeysCount: traderService.GEMINI_KEYS.length,
         models: traderService.GEMINI_MODEL_BUCKETS,
+        modelTiers: traderService.MODEL_TIERS,
+        stageConfigs: traderService.STAGE_CONFIGS,
         lastModelUsed: traderService.rateLimiter.lastModelUsed,
         lastThoughtsTokens: traderService.rateLimiter.lastThoughtsTokens,
         requestsThisMinute: traderService.rateLimiter.requestsThisMinute,

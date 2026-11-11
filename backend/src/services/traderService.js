@@ -50,23 +50,88 @@ const GEMINI_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY |
   .map((k) => k.trim())
   .filter(Boolean);
 
-// Empirically verified high-quota models supporting native includeThoughts: true
-const GEMINI_MODEL_BUCKETS = [
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-3.1-flash-lite',
-];
+// Adaptive Model Tiering: High-Stakes Reasoning vs Low-Cost Zero-Thought Monitoring
+const MODEL_TIERS = {
+  HIGH_REASONING: ['gemini-3.6-flash', 'gemini-3.5-flash'],
+  ROUTINE_MONITOR: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
+};
 
-const THINKING_MODELS = new Set([
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-3.1-flash-lite',
-]);
+const GEMINI_MODEL_BUCKETS = [...MODEL_TIERS.HIGH_REASONING, ...MODEL_TIERS.ROUTINE_MONITOR];
+
+const STAGE_CONFIGS = {
+  // When starting, entering, or evaluating trade execution conviction (High stakes -> High Model + Deep Thinking)
+  TRADE_ENTRY_AUDIT: {
+    pool: MODEL_TIERS.HIGH_REASONING,
+    thinkingBudget: 1024,
+    includeThoughts: true,
+    temperature: 0.15,
+    maxOutputTokens: 2500,
+  },
+  // When editing, ratcheting, or evaluating exits (High precision -> High Model + Moderate Thinking)
+  TRADE_EXIT_AUDIT: {
+    pool: MODEL_TIERS.HIGH_REASONING,
+    thinkingBudget: 512,
+    includeThoughts: true,
+    temperature: 0.1,
+    maxOutputTokens: 1500,
+  },
+  // When user messages on @Traderthinkbot (High agency -> Deep Reasoning)
+  OPERATOR_INTERACTIVE: {
+    pool: MODEL_TIERS.HIGH_REASONING,
+    thinkingBudget: 1024,
+    includeThoughts: true,
+    temperature: 0.2,
+    maxOutputTokens: 2500,
+  },
+  // Routine position/market monitoring (Low stakes -> Ultra-cheap Lite model + ZERO thinking budget = 95% token savings!)
+  ROUTINE_MONITOR: {
+    pool: MODEL_TIERS.ROUTINE_MONITOR,
+    thinkingBudget: 0,
+    includeThoughts: false,
+    temperature: 0.1,
+    maxOutputTokens: 300,
+  },
+  // Post-mortem autopsy lesson extraction (Compact -> Cheap Lite model + 128 tokens)
+  POST_MORTEM_LESSON: {
+    pool: MODEL_TIERS.ROUTINE_MONITOR,
+    thinkingBudget: 128,
+    includeThoughts: true,
+    temperature: 0.2,
+    maxOutputTokens: 400,
+  },
+};
 
 let geminiKeyIdx = 0;
-let geminiModelIdx = 0;
+let tierIndices = {
+  HIGH_REASONING: 0,
+  ROUTINE_MONITOR: 0,
+};
+
+function getAdaptiveModelConfig(stage = 'TRADE_ENTRY_AUDIT') {
+  const cfg = STAGE_CONFIGS[stage] || STAGE_CONFIGS.TRADE_ENTRY_AUDIT;
+  const key = GEMINI_KEYS.length > 0 ? GEMINI_KEYS[geminiKeyIdx % GEMINI_KEYS.length] : '';
+  geminiKeyIdx += 1;
+
+  const poolType = cfg.pool === MODEL_TIERS.ROUTINE_MONITOR ? 'ROUTINE_MONITOR' : 'HIGH_REASONING';
+  const model = cfg.pool[tierIndices[poolType] % cfg.pool.length];
+  tierIndices[poolType] += 1;
+
+  rateLimiter.lastModelUsed = model;
+
+  const generationConfig = {
+    maxOutputTokens: cfg.maxOutputTokens,
+    temperature: cfg.temperature,
+  };
+
+  if (cfg.includeThoughts && cfg.thinkingBudget > 0) {
+    generationConfig.thinkingConfig = {
+      includeThoughts: true,
+      thinkingBudget: cfg.thinkingBudget,
+    };
+  }
+
+  return { key, model, cfg, generationConfig };
+}
 
 // Rate-Limit Governor (Scaled for 4-Key Pool: 30 RPM, 60k TPM, 4,000 RPD)
 const rateLimiter = {
@@ -111,22 +176,6 @@ function checkAndConsumeQuota(estimatedTokens = 650) {
   rateLimiter.tokensThisMinute += estimatedTokens;
   rateLimiter.requestsToday += 1;
   return { allowed: true };
-}
-
-function getNextGeminiKeyAndModel(preferThinking = true) {
-  if (GEMINI_KEYS.length === 0) return { key: '', model: GEMINI_MODEL_BUCKETS[0] };
-  const key = GEMINI_KEYS[geminiKeyIdx % GEMINI_KEYS.length];
-  let model;
-  if (preferThinking) {
-    const thinkingPool = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
-    model = thinkingPool[geminiModelIdx % thinkingPool.length];
-  } else {
-    model = GEMINI_MODEL_BUCKETS[geminiModelIdx % GEMINI_MODEL_BUCKETS.length];
-  }
-  geminiKeyIdx += 1;
-  geminiModelIdx += 1;
-  rateLimiter.lastModelUsed = model;
-  return { key, model };
 }
 
 const USD_TO_INR = 87;
@@ -1038,9 +1087,9 @@ async function recordTradeAndLearn({ symbol, market, setup, entryPrice, exitPric
   const normSym = normalizeSymbol(symbol);
   try {
     let lessonText = '';
-    const quota = checkAndConsumeQuota(350);
+    const quota = checkAndConsumeQuota(250);
     if (quota.allowed) {
-      const { key: geminiKey, model: geminiModel } = getNextGeminiKeyAndModel(false);
+      const { key: geminiKey, model: geminiModel, generationConfig } = getAdaptiveModelConfig('POST_MORTEM_LESSON');
       if (geminiKey) {
         const prompt = `Trade Post-Mortem [${market.toUpperCase()}]: ${symbol} (${setup}) Entry $${entryPrice}, Exit $${exitPrice}, PnL: ${pnlPct.toFixed(2)}%, Outcome: ${outcome}.
 Summarize in 1 crisp sentence the exact quantitative micro-scalping rule learned from this trade for future setups.`;
@@ -1052,7 +1101,7 @@ Summarize in 1 crisp sentence the exact quantitative micro-scalping rule learned
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { maxOutputTokens: 150, temperature: 0.2 },
+              generationConfig,
             }),
           }
         );
@@ -1390,7 +1439,7 @@ async function batchAuditCandidatesWithGemini(candidates) {
     }));
   }
 
-  const { key: geminiKey, model: geminiModel } = getNextGeminiKeyAndModel(true);
+  const { key: geminiKey, model: geminiModel, generationConfig } = getAdaptiveModelConfig('TRADE_ENTRY_AUDIT');
   if (!geminiKey) {
     return safeCandidates.map((cand) => ({
       ...cand,
@@ -1455,18 +1504,6 @@ Respond ONLY with a valid JSON array of objects having keys:
 - "score": number (1 to 10; score >= 8 triggers immediate autonomous execution; score 7 sends manual approval card; score < 7 rejects)
 - "thesis": string (1 crisp quantitative sentence explaining US stock / macro alignment, L2 imbalance, and fee-adjusted edge)`;
 
-    const isThinkingModel = THINKING_MODELS.has(geminiModel);
-    const generationConfig = {
-      maxOutputTokens: isThinkingModel ? 1200 : 600,
-      temperature: 0.15,
-    };
-    if (isThinkingModel) {
-      generationConfig.thinkingConfig = {
-        includeThoughts: true,
-        thinkingBudget: 512,
-      };
-    }
-
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
       {
@@ -1479,7 +1516,28 @@ Respond ONLY with a valid JSON array of objects having keys:
       }
     );
 
-    const data = await res.json();
+    let data = await res.json();
+    if (!res.ok || data.error) {
+      console.warn(`[TraderService] Primary Gemini model ${geminiModel} error: ${data.error?.message || res.statusText}. Retrying with fast fallback model...`);
+      const fallbackConfig = getAdaptiveModelConfig('ROUTINE_MONITOR');
+      if (fallbackConfig.key) {
+        const fallbackRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${fallbackConfig.model}:generateContent?key=${fallbackConfig.key}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: 1000, temperature: 0.1 },
+            }),
+          }
+        );
+        if (fallbackRes.ok) {
+          data = await fallbackRes.json();
+        }
+      }
+    }
+
     const { thoughtText, responseText, thoughtsTokens } = extractGeminiThoughtAndText(data);
     let parsedAudits = [];
     try {
@@ -1488,7 +1546,9 @@ Respond ONLY with a valid JSON array of objects having keys:
       const sanitizedJsonStr = rawJsonStr.replace(/[\u0000-\u001F]+/g, ' ');
       parsedAudits = JSON.parse(sanitizedJsonStr);
     } catch (parseErr) {
-      console.warn('[TraderService] JSON parse sanitized fallback:', parseErr.message);
+      if (responseText) {
+        console.warn('[TraderService] JSON parse sanitized fallback:', parseErr.message);
+      }
     }
 
     const auditedCandidates = safeCandidates.map((cand, idx) => {
@@ -2256,7 +2316,7 @@ async function handleOperatorThinkingInput(chatId, userText, replyViaThinkBot = 
       .map((p) => `${p.symbol} (Qty ${p.qty}, PnL $${p.unrealized_pl})`)
       .join('; ') || 'None';
 
-  const { key: geminiKey, model: geminiModel } = getNextGeminiKeyAndModel(true);
+  const { key: geminiKey, model: geminiModel, generationConfig } = getAdaptiveModelConfig('OPERATOR_INTERACTIVE');
   if (!geminiKey) {
     await sendFn('sendMessage', {
       chat_id: chatId,
@@ -2294,11 +2354,7 @@ Respond ONLY with a valid JSON object:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 1200,
-            temperature: 0.2,
-            thinkingConfig: { includeThoughts: true, thinkingBudget: 512 },
-          },
+          generationConfig,
         }),
       }
     );
@@ -2913,6 +2969,9 @@ module.exports = {
   broadcastThinkTelegram,
   GEMINI_KEYS,
   GEMINI_MODEL_BUCKETS,
+  MODEL_TIERS,
+  STAGE_CONFIGS,
+  getAdaptiveModelConfig,
   rateLimiter,
   state,
 };
