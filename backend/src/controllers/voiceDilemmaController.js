@@ -115,16 +115,21 @@ async function serveAudio(req, res) {
           fs.mkdirSync(UPLOAD_DIR, { recursive: true });
         }
         fs.writeFileSync(filePath, row.data);
+        return res.sendFile(filePath, {
+          headers: {
+            ...headers,
+            'Content-Type': contentType,
+          },
+        });
       } catch (cacheErr) {
-        console.warn('[voice-dilemmas] Failed to write disk cache:', cacheErr.message);
+        console.warn('[voice-dilemmas] Failed to write disk cache, sending buffer directly:', cacheErr.message);
+        res.set({
+          ...headers,
+          'Content-Type': contentType,
+          'Content-Length': row.data.length,
+        });
+        return res.send(row.data);
       }
-
-      res.set({
-        ...headers,
-        'Content-Type': contentType,
-        'Content-Length': row.data.length,
-      });
-      return res.send(row.data);
     }
   } catch (dbErr) {
     console.error('[voice-dilemmas] Database audio retrieval error:', dbErr);

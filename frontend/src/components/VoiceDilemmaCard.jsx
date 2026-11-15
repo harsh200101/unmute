@@ -220,16 +220,33 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
           )}
         </div>
         {menteeAudioError ? (
-          <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
-            <AlertCircle size={14} className="shrink-0" />
-            <span>Audio recording expired or unavailable</span>
+          <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={14} className="shrink-0" />
+              <span>Audio recording unavailable or expired</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMenteeAudioError(false)}
+              className="inline-flex items-center gap-1 font-semibold text-primary hover:underline ml-2"
+            >
+              <RotateCcw size={12} /> Retry
+            </button>
           </div>
         ) : (
           <audio
             controls
+            crossOrigin="anonymous"
+            preload="metadata"
             src={resolveApiUrl(dilemma.mentee_audio_url)}
             className="w-full h-9 rounded-lg"
-            onError={() => setMenteeAudioError(true)}
+            onError={(e) => {
+              const code = e.target?.error?.code;
+              // Only treat actual terminal failures as permanent error (2 = network error, 4 = source not supported)
+              if (code === 2 || code === 4) {
+                setMenteeAudioError(true);
+              }
+            }}
           />
         )}
 
@@ -255,16 +272,32 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
               </span>
             </div>
             {mentorAudioError ? (
-              <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
-                <AlertCircle size={14} className="shrink-0" />
-                <span>Mentor audio recording unavailable</span>
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
+                <div className="flex items-center gap-2">
+                  <AlertCircle size={14} className="shrink-0" />
+                  <span>Mentor audio unavailable or expired</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMentorAudioError(false)}
+                  className="inline-flex items-center gap-1 font-semibold text-primary hover:underline ml-2"
+                >
+                  <RotateCcw size={12} /> Retry
+                </button>
               </div>
             ) : (
               <audio
                 controls
+                crossOrigin="anonymous"
+                preload="metadata"
                 src={resolveApiUrl(dilemma.mentor_audio_url)}
                 className="w-full h-9 rounded-lg"
-                onError={() => setMentorAudioError(true)}
+                onError={(e) => {
+                  const code = e.target?.error?.code;
+                  if (code === 2 || code === 4) {
+                    setMentorAudioError(true);
+                  }
+                }}
               />
             )}
           </div>

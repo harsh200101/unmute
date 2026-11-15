@@ -43,7 +43,14 @@ if (env.NODE_ENV === 'production') {
 }
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(compression());
+app.use(compression({
+  filter: (req, res) => {
+    if (req.path && req.path.includes('/voice-dilemmas/audio')) {
+      return false; // Skip compression for audio streams to avoid breaking mobile media players
+    }
+    return compression.filter(req, res);
+  },
+}));
 app.use(cookieParser());
 // PhonePe V2 may post its webhook as `application/json` OR as `text/plain`
 // ("plain text payload" in their docs). Capture the exact bytes before any
