@@ -219,11 +219,20 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
             </span>
           )}
         </div>
-        {menteeAudioError ? (
-          <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
-            <div className="flex items-center gap-2">
-              <AlertCircle size={14} className="shrink-0" />
-              <span>Audio recording unavailable or expired</span>
+        <audio
+          controls
+          src={resolveApiUrl(dilemma.mentee_audio_url)}
+          className="w-full h-9 rounded-lg"
+          onError={(e) => {
+            console.warn('[audio] Mentee audio playback issue:', e.target?.error);
+            setMenteeAudioError(true);
+          }}
+        />
+        {menteeAudioError && (
+          <div className="flex items-center justify-between p-2 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
+            <div className="flex items-center gap-1.5">
+              <AlertCircle size={13} className="shrink-0" />
+              <span>Audio unavailable or expired on server</span>
             </div>
             <button
               type="button"
@@ -233,21 +242,6 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
               <RotateCcw size={12} /> Retry
             </button>
           </div>
-        ) : (
-          <audio
-            controls
-            crossOrigin="anonymous"
-            preload="metadata"
-            src={resolveApiUrl(dilemma.mentee_audio_url)}
-            className="w-full h-9 rounded-lg"
-            onError={(e) => {
-              const code = e.target?.error?.code;
-              // Only treat actual terminal failures as permanent error (2 = network error, 4 = source not supported)
-              if (code === 2 || code === 4) {
-                setMenteeAudioError(true);
-              }
-            }}
-          />
         )}
 
         {dilemma.mentee_text_notes && (
@@ -271,10 +265,19 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
                 {formatDate(dilemma.answered_at)}
               </span>
             </div>
-            {mentorAudioError ? (
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
-                <div className="flex items-center gap-2">
-                  <AlertCircle size={14} className="shrink-0" />
+            <audio
+              controls
+              src={resolveApiUrl(dilemma.mentor_audio_url)}
+              className="w-full h-9 rounded-lg"
+              onError={(e) => {
+                console.warn('[audio] Mentor audio playback issue:', e.target?.error);
+                setMentorAudioError(true);
+              }}
+            />
+            {mentorAudioError && (
+              <div className="flex items-center justify-between p-2 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle size={13} className="shrink-0" />
                   <span>Mentor audio unavailable or expired</span>
                 </div>
                 <button
@@ -285,20 +288,6 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
                   <RotateCcw size={12} /> Retry
                 </button>
               </div>
-            ) : (
-              <audio
-                controls
-                crossOrigin="anonymous"
-                preload="metadata"
-                src={resolveApiUrl(dilemma.mentor_audio_url)}
-                className="w-full h-9 rounded-lg"
-                onError={(e) => {
-                  const code = e.target?.error?.code;
-                  if (code === 2 || code === 4) {
-                    setMentorAudioError(true);
-                  }
-                }}
-              />
             )}
           </div>
 

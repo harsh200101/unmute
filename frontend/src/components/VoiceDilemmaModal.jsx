@@ -87,7 +87,17 @@ export default function VoiceDilemmaModal({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
+
+      const mimeType = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/aac',
+        ''
+      ].find(t => !t || (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t))) || '';
+
+      const options = mimeType ? { mimeType } : undefined;
+      const recorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
@@ -97,16 +107,17 @@ export default function VoiceDilemmaModal({
       };
 
       recorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const actualType = recorder.mimeType || mimeType || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type: actualType });
         setAudioBlob(blob);
-        const url = URL.createObjectURL(blob);
-        setAudioUrl(url);
 
-        // Convert blob to base64
+        // Use base64 data URL for in-memory playback (100% reliable on Android WebView)
         const reader = new FileReader();
         reader.readAsDataURL(blob);
         reader.onloadend = () => {
-          setAudioBase64(reader.result);
+          const dataUrl = reader.result;
+          setAudioBase64(dataUrl);
+          setAudioUrl(dataUrl);
         };
 
         // Stop all audio tracks
