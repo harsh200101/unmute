@@ -22,6 +22,8 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
   const [audioBase64, setAudioBase64] = useState(null);
   const [writtenTakeaway, setWrittenTakeaway] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [menteeAudioError, setMenteeAudioError] = useState(false);
+  const [mentorAudioError, setMentorAudioError] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -217,7 +219,19 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
             </span>
           )}
         </div>
-        <audio controls src={resolveApiUrl(dilemma.mentee_audio_url)} className="w-full h-9 rounded-lg" />
+        {menteeAudioError ? (
+          <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
+            <AlertCircle size={14} className="shrink-0" />
+            <span>Audio recording expired or unavailable</span>
+          </div>
+        ) : (
+          <audio
+            controls
+            src={resolveApiUrl(dilemma.mentee_audio_url)}
+            className="w-full h-9 rounded-lg"
+            onError={() => setMenteeAudioError(true)}
+          />
+        )}
 
         {dilemma.mentee_text_notes && (
           <p className="text-xs text-muted-foreground italic pt-1">
@@ -240,7 +254,19 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
                 {formatDate(dilemma.answered_at)}
               </span>
             </div>
-            <audio controls src={resolveApiUrl(dilemma.mentor_audio_url)} className="w-full h-9 rounded-lg" />
+            {mentorAudioError ? (
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Mentor audio recording unavailable</span>
+              </div>
+            ) : (
+              <audio
+                controls
+                src={resolveApiUrl(dilemma.mentor_audio_url)}
+                className="w-full h-9 rounded-lg"
+                onError={() => setMentorAudioError(true)}
+              />
+            )}
           </div>
 
           {/* Mentor Written Takeaway Box (Gold/Indigo Accent) */}

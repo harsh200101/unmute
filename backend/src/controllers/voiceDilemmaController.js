@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { query } = require('../config/db');
 const svc = require('../services/voiceDilemmaService');
 
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads', 'voice-dilemmas');
@@ -65,13 +66,9 @@ async function answer(req, res, next) {
   }
 }
 
-function serveAudio(req, res) {
+async function serveAudio(req, res) {
   const safeFilename = path.basename(req.params.filename);
   const filePath = path.join(UPLOAD_DIR, safeFilename);
-
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'Audio file not found', code: 'not_found' });
-  }
 
   const ext = path.extname(safeFilename).toLowerCase();
   const mimeTypes = {
@@ -82,15 +79,62 @@ function serveAudio(req, res) {
     '.wav': 'audio/wav',
     '.ogg': 'audio/ogg',
   };
+  const fallbackContentType = mimeTypes[ext] || 'audio/webm';
 
-  const contentType = mimeTypes[ext] || 'application/octet-stream';
   const headers = {
-    'Content-Type': contentType,
     'Accept-Ranges': 'bytes',
     'Cross-Origin-Resource-Policy': 'cross-origin',
     'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'public, max-age=31536000, immutable',
   };
-  return res.sendFile(filePath, { headers });
+
+  // 1. If file exists on local disk, serve immediately
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath, {
+      headers: {
+        ...headers,
+        'Content-Type': fallbackContentType,
+      },
+    });
+  }
+
+  // 2. Fallback to PostgreSQL database (survives Render ephemeral container redeploys)
+  try {
+    const result = await query(
+      'SELECT mime_type, data FROM voice_dilemma_audio_files WHERE filename = $1',
+      [safeFilename]
+    );
+
+    if (result.rows.length > 0) {
+      const row = result.rows[0];
+      const contentType = row.mime_type || fallbackContentType;
+
+      // Re-create the file on local disk so subsequent chunk/range requests are instant
+      try {
+        if (!fs.existsSync(UPLOAD_DIR)) {
+          fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+        }
+        fs.writeFileSync(filePath, row.data);
+      } catch (cacheErr) {
+        console.warn('[voice-dilemmas] Failed to write disk cache:', cacheErr.message);
+      }
+
+      res.set({
+        ...headers,
+        'Content-Type': contentType,
+        'Content-Length': row.data.length,
+      });
+      return res.send(row.data);
+    }
+  } catch (dbErr) {
+    console.error('[voice-dilemmas] Database audio retrieval error:', dbErr);
+  }
+
+  // 3. Not found on disk or database
+  return res.status(404).json({
+    error: 'Audio file not found or expired',
+    code: 'not_found',
+  });
 }
 
 module.exports = {

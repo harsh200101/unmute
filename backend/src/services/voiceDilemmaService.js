@@ -15,19 +15,30 @@ function ensureUploadDir() {
   }
 }
 
-function saveAudioBase64(base64Data, prefix) {
+async function saveAudioBase64(base64Data, prefix) {
   if (!base64Data) {
     throw bad('missing_audio', 'Audio recording is required');
   }
   ensureUploadDir();
 
   let extension = 'webm';
+  let mimeType = 'audio/webm';
   let cleanBase64 = base64Data;
   const match = base64Data.match(/^data:audio\/([a-zA-Z0-9_-]+);base64,(.+)$/);
   if (match) {
     const format = match[1].toLowerCase();
     if (['webm', 'ogg', 'mp3', 'wav', 'm4a', 'aac', 'mp4'].includes(format)) {
       extension = format === 'mp4' ? 'm4a' : format;
+      const mimes = {
+        webm: 'audio/webm',
+        mp3: 'audio/mpeg',
+        wav: 'audio/wav',
+        ogg: 'audio/ogg',
+        m4a: 'audio/mp4',
+        aac: 'audio/aac',
+        mp4: 'audio/mp4',
+      };
+      mimeType = mimes[extension] || 'audio/webm';
     }
     cleanBase64 = match[2];
   }
@@ -35,7 +46,26 @@ function saveAudioBase64(base64Data, prefix) {
   const filename = `${prefix}_${crypto.randomBytes(8).toString('hex')}_${Date.now()}.${extension}`;
   const filePath = path.join(UPLOAD_DIR, filename);
   const buffer = Buffer.from(cleanBase64, 'base64');
-  fs.writeFileSync(filePath, buffer);
+
+  // 1. Write local disk cache
+  try {
+    fs.writeFileSync(filePath, buffer);
+  } catch (err) {
+    console.warn('[voice-dilemmas] Warning: failed to write local audio cache:', err.message);
+  }
+
+  // 2. Persist directly to PostgreSQL (survives Render container rebuilds & restarts)
+  try {
+    await query(
+      `INSERT INTO voice_dilemma_audio_files (filename, mime_type, data)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (filename) DO UPDATE SET data = EXCLUDED.data`,
+      [filename, mimeType, buffer]
+    );
+  } catch (dbErr) {
+    console.error('[voice-dilemmas] Error persisting audio to database:', dbErr);
+  }
+
   return {
     filename,
     url: `/api/voice-dilemmas/audio/${filename}`,
@@ -108,7 +138,7 @@ async function createDilemma({
   const FEE_PAISE = 9900; // ?99 = 9900 paise
 
   // Save audio file to uploads/voice-dilemmas
-  const { url: mentee_audio_url } = saveAudioBase64(audio_base64, `mentee_${mentee_user_id}`);
+  const { url: mentee_audio_url } = await saveAudioBase64(audio_base64, `mentee_${mentee_user_id}`);
 
   // Transactionally check wallet balance, debit fee, insert dilemma
   const createdDilemma = await withTransaction(async (client) => {
@@ -315,7 +345,7 @@ async function answerDilemma({
   const PLATFORM_SHARE_PAISE = 2970; // 30% of ?99 = 2970 paise
 
   // Save mentor audio file
-  const { url: mentor_audio_url } = saveAudioBase64(audio_base64, `mentor_${mentor_user_id}`);
+  const { url: mentor_audio_url } = await saveAudioBase64(audio_base64, `mentor_${mentor_user_id}`);
 
   const updatedDilemma = await withTransaction(async (client) => {
     // 1. Lock mentor wallet
