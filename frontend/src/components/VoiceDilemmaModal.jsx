@@ -178,8 +178,8 @@ export default function VoiceDilemmaModal({
       toast.error('Please enter a short title for your dilemma');
       return;
     }
-    if (!audioBase64) {
-      toast.error('Please record your voice dilemma before submitting');
+    if (!audioBase64 || !audioBlob || audioBlob.size < 3000 || recordDuration < 2) {
+      toast.error('Voice recording is too short. Please speak for at least 3 seconds.');
       return;
     }
     if ((balancePaise ?? 0) < DILEMMA_FEE_PAISE) {

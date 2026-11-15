@@ -100,8 +100,8 @@ export default function VoiceDilemmaCard({ dilemma, currentUserId, onAnswered })
   };
 
   const handleSubmitAnswer = async () => {
-    if (!audioBase64) {
-      toast.error('Please record your audio answer');
+    if (!audioBase64 || !audioBlob || audioBlob.size < 3000 || recordDuration < 2) {
+      toast.error('Voice answer is too short. Please speak for at least 3 seconds.');
       return;
     }
     if (!writtenTakeaway.trim()) {

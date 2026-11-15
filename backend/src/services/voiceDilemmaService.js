@@ -46,6 +46,9 @@ async function saveAudioBase64(base64Data, prefix) {
   const filename = `${prefix}_${crypto.randomBytes(8).toString('hex')}_${Date.now()}.${extension}`;
   const filePath = path.join(UPLOAD_DIR, filename);
   const buffer = Buffer.from(cleanBase64, 'base64');
+  if (buffer.length < 500) {
+    throw bad('audio_too_short', 'Audio recording is too short. Please speak clearly for at least 3 seconds.');
+  }
 
   // 1. Write local disk cache
   try {

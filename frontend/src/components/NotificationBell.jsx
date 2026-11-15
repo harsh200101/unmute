@@ -126,7 +126,7 @@ export default function NotificationBell() {
           />
 
           {/* Notification container: centered with horizontal margins on mobile, absolute dropdown on desktop */}
-          <div className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[calc(3.5rem+env(safe-area-inset-top,0px)+8px)] sm:top-full mt-0 sm:mt-2 sm:w-84 sm:max-w-sm bg-card border border-border text-card-foreground rounded-2xl sm:rounded-xl shadow-2xl z-50 overflow-hidden">
+          <div className="fixed sm:absolute left-3 right-3 max-w-md mx-auto sm:mx-0 sm:left-auto sm:right-0 top-[calc(3.5rem+env(safe-area-inset-top,0px)+8px)] sm:top-full mt-0 sm:mt-2 sm:w-84 sm:max-w-sm bg-card border border-border text-card-foreground rounded-2xl sm:rounded-xl shadow-2xl z-50 overflow-hidden">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/40">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold text-foreground">Notifications</h3>
