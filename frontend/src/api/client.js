@@ -48,7 +48,12 @@ export function resolveApiUrl(path) {
     return path;
   }
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  const origin = API_ORIGIN || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? '' : DEFAULT_PROD_API);
+  const isCapacitor = typeof window !== 'undefined' && (
+    Capacitor.isNativePlatform() ||
+    (window.location.protocol === 'https:' && window.location.hostname === 'localhost')
+  );
+  const isLocalDev = typeof window !== 'undefined' && window.location.protocol === 'http:' && window.location.hostname === 'localhost';
+  const origin = API_ORIGIN || (isCapacitor ? DEFAULT_PROD_API : (isLocalDev ? '' : DEFAULT_PROD_API));
   return `${origin}${cleanPath}`;
 }
 

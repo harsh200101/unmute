@@ -140,7 +140,10 @@ export default function VoiceDilemmaModal({
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[recorder] microphone access failed:', err);
-      setRecordError('Could not access microphone. Please grant permission in your browser.');
+      const isDenied = err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
+      setRecordError(isDenied
+        ? 'Microphone permission was denied. Please allow microphone in app settings.'
+        : ('Could not access microphone: ' + (err.message || 'error')));
     }
   };
 
