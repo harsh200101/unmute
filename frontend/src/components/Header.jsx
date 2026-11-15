@@ -61,11 +61,22 @@ export default function Header() {
         </Link>
 
         {/* Desktop nav (≥640px) — pill with sliding cursor (NavHeader). */}
-        <div className="hidden sm:block">
+        <div className="hidden lg:block">
           <NavHeader items={navItems} />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Zomato-style Mentor Mode / Host Mode pill */}
+          {isMentor && (
+            <Link
+              to="/mentor/availability"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 hover:bg-rose-500/20 active:scale-95 transition-all shadow-sm"
+              title="Switch to Mentor Dashboard"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+              <span>Mentor Mode</span>
+            </Link>
+          )}
           {!user && (
             <>
               <Button variant="ghost" size="sm" onClick={() => navigate('/login')}>Sign in</Button>
@@ -108,7 +119,7 @@ export default function Header() {
             onClick={() => setMenuOpen((o) => !o)}
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
-            className="sm:hidden inline-flex items-center justify-center h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+            className="hidden inline-flex items-center justify-center h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
           >
             {menuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
