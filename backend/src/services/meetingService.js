@@ -29,9 +29,6 @@ async function loadBookingForUser(client, { booking_uuid, user_id, user_role }) 
   if (!b) throw notFound('booking_not_found');
   let role = b.mentor_user_id === user_id ? 'mentor'
            : b.mentee_user_id === user_id ? 'mentee' : null;
-  if (!role && user_role === 'admin') {
-    role = 'mentor';
-  }
   if (!role) throw forbidden('not_a_party');
   return { booking: b, role };
 }
@@ -63,19 +60,16 @@ async function issueCredentials({ booking_uuid, user_id, user_role }) {
   return withTransaction(async (client) => {
     const { booking, role } = await loadBookingForUser(client, { booking_uuid, user_id, user_role });
 
-    const isAdmin = user_role === 'admin';
     // Booking must still be active (scheduled, in_call, or completed for replay-info)
-    if (!isAdmin) {
-      if (booking.status !== 'scheduled' && booking.status !== 'in_call') {
-        throw bad('meeting_not_active', `Booking status is ${booking.status}`);
-      }
-      if (!withinJoinWindow(booking)) {
-        throw bad('outside_join_window', 'Join button is enabled 5 minutes before slot start through slot end');
-      }
+    if (booking.status !== 'scheduled' && booking.status !== 'in_call') {
+      throw bad('meeting_not_active', `Booking status is ${booking.status}`);
+    }
+    if (!withinJoinWindow(booking)) {
+      throw bad('outside_join_window', 'Join button is enabled 5 minutes before slot start through slot end');
     }
 
     const meeting = await getOrCreateMeeting(client, booking);
-    const ttl = isAdmin ? 86400 : Math.max(60, Math.floor((new Date(booking.slot_end_at).getTime() - Date.now()) / 1000) + 60);
+    const ttl = Math.max(60, Math.floor((new Date(booking.slot_end_at).getTime() - Date.now()) / 1000) + 60);
     const creds = agora.buildToken({ booking_uuid: booking.uuid, user_id, ttl_seconds: ttl });
 
     // Look up both display names so the room UI can label the local tile
@@ -124,8 +118,7 @@ async function recordPresence({ booking_uuid, user_id, user_role, kind }) {
 
   return withTransaction(async (client) => {
     const { booking, role } = await loadBookingForUser(client, { booking_uuid, user_id, user_role });
-    const isAdmin = user_role === 'admin';
-    if (!isAdmin && booking.status !== 'scheduled' && booking.status !== 'in_call') {
+    if (booking.status !== 'scheduled' && booking.status !== 'in_call') {
       throw bad('meeting_not_active');
     }
     const meeting = await getOrCreateMeeting(client, booking);

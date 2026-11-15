@@ -100,8 +100,7 @@ export default function BookingDetail() {
   const startMs = new Date(booking.slot_start_at).getTime();
   const endMs = new Date(booking.slot_end_at).getTime();
   const now = Date.now();
-  const isAdmin = user?.role === 'admin';
-  const inJoinWindow = isAdmin || (now >= startMs - JOIN_WINDOW_BEFORE_MS && now < endMs);
+  const inJoinWindow = now >= startMs - JOIN_WINDOW_BEFORE_MS && now < endMs;
   const msToStart = startMs - now;
   const lateCancel = msToStart < FOUR_HOURS_MS;
   // Cancelling a stale "scheduled" booking (slot_end_at already in the past) is
@@ -202,8 +201,8 @@ export default function BookingDetail() {
         </div>
       )}
 
-      {/* Join CTA when in window or admin testing — live bookings, or admin anytime */}
-      {inJoinWindow && (isAdmin || booking.status === 'scheduled' || booking.status === 'in_call') && (
+      {/* Join CTA when within scheduled meeting window */}
+      {inJoinWindow && (booking.status === 'scheduled' || booking.status === 'in_call') && (
         <Card className="border-emerald-300">
           <CardBody className="flex items-center justify-between flex-wrap gap-3">
             <div>
