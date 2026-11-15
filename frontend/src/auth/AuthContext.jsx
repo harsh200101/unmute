@@ -4,7 +4,7 @@ import { Preferences } from '@capacitor/preferences';
 import { App } from '@capacitor/app';
 import { setAccessToken, onAuthChange } from '../api/client.js';
 import { auth as authApi, me as meApi } from '../api/endpoints.js';
-import { initPushNotifications, resetPushNotifications } from '../services/pushNotificationService.js';
+import { initPushNotifications, resetPushNotifications, syncCachedDeviceToken } from '../services/pushNotificationService.js';
 
 const AuthContext = createContext(null);
 
@@ -134,6 +134,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (user) {
       initPushNotifications();
+      syncCachedDeviceToken();
     }
   }, [user]);
 

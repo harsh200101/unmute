@@ -63,13 +63,13 @@ export async function initPushNotifications(onNotificationClick) {
 
     // 2. Request runtime permissions (Android 13+ & iOS)
     let permStatus = await PushNotifications.checkPermissions();
-    if (permStatus.receive === 'prompt') {
+    if (permStatus.receive !== 'granted') {
       permStatus = await PushNotifications.requestPermissions();
     }
 
     try {
       const localPerm = await LocalNotifications.checkPermissions();
-      if (localPerm.display === 'prompt') {
+      if (localPerm.display !== 'granted') {
         await LocalNotifications.requestPermissions();
       }
     } catch (_) {}
@@ -86,15 +86,7 @@ export async function initPushNotifications(onNotificationClick) {
 
     await PushNotifications.addListener('registration', async (token) => {
       console.log('[PushNotifications] Device token registered:', token.value);
-      try {
-        await api.post('/notifications/device-token', {
-          token: token.value,
-          platform: Capacitor.getPlatform()
-        });
-        console.log('[PushNotifications] Token uploaded to backend successfully.');
-      } catch (err) {
-        console.error('[PushNotifications] Failed to upload token to backend:', err.message);
-      }
+      await uploadDeviceToken(token.value);
     });
 
     await PushNotifications.addListener('registrationError', (error) => {
@@ -184,6 +176,41 @@ export async function showNotificationInTray({ id, title, body, link_url }) {
     console.log('[showNotificationInTray] Posted to system tray with ID:', notifId);
   } catch (err) {
     console.error('[showNotificationInTray] Error:', err);
+  }
+}
+
+export async function uploadDeviceToken(tokenValue) {
+  if (!tokenValue) return false;
+  try {
+    localStorage.setItem('unmute_fcm_token', tokenValue);
+    await api.post('/notifications/device-token', {
+      token: tokenValue,
+      platform: Capacitor.getPlatform(),
+    });
+    localStorage.setItem('unmute_fcm_synced_at', new Date().toISOString());
+    console.log('[PushNotifications] Token uploaded to backend successfully.');
+    return true;
+  } catch (err) {
+    try {
+      await api.post('/me/notifications/device-token', {
+        token: tokenValue,
+        platform: Capacitor.getPlatform(),
+      });
+      localStorage.setItem('unmute_fcm_synced_at', new Date().toISOString());
+      console.log('[PushNotifications] Token uploaded via fallback to backend.');
+      return true;
+    } catch (e2) {
+      console.error('[PushNotifications] Failed to upload token to backend:', err.message, e2.message);
+      return false;
+    }
+  }
+}
+
+export async function syncCachedDeviceToken() {
+  if (!Capacitor.isNativePlatform()) return;
+  const token = localStorage.getItem('unmute_fcm_token');
+  if (token) {
+    await uploadDeviceToken(token);
   }
 }
 

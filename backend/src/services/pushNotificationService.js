@@ -103,15 +103,20 @@ async function sendPushToUser({ user_id, title, body, link_url, kind }) {
       `SELECT token, platform FROM user_device_tokens WHERE user_id = $1`,
       [user_id]
     );
-    if (!r.rows.length) return;
+    if (!r.rows.length) {
+      console.log(`[pushNotificationService] User ${user_id} has no registered device tokens in user_device_tokens.`);
+      return { sent: 0, devices: 0 };
+    }
 
     const tokens = r.rows.map(row => row.token);
     const messaging = getFirebaseMessaging();
 
     if (!messaging) {
       console.log(`[pushNotificationService Mock] Would send push to user ${user_id} (${tokens.length} devices): "${title}" - "${body}"`);
-      return;
+      return { sent: 0, devices: tokens.length };
     }
+
+    console.log(`[pushNotificationService] Dispatching push to user ${user_id} on ${tokens.length} device(s)...`);
 
     const payload = {
       notification: {
@@ -143,11 +148,14 @@ async function sendPushToUser({ user_id, title, body, link_url, kind }) {
       ...payload
     });
 
+    console.log(`[pushNotificationService] FCM response for user ${user_id}: ${response.successCount} succeeded, ${response.failureCount} failed.`);
+
     // Cleanup dead / invalid tokens
     if (response.failureCount > 0) {
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
           const errCode = resp.error?.code;
+          console.warn(`[pushNotificationService] FCM failure for token ${tokens[idx].slice(0, 15)}...: ${errCode} - ${resp.error?.message}`);
           if (
             errCode === 'messaging/registration-token-not-registered' ||
             errCode === 'messaging/invalid-registration-token'
@@ -157,8 +165,11 @@ async function sendPushToUser({ user_id, title, body, link_url, kind }) {
         }
       });
     }
+
+    return { sent: response.successCount, devices: tokens.length };
   } catch (err) {
     console.error('[pushNotificationService] Failed to dispatch push:', err.message);
+    return { sent: 0, devices: 0, error: err.message };
   }
 }
 

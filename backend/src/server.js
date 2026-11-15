@@ -176,6 +176,7 @@ app.use('/api', reviewRoutes);
 
 // --- Phase 10: in-app notifications ---
 app.use('/api/me/notifications', notificationRoutes);
+app.use('/api/notifications',    notificationRoutes);
 
 // --- Phase 11: KYC + mentor payouts ---
 app.use('/api/mentors/kyc', kycRoutes);
